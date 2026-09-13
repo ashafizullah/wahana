@@ -39,10 +39,14 @@ export interface Prefs {
   aiProvider: "anthropic" | "openai-compatible";
   aiBaseUrl: string;
   aiModel: string;
+  /** Cheaper/faster model for short tasks (translate, rewrite, smart replies); empty = use aiModel. */
+  aiFastModel: string;
   /** Language incoming messages are translated into. */
   aiTranslateTo: string;
   /** Language your drafts are translated into with the composer 🌐 button. */
   aiComposeTo: string;
+  /** Persona / standing instructions prepended to every AI feature (who you are, your business, tone). */
+  aiSystemPrompt: string;
 }
 
 const DEFAULT_PREFS: Prefs = {
@@ -58,8 +62,10 @@ const DEFAULT_PREFS: Prefs = {
   aiProvider: "anthropic",
   aiBaseUrl: "",
   aiModel: "claude-opus-5",
+  aiFastModel: "",
   aiTranslateTo: "id",
   aiComposeTo: "en",
+  aiSystemPrompt: "",
 };
 
 interface SettingsState extends Prefs {

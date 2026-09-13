@@ -1,6 +1,6 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { confirm } from "@/components/Confirm";
-import { CheckCircle2, XCircle, Loader2, Plug, Image as ImageIcon, Bell, Info, Plus, Trash2, Server, HardDrive, RefreshCw, SlidersHorizontal, Zap, Pencil, Sparkles } from "lucide-react";
+import { CheckCircle2, XCircle, Loader2, Plug, Image as ImageIcon, Bell, Info, Plus, Trash2, Server, HardDrive, RefreshCw, SlidersHorizontal, Zap, Pencil, Sparkles, ChevronDown } from "lucide-react";
 import { DEFAULT_MODELS, LANGUAGES, testAi } from "@/lib/ai";
 import { usingFallback } from "@/lib/secrets";
 import { exportBackup, pickBackup, restoreBackup, type Backup, type RestoreOptions } from "@/lib/backup";
@@ -15,11 +15,35 @@ import { Button, Input, Label } from "@/components/ui";
 import { useServerVersion } from "@/api/queries";
 import { getVersion } from "@tauri-apps/api/app";
 
+const OPEN_KEY = "settings.open";
+const DEFAULT_OPEN = ["Servers", "Connection"];
+function loadOpen(): string[] {
+  try {
+    const v = JSON.parse(localStorage.getItem(OPEN_KEY) ?? "null") as unknown;
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : DEFAULT_OPEN;
+  } catch {
+    return DEFAULT_OPEN;
+  }
+}
+const OpenCtx = createContext<{ open: string[]; toggle: (t: string) => void }>({ open: [], toggle: () => {} });
+
+const ALL_SECTIONS = ["Servers", "Connection", "Media", "Storage", "Tweaks", "AI", "Quick replies", "Notifications", "Backup & restore", "About"];
+
 export function SettingsScreen({ onSaved }: { onSaved: () => void }) {
+  const [open, setOpen] = useState<string[]>(loadOpen);
+  useEffect(() => { try { localStorage.setItem(OPEN_KEY, JSON.stringify(open)); } catch { /* ignore */ } }, [open]);
+  const toggle = (t: string) => setOpen((o) => (o.includes(t) ? o.filter((x) => x !== t) : [...o, t]));
+  const allOpen = ALL_SECTIONS.every((t) => open.includes(t));
   return (
-    <div className="flex-1 overflow-auto p-8">
-      <div className="max-w-xl mx-auto space-y-6">
-        <h1 className="text-xl font-semibold">Settings</h1>
+    <OpenCtx.Provider value={{ open, toggle }}>
+    <div className="flex-1 overflow-auto p-6">
+      <div className="space-y-3">
+        <div className="flex items-center gap-3">
+          <h1 className="text-xl font-semibold flex-1">Settings</h1>
+          <button className="text-xs text-neutral-500 hover:text-wa-dark" onClick={() => setOpen(allOpen ? [] : ALL_SECTIONS)}>
+            {allOpen ? "Collapse all" : "Expand all"}
+          </button>
+        </div>
         {usingFallback() && (
           <div className="rounded-lg bg-amber-50 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200 px-3 py-2 text-xs">
             The OS keychain is unavailable on this machine, so API keys are kept in a local file (unencrypted). They still never leave your computer.
@@ -57,6 +81,7 @@ export function SettingsScreen({ onSaved }: { onSaved: () => void }) {
         </Section>
       </div>
     </div>
+    </OpenCtx.Provider>
   );
 }
 
@@ -71,15 +96,24 @@ function Section({
   description?: string;
   children: ReactNode;
 }) {
+  const { open, toggle } = useContext(OpenCtx);
+  const expanded = open.includes(title);
   return (
     <section className="rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900">
-      <header className="px-5 pt-4 pb-3 border-b border-neutral-100 dark:border-neutral-800">
-        <h2 className="flex items-center gap-2 font-semibold">
-          <Icon size={16} className="text-wa-dark" /> {title}
-        </h2>
-        {description && <p className="text-xs text-neutral-500 mt-1">{description}</p>}
-      </header>
-      <div className="px-5 py-4 space-y-4">{children}</div>
+      <button
+        type="button"
+        aria-expanded={expanded}
+        onClick={() => toggle(title)}
+        className={"w-full text-left px-5 py-3 flex items-start gap-3 " + (expanded ? "border-b border-neutral-100 dark:border-neutral-800" : "")}
+      >
+        <Icon size={16} className="text-wa-dark mt-0.5 shrink-0" />
+        <span className="flex-1 min-w-0">
+          <h2 className="font-semibold">{title}</h2>
+          {description && expanded && <p className="text-xs text-neutral-500 mt-1">{description}</p>}
+        </span>
+        <ChevronDown size={16} className={"shrink-0 text-neutral-400 transition-transform mt-0.5 " + (expanded ? "rotate-180" : "")} />
+      </button>
+      {expanded && <div className="px-5 py-4 space-y-4">{children}</div>}
     </section>
   );
 }
@@ -457,11 +491,13 @@ function AiSection() {
   const [provider, setProvider] = useState(s.aiProvider);
   const [baseUrl, setBaseUrl] = useState(s.aiBaseUrl);
   const [model, setModel] = useState(s.aiModel);
+  const [fastModel, setFastModel] = useState(s.aiFastModel);
   const [key, setKey] = useState(s.aiApiKey);
+  const [persona, setPersona] = useState(s.aiSystemPrompt);
   const [busy, setBusy] = useState<"test" | "save" | null>(null);
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
-  useEffect(() => { setProvider(s.aiProvider); setBaseUrl(s.aiBaseUrl); setModel(s.aiModel); setKey(s.aiApiKey); }, [s.aiProvider, s.aiBaseUrl, s.aiModel, s.aiApiKey]);
-  const dirty = provider !== s.aiProvider || baseUrl.trim() !== s.aiBaseUrl || model.trim() !== s.aiModel || key.trim() !== s.aiApiKey;
+  useEffect(() => { setProvider(s.aiProvider); setBaseUrl(s.aiBaseUrl); setModel(s.aiModel); setFastModel(s.aiFastModel); setKey(s.aiApiKey); setPersona(s.aiSystemPrompt); }, [s.aiProvider, s.aiBaseUrl, s.aiModel, s.aiFastModel, s.aiApiKey, s.aiSystemPrompt]);
+  const dirty = provider !== s.aiProvider || baseUrl.trim() !== s.aiBaseUrl || model.trim() !== s.aiModel || fastModel.trim() !== s.aiFastModel || key.trim() !== s.aiApiKey || persona.trim() !== s.aiSystemPrompt;
   const cfg = { provider, baseUrl: baseUrl.trim(), model: model.trim() || DEFAULT_MODELS[provider], apiKey: key.trim() };
 
   return (
@@ -482,6 +518,11 @@ function AiSection() {
         <div><Label>Model</Label><Input value={model} onChange={(e) => setModel(e.target.value)} placeholder={provider === "anthropic" ? "claude-opus-5" : "e.g. gpt-4.1-mini, llama3"} spellCheck={false} /></div>
         <div><Label>API key</Label><Input type="password" value={key} onChange={(e) => setKey(e.target.value)} placeholder="sk-…" /></div>
       </div>
+      <div>
+        <Label>Fast model — used for translate, rewrite and smart replies (optional; empty = same as Model)</Label>
+        <Input value={fastModel} onChange={(e) => setFastModel(e.target.value)} placeholder={provider === "anthropic" ? "claude-haiku-4-5" : "e.g. gpt-4.1-nano, llama3.2"} spellCheck={false} />
+        <p className="text-[11px] text-neutral-500 mt-1">Short edits don't need the strongest model. A small model answers in ~1–2 s; summaries keep using Model above.</p>
+      </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
           <Label>Translate incoming messages to</Label>
@@ -496,6 +537,16 @@ function AiSection() {
           </select>
         </div>
       </div>
+      <div>
+        <Label>Persona — who you are, your business, preferred tone (used by summaries, smart replies and the writing assistant)</Label>
+        <textarea
+          value={persona}
+          onChange={(e) => setPersona(e.target.value)}
+          rows={3}
+          placeholder={"e.g. I'm Adam, owner of Toko Wahana (electronics, Bandung). Reply in Indonesian, casual but polite; address customers as \"Kak\". Never promise delivery dates."}
+          className="w-full rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-2 text-sm outline-none focus:border-wa-dark resize-y"
+        />
+      </div>
       {result && (
         <div className={"flex items-center gap-2 rounded-lg px-3 py-2 text-sm " + (result.ok ? "bg-emerald-50 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300" : "bg-red-50 text-red-800 dark:bg-red-900/30 dark:text-red-300")}>
           {result.ok ? <CheckCircle2 size={16} /> : <XCircle size={16} />}<span className="selectable break-all">{result.text}</span>
@@ -505,7 +556,7 @@ function AiSection() {
         <Button variant="secondary" disabled={busy !== null || !cfg.apiKey || !cfg.model || (provider !== "anthropic" && !cfg.baseUrl)} onClick={async () => { setBusy("test"); setResult(null); try { const out = await testAi(cfg); setResult({ ok: true, text: `Model replied: ${out.slice(0, 80)}` }); } catch (e) { setResult({ ok: false, text: e instanceof Error ? e.message : String(e) }); } finally { setBusy(null); } }}>
           {busy === "test" && <Loader2 size={14} className="animate-spin" />} Test
         </Button>
-        <Button disabled={busy !== null || !dirty} onClick={async () => { setBusy("save"); try { await s.save({ aiProvider: provider, aiBaseUrl: cfg.baseUrl, aiModel: cfg.model, aiApiKey: cfg.apiKey }); setResult({ ok: true, text: "Saved." }); } finally { setBusy(null); } }}>
+        <Button disabled={busy !== null || !dirty} onClick={async () => { setBusy("save"); try { await s.save({ aiProvider: provider, aiBaseUrl: cfg.baseUrl, aiModel: cfg.model, aiFastModel: fastModel.trim(), aiApiKey: cfg.apiKey, aiSystemPrompt: persona.trim() }); setResult({ ok: true, text: "Saved." }); } finally { setBusy(null); } }}>
           {busy === "save" && <Loader2 size={14} className="animate-spin" />} Save
         </Button>
       </div>

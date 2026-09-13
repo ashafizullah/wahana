@@ -20,9 +20,10 @@ export const LANGUAGES = [
 ] as const;
 export const langName = (code: string) => LANGUAGES.find(([c]) => c === code)?.[1] ?? code;
 
-function config(): AiConfig {
+function config(fast = false): AiConfig {
   const s = useSettings.getState();
-  return { provider: s.aiProvider, baseUrl: s.aiBaseUrl, model: s.aiModel || DEFAULT_MODELS[s.aiProvider], apiKey: s.aiApiKey };
+  const model = (fast && s.aiFastModel.trim()) || s.aiModel || DEFAULT_MODELS[s.aiProvider];
+  return { provider: s.aiProvider, baseUrl: s.aiBaseUrl, model, apiKey: s.aiApiKey };
 }
 
 export function aiConfigured() {
@@ -30,11 +31,21 @@ export function aiConfigured() {
   return !!c.apiKey && !!c.model && (c.provider === "anthropic" || !!c.baseUrl);
 }
 
-/** One-shot completion: system + user → text. Routed to the configured provider. */
-export async function complete(system: string, user: string, opts: { maxTokens?: number; cfg?: AiConfig } = {}): Promise<string> {
-  const c = opts.cfg ?? config();
+/** The user's persona from Settings → AI, as a system-prompt preamble (empty when unset). */
+export function personaPreamble() {
+  const p = useSettings.getState().aiSystemPrompt.trim();
+  return p ? `About the user you are assisting (follow these standing instructions):\n${p}\n\n` : "";
+}
+
+/**
+ * One-shot completion: system + user → text. Routed to the configured provider.
+ * `persona` (default true) prepends Settings → AI → Persona; `fast` picks the fast model when one is set.
+ */
+export async function complete(system: string, user: string, opts: { maxTokens?: number; cfg?: AiConfig; persona?: boolean; fast?: boolean } = {}): Promise<string> {
+  const c = opts.cfg ?? config(opts.fast);
   if (!c.apiKey) throw new Error("AI API key is not set (Settings → AI).");
   const maxTokens = opts.maxTokens ?? 4096;
+  if (opts.persona !== false) system = personaPreamble() + system;
 
   if (c.provider === "anthropic") {
     const client = new Anthropic({
@@ -89,7 +100,7 @@ export function translate(text: string, target: string, key?: string) {
   if (!p) {
     const system = `You are a translator inside a chat app. Translate the user's message into ${langName(target)}.
 Rules: output only the translation, no explanations or quotes. Preserve line breaks, emoji, URLs, @mentions, phone numbers and WhatsApp formatting markers (*bold*, _italic_, ~strike~, \`\`\`code\`\`\`). Keep the tone and register (casual/formal). If the text is already in ${langName(target)}, return it unchanged.`;
-    p = complete(system, text, { maxTokens: Math.min(8000, Math.max(512, text.length * 3)) });
+    p = complete(system, text, { maxTokens: Math.min(8000, Math.max(512, text.length * 3)), persona: false, fast: true });
     translateCache.set(cacheKey, p);
     p.catch(() => translateCache.delete(cacheKey));
   }
@@ -98,7 +109,7 @@ Rules: output only the translation, no explanations or quotes. Preserve line bre
 
 /** Quick connectivity check for the settings page. */
 export async function testAi(cfg: AiConfig) {
-  const out = await complete("Reply with exactly: OK", "ping", { maxTokens: 16, cfg });
+  const out = await complete("Reply with exactly: OK", "ping", { maxTokens: 16, cfg, persona: false });
   return out;
 }
 
@@ -114,4 +125,47 @@ ${opts.question ? `Answer the user's question using only the transcript. If the 
 Use the section titles in the output language. Attribute statements to people by name. Be concise; keep the facts, drop the small talk. Media appears as [photo], [voice], etc. — mention it only when relevant.`}`;
   const user = opts.question ? `Question: ${opts.question}\n\nTranscript:\n${text}` : `Transcript:\n${text}`;
   return complete(system, user, { maxTokens: 2048 });
+}
+
+export const REWRITE_MODES = [
+  ["fix", "Fix grammar & typos"],
+  ["formal", "Make it formal"],
+  ["casual", "Make it casual"],
+  ["friendly", "Make it friendlier"],
+  ["shorter", "Make it shorter"],
+  ["longer", "Expand it"],
+  ["bullets", "Turn into bullet points"],
+] as const;
+export type RewriteMode = (typeof REWRITE_MODES)[number][0];
+
+const REWRITE_INSTRUCTIONS: Record<RewriteMode, string> = {
+  fix: "Fix spelling, grammar and punctuation only. Do not change the wording, tone or meaning.",
+  formal: "Rewrite in a polite, professional register suitable for a business contact. Keep the meaning.",
+  casual: "Rewrite in a relaxed, everyday chat register, like texting a friend. Keep the meaning.",
+  friendly: "Rewrite so it sounds warm and friendly without becoming long. Keep the meaning.",
+  shorter: "Rewrite as briefly as possible while keeping every piece of information.",
+  longer: "Expand with a little more context and courtesy so it reads complete; do not invent facts.",
+  bullets: "Restructure as a short list using \"- \" bullets, one point per line; keep a one-line lead-in if needed.",
+};
+
+/** Rewrite a draft in the composer. Keeps the draft's language and WhatsApp formatting. */
+export function rewriteDraft(text: string, mode: RewriteMode) {
+  const system = `You edit a WhatsApp message the user is about to send. ${REWRITE_INSTRUCTIONS[mode]}
+Rules: reply with the rewritten message only — no preamble, quotes or explanations. Keep the same language as the draft. Preserve emoji, URLs, @mentions, phone numbers, line breaks and WhatsApp formatting markers (*bold*, _italic_, ~strike~, \`\`\`code\`\`\`) where they make sense.`;
+  return complete(system, text, { maxTokens: Math.min(4000, Math.max(256, text.length * 3)), fast: true });
+}
+
+/** Three short reply suggestions for the current conversation (transcript from `transcript()`). Returns [] when the model output is unusable. */
+export async function smartReplies(text: string, opts: { chatName: string; isGroup: boolean }): Promise<string[]> {
+  const system = `You suggest replies the user ("You" in the transcript) could send next in a ${opts.isGroup ? "WhatsApp group" : "WhatsApp chat"} named "${opts.chatName}".
+Return exactly 3 suggestions as a JSON array of strings and nothing else. Each suggestion: one complete message the user could send as-is, ≤ 25 words, in the same language and register the user writes in (or the other party, if the user hasn't written yet). Make them meaningfully different (e.g. agree / ask a follow-up / decline politely). Answer the latest incoming message; use facts from the transcript, never invent commitments, prices or dates. No numbering, no quotes around the array.`;
+  const raw = await complete(system, `Transcript (latest last):\n${text}`, { maxTokens: 400, fast: true });
+  const m = raw.match(/\[[\s\S]*\]/);
+  try {
+    const arr = JSON.parse(m ? m[0] : raw) as unknown;
+    if (Array.isArray(arr)) return arr.filter((x): x is string => typeof x === "string" && !!x.trim()).slice(0, 3);
+  } catch {
+    /* fall through */
+  }
+  return raw.split("\n").map((l) => l.replace(/^\s*(?:[-*\d.)]+\s*)?/, "").trim()).filter(Boolean).slice(0, 3);
 }

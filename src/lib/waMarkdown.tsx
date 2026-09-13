@@ -159,6 +159,11 @@ export function renderInline(text: string, depth = 0, mentions?: MentionResolver
   return out;
 }
 
+/** Replace `@digits` mentions with `@Name` for plain-text previews. */
+export function replaceMentions(text: string, resolve: MentionResolver) {
+  return text.replace(/(^|[\s(])@(\d{5,20})(?![\w@])/g, (_, pre: string, digits: string) => `${pre}@${resolve(digits) ?? digits}`);
+}
+
 /** Plain-text version for previews: removes formatting markers. */
 export function stripWaMarkdown(text: string) {
   return text

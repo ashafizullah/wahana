@@ -32,12 +32,13 @@ import { usePolls } from "@/store/polls";
 import { Pin, BellOff } from "lucide-react";
 import { LabelsDialog, useLabelMap, useLabels } from "@/components/LabelsDialog";
 import { exportChat, type ExportFormat } from "@/lib/exportChat";
-import { MoreVertical, Download, Languages, Sparkles, Loader2 as Spinner } from "lucide-react";
+import { MoreVertical, Download, Languages, Sparkles, WandSparkles, Undo2, RefreshCw, Loader2 as Spinner } from "lucide-react";
 import { SummaryModal } from "@/components/SummaryModal";
 import { useTranslations } from "@/store/translations";
-import { aiConfigured, translate, langName } from "@/lib/ai";
+import { aiConfigured, translate, langName, rewriteDraft, smartReplies, REWRITE_MODES, type RewriteMode } from "@/lib/ai";
+import { transcript } from "@/lib/exportChat";
 import type { MentionResolver } from "@/lib/waMarkdown";
-import { WaMarkdown, stripWaMarkdown } from "@/lib/waMarkdown";
+import { WaMarkdown, stripWaMarkdown, replaceMentions } from "@/lib/waMarkdown";
 import type { ChatOverview, WAMessage } from "@/api/types";
 import { cn, displayId, fileToBase64, formatDateDivider, formatTime, isChannel, isGroup } from "@/lib/utils";
 import { useQueryClient } from "@tanstack/react-query";
@@ -105,6 +106,7 @@ function ChatList({
   const { data, isLoading, error } = useChats(session);
   const { data: sessions } = useSessions();
   const save = useSettings((s) => s.save);
+  const resolveName = useNameResolver(session); // session-wide (contacts, LIDs, push names) for preview mentions
   const [q, setQ] = useState("");
   const [newChat, setNewChat] = useState(false);
   const [rowMenu, setRowMenu] = useState<{ chat: ChatOverview; x: number; y: number } | null>(null);
@@ -266,7 +268,7 @@ function ChatList({
                 key={c.id}
                 style={{ position: "absolute", top: 0, left: 0, width: "100%", transform: `translateY(${v.start}px)` }}
               >
-                <ChatRow chat={c} session={session} active={c.id === selected} onClick={() => onSelect(c.id)} onContextMenu={(x, y) => setRowMenu({ chat: c, x, y })} />
+                <ChatRow chat={c} session={session} active={c.id === selected} resolveName={resolveName} onClick={() => onSelect(c.id)} onContextMenu={(x, y) => setRowMenu({ chat: c, x, y })} />
               </div>
             );
           })}
@@ -392,12 +394,14 @@ function ChatRow({
   chat,
   session,
   active,
+  resolveName,
   onClick,
   onContextMenu,
 }: {
   chat: ChatOverview;
   session: string;
   active: boolean;
+  resolveName: MentionResolver;
   onClick: () => void;
   onContextMenu: (x: number, y: number) => void;
 }) {
@@ -412,7 +416,7 @@ function ChatRow({
   const { data: lmap } = useLabelMap(session);
   const chatLabels = (lmap?.[chat.id] ?? []).map((id) => allLabels?.find((l) => l.id === id)).filter((x): x is NonNullable<typeof x> => !!x);
   const kindLabel = lm ? previewKind(lm) : "";
-  const body = lm?.body ? stripWaMarkdown(lm.body) : "";
+  const body = lm?.body ? replaceMentions(stripWaMarkdown(lm.body), resolveName) : "";
   // Media with a caption → "📷 caption"; media without → "📷 Photo"; text → text.
   const content = body && kindLabel ? `${kindLabel.split(" ")[0]} ${body}` : body || kindLabel;
   const sender = lm && isGroup(chat.id) && !lm.fromMe ? senderShort(lm) : lm?.fromMe && isGroup(chat.id) ? "You" : "";
@@ -960,6 +964,7 @@ function Conversation({ session, chatId, onOpenChat }: { session: string; chatId
           const last = [...ordered].reverse().find((m) => m.fromMe && m.body && Date.now() / 1000 - m.timestamp < 15 * 60);
           if (last) setEditing(last);
         }}
+        recent={ordered.slice(-30)}
       />
       {menu && (
         <MessageMenu
@@ -1280,6 +1285,106 @@ function TranslateDraftButton({ text, onResult }: { text: string; onResult: (t: 
   );
 }
 
+/** ✨ menu in the composer: rewrite the draft (fix / formal / casual / …) with one-step undo. */
+function WriteAssistButton({ text, onResult }: { text: string; onResult: (t: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState<RewriteMode | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [undo, setUndo] = useState<string | null>(null);
+  const ready = aiConfigured();
+  useEffect(() => { if (!text) setUndo(null); }, [text]); // draft sent or cleared → nothing to undo
+  const run = async (mode: RewriteMode) => {
+    setOpen(false);
+    setBusy(mode);
+    setErr(null);
+    try {
+      const before = text;
+      const out = await rewriteDraft(text, mode);
+      if (out) { setUndo(before); onResult(out); }
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+      setTimeout(() => setErr(null), 4000);
+    } finally {
+      setBusy(null);
+    }
+  };
+  return (
+    <div className="relative">
+      <Button
+        variant="ghost"
+        disabled={(!text.trim() && !undo) || !!busy || !ready}
+        title={ready ? "Writing assistant" : "Set up AI in Settings to use the writing assistant"}
+        onClick={() => setOpen((v) => !v)}
+      >
+        {busy ? <Spinner size={18} className="animate-spin" /> : <WandSparkles size={18} />}
+      </Button>
+      {open && (
+        <div className="absolute bottom-full left-0 mb-1 z-30 w-52 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-xl py-1 text-sm" onMouseLeave={() => setOpen(false)}>
+          {undo && (
+            <>
+              <button onClick={() => { onResult(undo); setUndo(null); setOpen(false); }} className="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-neutral-100 dark:hover:bg-neutral-800">
+                <Undo2 size={14} /> Undo last rewrite
+              </button>
+              <div className="my-1 border-t border-neutral-200 dark:border-neutral-800" />
+            </>
+          )}
+          {REWRITE_MODES.map(([id, label]) => (
+            <button key={id} disabled={!text.trim()} onClick={() => void run(id)} className="w-full px-3 py-1.5 text-left hover:bg-neutral-100 dark:hover:bg-neutral-800 disabled:opacity-40">
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+      {err && <div className="absolute bottom-full left-0 mb-1 w-64 rounded-lg bg-red-600 text-white text-xs px-2 py-1 shadow z-30 selectable">{err}</div>}
+    </div>
+  );
+}
+
+/** Suggested replies above the composer. Manual trigger (one request per click); cleared when a new message arrives. */
+function SmartReplies({ chatId, chatName, recent, resolveName, onPick }: { chatId: string; chatName: string; recent: WAMessage[]; resolveName: MentionResolver; onPick: (t: string) => void }) {
+  const [items, setItems] = useState<string[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const last = recent[recent.length - 1];
+  const lastId = last?.id;
+  useEffect(() => { setItems(null); setErr(null); }, [chatId, lastId]);
+  if (!aiConfigured() || !last || last.fromMe) return null;
+  const run = async () => {
+    setBusy(true);
+    setErr(null);
+    try {
+      const usable = recent.filter((m) => !(m as WAMessage & { waiting?: boolean }).waiting && (m.body || m.hasMedia));
+      setItems(await smartReplies(transcript(usable, resolveName), { chatName, isGroup: isGroup(chatId) }));
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 text-xs">
+      {items === null ? (
+        <button onClick={run} disabled={busy} className="inline-flex items-center gap-1 rounded-full border border-dashed border-neutral-300 dark:border-neutral-700 px-2.5 py-1 text-neutral-500 hover:text-wa-dark hover:border-wa-dark disabled:opacity-50">
+          {busy ? <Spinner size={12} className="animate-spin" /> : <Sparkles size={12} />} Suggest replies
+        </button>
+      ) : (
+        <>
+          {items.map((t, i) => (
+            <button key={i} onClick={() => onPick(t)} title="Insert into composer" className="max-w-[320px] truncate rounded-full bg-wa/15 dark:bg-wa/20 px-3 py-1 text-left hover:bg-wa/30">
+              {t}
+            </button>
+          ))}
+          <button onClick={run} disabled={busy} title="Regenerate" className="p-1 text-neutral-500 hover:text-wa-dark disabled:opacity-50">
+            {busy ? <Spinner size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+          </button>
+          <button onClick={() => setItems(null)} title="Dismiss" className="p-1 text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"><X size={12} /></button>
+        </>
+      )}
+      {err && <span className="text-red-600 selectable">{err}</span>}
+    </div>
+  );
+}
+
 function AckIcon({ ack, className }: { ack: number; className?: string }) {
   if (ack <= 0) return <Clock size={12} className={className} />;
   if (ack === 1) return <Check size={12} className={className} />;
@@ -1299,6 +1404,7 @@ function Composer({
   resolveName,
   myIds,
   onEditLast,
+  recent,
 }: {
   session: string;
   chatId: string;
@@ -1309,6 +1415,8 @@ function Composer({
   resolveName: MentionResolver;
   myIds: string[];
   onEditLast: () => void;
+  /** Newest loaded messages (oldest first) for reply suggestions. */
+  recent: WAMessage[];
 }) {
   const draftKey = `${session}:${chatId}`;
   const setDraft = useDrafts((s) => s.set);
@@ -1511,6 +1619,9 @@ function Composer({
           }}
         />
       )}
+      {!editing && !text.trim() && (
+        <SmartReplies chatId={chatId} chatName={chatCtx.name} recent={recent} resolveName={resolveName} onPick={(t) => { setText(t); requestAnimationFrame(() => taRef.current?.focus()); }} />
+      )}
       {editing && (
         <div className="flex items-center gap-2 rounded-lg bg-amber-50 dark:bg-amber-900/30 px-3 py-1.5 text-xs">
           <span className="font-semibold text-amber-700 dark:text-amber-300">Editing message</span>
@@ -1569,6 +1680,7 @@ function Composer({
         />
         <AttachMenu disabled={uploading} onPick={pick} />
         <TranslateDraftButton text={text} onResult={(t) => setText(t)} />
+        <WriteAssistButton text={text} onResult={(t) => setText(t)} />
         <EmojiButton
           onPick={(emoji) => {
             const ta = taRef.current;

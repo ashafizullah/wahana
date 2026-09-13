@@ -38,12 +38,13 @@ export function useGroupInfo(session: string, chatId: string) {
 
 /**
  * Name lookup for ids that appear in messages: mentions (`@123…`), LIDs,
- * phone ids. Sources: my own account, chat names, contacts, group participants.
+ * phone ids. Sources: my own account, chat names, contacts, group participants
+ * (only when `chatId` is a group — omit it for a session-wide resolver, e.g. the chat list).
  */
-export function useNameResolver(session: string, chatId: string) {
+export function useNameResolver(session: string, chatId = "") {
   const { data: chats } = useChats(session);
   const { data: contacts } = useContacts(session);
-  const { data: group } = useGroupInfo(session, chatId);
+  const { data: group } = useGroupInfo(session, chatId); // no-op without a group chatId
   const { data: sessions } = useSessions();
   const pushNames = usePushNames((s) => s.names);
   const { data: lids } = useLidTable(session);
