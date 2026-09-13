@@ -26,19 +26,20 @@ export function formatDateDivider(unixSeconds: number) {
 }
 
 /** Display-friendly name for a WhatsApp chat id (strip @c.us / @g.us / @lid). */
-export function displayId(id: string) {
-  const base = id.split("@")[0];
+export function displayId(id: string | null | undefined) {
+  if (!id) return "";
+  const base = id.split("@")[0]!;
   if (id.endsWith("@c.us")) return "+" + base;
   if (id.endsWith("@newsletter")) return "Channel " + base.slice(-6);
   return base;
 }
 
-export function isGroup(id: string) {
-  return id.endsWith("@g.us");
+export function isGroup(id: string | null | undefined) {
+  return !!id && id.endsWith("@g.us");
 }
 
-export function isChannel(id: string) {
-  return id.endsWith("@newsletter");
+export function isChannel(id: string | null | undefined) {
+  return !!id && id.endsWith("@newsletter");
 }
 
 export function initials(name: string) {

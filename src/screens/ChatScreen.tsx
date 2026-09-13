@@ -14,6 +14,13 @@ import { useNameResolver } from "@/realtime/useNames";
 import { QuoteView, type ReplyTo } from "@/components/QuoteView";
 import { ResizeHandle, usePaneWidth } from "@/components/ResizeHandle";
 import { LinkPreviewCard } from "@/components/LinkPreview";
+import { EmojiButton } from "@/components/EmojiPicker";
+import { MessageInfoModal } from "@/components/MessageInfo";
+import { ContactModal } from "@/components/ContactModal";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { confirm } from "@/components/Confirm";
+import { useHidden } from "@/store/hidden";
+import { tombstonesFor, useRevoked } from "@/store/revoked";
 import { bareId, summarize, useReactions } from "@/store/reactions";
 import type { MentionResolver } from "@/lib/waMarkdown";
 import { WaMarkdown, stripWaMarkdown } from "@/lib/waMarkdown";
@@ -52,7 +59,7 @@ export function ChatScreen({ onNeedSetup }: { onNeedSetup: () => void }) {
       <ChatList session={session} selected={selected} onSelect={setSelected} width={listWidth} />
       <ResizeHandle onDrag={(dx) => setListWidth((w) => w + dx)} onReset={() => setListWidth(320)} />
       {selected ? (
-        <Conversation key={selected} session={session} chatId={selected} />
+        <Conversation key={selected} session={session} chatId={selected} onOpenChat={setSelected} />
       ) : (
         <Empty>Select a chat</Empty>
       )}
@@ -86,6 +93,8 @@ function ChatList({
   const save = useSettings((s) => s.save);
   const [q, setQ] = useState("");
   const [newChat, setNewChat] = useState(false);
+  const [rowMenu, setRowMenu] = useState<{ chat: ChatOverview; x: number; y: number } | null>(null);
+  const qc = useQueryClient();
   const [filter, setFilter] = useState<"all" | "unread" | "groups">("all");
   const counts = useUnread((s) => s.counts);
   const lastSeen = useUnread((s) => s.lastSeen);
@@ -160,6 +169,40 @@ function ChatList({
         </div>
       </div>
       {newChat && <NewChatDialog session={session} onPick={onSelect} onClose={() => setNewChat(false)} />}
+      {rowMenu && (
+        <ChatRowMenu
+          chat={rowMenu.chat}
+          pos={rowMenu}
+          onClose={() => setRowMenu(null)}
+          onDelete={async () => {
+            const name = rowMenu.chat.name || displayId(rowMenu.chat.id);
+            const ok = await confirm({ title: `Delete chat with ${name}?`, message: "Removes the conversation and its messages from this WhatsApp account (all your devices). This cannot be undone.", confirmLabel: "Delete chat", danger: true });
+            if (!ok) return;
+            try {
+              await requireClient().deleteChat(session, rowMenu.chat.id);
+              if (selected === rowMenu.chat.id) onSelect("");
+              qc.invalidateQueries({ queryKey: qk.chats(session) });
+            } catch (e) {
+              await confirm({ title: "Couldn't delete chat", message: e instanceof Error ? e.message : String(e), confirmLabel: "OK" });
+            }
+          }}
+          onArchive={async () => {
+            try {
+              await requireClient().archiveChat(session, rowMenu.chat.id);
+              qc.invalidateQueries({ queryKey: qk.chats(session) });
+            } catch (e) {
+              await confirm({ title: "Couldn't archive chat", message: e instanceof Error ? e.message : String(e), confirmLabel: "OK" });
+            }
+          }}
+          onUnread={async () => {
+            try {
+              await requireClient().markUnread(session, rowMenu.chat.id);
+            } catch (e) {
+              await confirm({ title: "Couldn't mark unread", message: e instanceof Error ? e.message : String(e), confirmLabel: "OK" });
+            }
+          }}
+        />
+      )}
       <div ref={listRef} className="flex-1 overflow-y-auto">
         {isLoading && (
           <div className="p-4 text-neutral-400">
@@ -175,7 +218,7 @@ function ChatList({
                 key={c.id}
                 style={{ position: "absolute", top: 0, left: 0, width: "100%", transform: `translateY(${v.start}px)` }}
               >
-                <ChatRow chat={c} session={session} active={c.id === selected} onClick={() => onSelect(c.id)} />
+                <ChatRow chat={c} session={session} active={c.id === selected} onClick={() => onSelect(c.id)} onContextMenu={(x, y) => setRowMenu({ chat: c, x, y })} />
               </div>
             );
           })}
@@ -243,6 +286,15 @@ function SessionPicker({
   );
 }
 
+/** First word of the sender's push name for group previews ("Budi: …"). */
+function senderShort(m: WAMessage) {
+  const d = (m._data ?? {}) as { Info?: { PushName?: string } };
+  const name = d.Info?.PushName?.trim();
+  if (name) return name.split(/\s+/)[0]!;
+  const id = m.participant || m.from;
+  return id ? displayId(id) : "";
+}
+
 /** Short label for body-less messages (media, polls, contacts, locations…). */
 function previewKind(m: WAMessage) {
   const msg = (m._data as { Message?: Record<string, unknown> } | undefined)?.Message ?? {};
@@ -253,9 +305,36 @@ function previewKind(m: WAMessage) {
   if (msg.audioMessage) return "🎤 Voice message";
   if (msg.videoMessage) return "🎬 Video";
   if (msg.imageMessage) return "📷 Photo";
-  if (msg.documentMessage) return "📄 Document";
+  if (msg.documentMessage) return `📄 ${(msg.documentMessage as { fileName?: string }).fileName ?? "Document"}`;
   if (m.hasMedia) return "📎 Media";
   return "";
+}
+
+function ChatRowMenu({ chat, pos, onClose, onDelete, onArchive, onUnread }: { chat: ChatOverview; pos: { x: number; y: number }; onClose: () => void; onDelete: () => void; onArchive: () => void; onUnread: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const onDown = (e: MouseEvent) => ref.current && !ref.current.contains(e.target as Node) && onClose();
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [onClose]);
+  const item = (label: string, fn: () => void, danger = false) => (
+    <button onClick={() => { onClose(); fn(); }} className={cn("w-full px-3 py-1.5 text-left text-sm hover:bg-neutral-100 dark:hover:bg-neutral-800", danger && "text-red-600")}>
+      {label}
+    </button>
+  );
+  return (
+    <div ref={ref} style={{ left: Math.min(pos.x, window.innerWidth - 200), top: Math.min(pos.y, window.innerHeight - 160) }} className="fixed z-50 w-48 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-xl py-1">
+      <div className="px-3 py-1 text-[11px] text-neutral-500 truncate">{chat.name || displayId(chat.id)}</div>
+      {item("Mark as unread", onUnread)}
+      {item("Archive chat", onArchive)}
+      {item("Delete chat…", onDelete, true)}
+    </div>
+  );
 }
 
 function ChatRow({
@@ -263,21 +342,32 @@ function ChatRow({
   session,
   active,
   onClick,
+  onContextMenu,
 }: {
   chat: ChatOverview;
   session: string;
   active: boolean;
   onClick: () => void;
+  onContextMenu: (x: number, y: number) => void;
 }) {
   const name = chat.name || displayId(chat.id);
   const lm = chat.lastMessage;
   const counts = useUnread((s) => s.counts);
   const lastSeen = useUnread((s) => s.lastSeen);
   const unread = unreadFor({ counts, lastSeen }, session, chat.id, lm);
-  const preview = lm ? (lm.body ? stripWaMarkdown(lm.body) : previewKind(lm)) : "";
+  const kindLabel = lm ? previewKind(lm) : "";
+  const body = lm?.body ? stripWaMarkdown(lm.body) : "";
+  // Media with a caption → "📷 caption"; media without → "📷 Photo"; text → text.
+  const content = body && kindLabel ? `${kindLabel.split(" ")[0]} ${body}` : body || kindLabel;
+  const sender = lm && isGroup(chat.id) && !lm.fromMe ? senderShort(lm) : lm?.fromMe && isGroup(chat.id) ? "You" : "";
+  const preview = sender ? `${sender}: ${content}` : content;
   return (
     <button
       onClick={onClick}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        onContextMenu(e.clientX, e.clientY);
+      }}
       className={cn(
         "w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-neutral-100 dark:hover:bg-neutral-800",
         active && "bg-neutral-100 dark:bg-neutral-800",
@@ -309,7 +399,7 @@ function ChatRow({
 
 // ── Conversation ─────────────────────────────────────────────────────────
 
-function Conversation({ session, chatId }: { session: string; chatId: string }) {
+function Conversation({ session, chatId, onOpenChat }: { session: string; chatId: string; onOpenChat: (id: string) => void }) {
   const { data: chats } = useChats(session);
   const chat = chats?.find((c) => c.id === chatId);
   const name = chat?.name || displayId(chatId);
@@ -320,6 +410,10 @@ function Conversation({ session, chatId }: { session: string; chatId: string }) 
   const [editing, setEditing] = useState<WAMessage | null>(null);
   const [menu, setMenu] = useState<{ m: WAMessage; pos: MenuPos } | null>(null);
   const [info, setInfo] = useState(false);
+  const [msgInfo, setMsgInfo] = useState<WAMessage | null>(null);
+  const [contactId, setContactId] = useState<string | null>(null);
+  const readMode = useSettings((s) => s.readReceipts);
+  const [readSentFor, setReadSentFor] = useState<string | null>(null); // id of the last incoming message we've acknowledged manually
   const [search, setSearch] = useState<string | null>(null); // null = closed
   const [highlight, setHighlight] = useState<string | null>(null);
   const prefixes = useMediaPrefixes();
@@ -330,8 +424,40 @@ function Conversation({ session, chatId }: { session: string; chatId: string }) 
   const myIds = useMemo(() => [me?.id, me?.lid, me?.jid].filter((x): x is string => !!x), [me]);
   const presenceText = presenceLabel(presence, chatId, isGroup(chatId), (id) => resolveName(id) ?? displayId(id));
 
-  // Messages arrive newest-first from the API; render oldest-first.
-  const ordered = useMemo(() => [...(messages ?? [])].sort((a, b) => a.timestamp - b.timestamp), [messages]);
+  // Messages arrive newest-first from the API; render oldest-first, minus the ones deleted "for me".
+  const hiddenIds = useHidden((s) => s.ids);
+  const revokedItems = useRevoked((s) => s.items);
+  const ordered = useMemo(() => {
+    const list: (WAMessage & { revoked?: boolean })[] = (messages ?? []).filter((m) => !hiddenIds[m.id]);
+    const stones = tombstonesFor(revokedItems, `${session}:${chatId}`);
+    if (stones.length) {
+      const have = new Map(list.map((m) => [bareId(m.id), m]));
+      const oldest = list.length ? Math.min(...list.map((m) => m.timestamp)) : 0;
+      for (const t of stones) {
+        const existing = have.get(t.id);
+        if (existing) existing.revoked = true;
+        else if (t.timestamp >= oldest) {
+          // Synthesize a placeholder in the loaded range so it keeps its position.
+          list.push({
+            id: `revoked_${chatId}_${t.id}`,
+            timestamp: t.timestamp,
+            from: t.from ?? chatId,
+            to: chatId,
+            fromMe: t.fromMe,
+            participant: t.participant ?? "",
+            body: "",
+            hasMedia: false,
+            ack: 0,
+            ackName: "",
+            source: "app",
+            mediaUrl: "",
+            revoked: true,
+          } as WAMessage & { revoked: boolean });
+        }
+      }
+    }
+    return list.sort((a, b) => a.timestamp - b.timestamp);
+  }, [messages, hiddenIds, revokedItems, session, chatId]);
 
   const [hasMore, setHasMore] = useState(true);
   const [loadingOlder, setLoadingOlder] = useState(false);
@@ -420,7 +546,7 @@ function Conversation({ session, chatId }: { session: string; chatId: string }) 
   }, [session, chatId, setOpen]);
   useEffect(() => {
     markSeen(session, chatId);
-    requireClient().sendSeen(session, chatId).catch(() => {});
+    if (useSettings.getState().readReceipts === "always") requireClient().sendSeen(session, chatId).catch(() => {});
   }, [session, chatId, ordered.length, markSeen]);
 
   const loadOlder = async () => {
@@ -442,7 +568,8 @@ function Conversation({ session, chatId }: { session: string; chatId: string }) 
       }
       pendingPrepend.current = listRef.current?.scrollHeight ?? null;
       qc.setQueryData(qk.messages(session, chatId), (old?: WAMessage[]) => [...(old ?? []), ...fresh]);
-      if (more.length < 60) setHasMore(false);
+      // WAHA applies `limit` before filtering out hidden message types, so a page can be
+      // shorter than `limit` while older messages still exist — only an empty page means the end.
     } finally {
       setLoadingOlder(false);
     }
@@ -468,8 +595,9 @@ function Conversation({ session, chatId }: { session: string; chatId: string }) 
         skipAutoScroll.current = true;
         atBottomRef.current = false;
         qc.setQueryData(qk.messages(session, chatId), (old?: WAMessage[]) => [...fresh.reverse(), ...(old ?? [])]);
+      } else {
+        setHasNewer(false);
       }
-      if (more.length < 60) setHasNewer(false);
     } finally {
       setLoadingNewer(false);
     }
@@ -492,7 +620,7 @@ function Conversation({ session, chatId }: { session: string; chatId: string }) 
       });
       usePushNames.getState().learn(list);
       qc.setQueryData(qk.messages(session, chatId), list);
-      setHasMore(list.length >= 60);
+      setHasMore(list.length > 0);
       setHasNewer(true);
       atBottomRef.current = false;
       initialScrolled.current = false; // scroll to the bottom of the jumped page (≈ the chosen day)
@@ -553,6 +681,28 @@ function Conversation({ session, chatId }: { session: string; chatId: string }) 
     <>
     <div className="flex-1 min-w-0 flex flex-col bg-[#efeae2] dark:bg-neutral-950">
       <header className="h-14 shrink-0 flex items-center gap-3 px-4 bg-white dark:bg-neutral-900 border-b border-neutral-200 dark:border-neutral-800">
+        {readMode === "manual" && (() => {
+          const lastIn = [...ordered].reverse().find((m) => !m.fromMe);
+          const pending = !!lastIn && readSentFor !== lastIn.id;
+          return (
+            <Button
+              variant={pending ? "primary" : "ghost"}
+              size="sm"
+              title={pending ? "Send read receipt (blue ticks) for this chat" : "Read receipt already sent"}
+              disabled={!pending}
+              onClick={async () => {
+                try {
+                  await requireClient().sendSeen(session, chatId);
+                  setReadSentFor(lastIn!.id);
+                } catch (e) {
+                  await confirm({ title: "Couldn't send read receipt", message: e instanceof Error ? e.message : String(e), confirmLabel: "OK" });
+                }
+              }}
+            >
+              <CheckCheck size={16} className={pending ? "" : "text-sky-500"} />
+            </Button>
+          );
+        })()}
         <button className="flex items-center gap-3 min-w-0 flex-1 text-left" onClick={() => setInfo((v) => !v)} title="Chat info">
           <Avatar src={chat?.picture} name={name} size={36} />
           <div className="min-w-0">
@@ -644,17 +794,20 @@ function Conversation({ session, chatId }: { session: string; chatId: string }) 
                   </span>
                 </div>
               )}
-              <Bubble
-                message={m}
-                group={isGroup(chatId)}
-                session={session}
-                chatId={chatId}
-                onReply={() => setReplyTo(m)}
-                onMenu={(pos) => setMenu({ m, pos })}
-                resolveName={resolveName}
-                myIds={myIds}
-                onJump={jumpTo}
-              />
+              <ErrorBoundary inline label="message">
+                <Bubble
+                  message={m}
+                  group={isGroup(chatId)}
+                  session={session}
+                  chatId={chatId}
+                  onReply={() => setReplyTo(m)}
+                  onMenu={(pos) => setMenu({ m, pos })}
+                  resolveName={resolveName}
+                  myIds={myIds}
+                  onJump={jumpTo}
+                  onSender={(id) => setContactId(id)}
+                />
+              </ErrorBoundary>
             </div>
           );
         })}
@@ -683,6 +836,10 @@ function Conversation({ session, chatId }: { session: string; chatId: string }) 
         onClearEdit={() => setEditing(null)}
         resolveName={resolveName}
         myIds={myIds}
+        onEditLast={() => {
+          const last = [...ordered].reverse().find((m) => m.fromMe && m.body && Date.now() / 1000 - m.timestamp < 15 * 60);
+          if (last) setEditing(last);
+        }}
       />
       {menu && (
         <MessageMenu
@@ -693,6 +850,17 @@ function Conversation({ session, chatId }: { session: string; chatId: string }) 
           onClose={() => setMenu(null)}
           onReply={() => setReplyTo(menu.m)}
           onEdit={() => setEditing(menu.m)}
+          onInfo={() => setMsgInfo(menu.m)}
+        />
+      )}
+      {msgInfo && <MessageInfoModal message={msgInfo} chatId={chatId} resolveName={resolveName} onClose={() => setMsgInfo(null)} />}
+      {contactId && (
+        <ContactModal
+          session={session}
+          id={contactId}
+          resolveName={resolveName}
+          onOpenChat={(id) => onOpenChat(id)}
+          onClose={() => setContactId(null)}
         />
       )}
     </div>
@@ -703,7 +871,7 @@ function Conversation({ session, chatId }: { session: string; chatId: string }) 
 
 function senderName(m: WAMessage) {
   const d = (m._data ?? {}) as { Info?: { PushName?: string } };
-  return d.Info?.PushName || displayId(m.participant || m.from);
+  return d.Info?.PushName || displayId(m.participant || m.from) || "Unknown";
 }
 
 function Bubble({
@@ -716,6 +884,7 @@ function Bubble({
   resolveName,
   myIds,
   onJump,
+  onSender,
 }: {
   message: WAMessage;
   group: boolean;
@@ -726,8 +895,23 @@ function Bubble({
   resolveName: MentionResolver;
   myIds: string[];
   onJump: (id: string) => void;
+  onSender: (id: string) => void;
 }) {
   const mine = m.fromMe;
+  const revoked = (m as WAMessage & { revoked?: boolean }).revoked;
+  if (revoked) {
+    return (
+      <div className={cn("flex", mine ? "justify-end" : "justify-start")}>
+        <div className={cn("max-w-[70%] rounded-lg px-3 py-1.5 text-sm italic text-neutral-500 dark:text-neutral-400 border border-dashed", mine ? "border-wa-dark/40 bg-[#d9fdd3]/40 dark:bg-wa-teal/30" : "border-neutral-300 dark:border-neutral-700 bg-white/60 dark:bg-neutral-800/60")}>
+          {group && !mine && (
+            <div className="text-[11px] font-semibold not-italic text-wa-dark dark:text-wa mb-0.5">{resolveName(m.participant || m.from) ?? senderName(m)}</div>
+          )}
+          🚫 {mine ? "You deleted this message" : "This message was deleted"}
+          <div className="text-right text-[10px] not-italic mt-0.5">{formatTime(m.timestamp)}</div>
+        </div>
+      </div>
+    );
+  }
   const sticker = m.hasMedia && !m.body && mediaKind(m) === "sticker";
   const reactionMap = useReactions((s) => s.byMsg[bareId(m.id)]);
   const reactions = summarize(reactionMap, myIds.map((x) => x.split("@")[0]!.split(":")[0]!));
@@ -751,9 +935,13 @@ function Bubble({
         )}
       >
         {group && !mine && (
-          <div className="text-[11px] font-semibold text-wa-dark dark:text-wa mb-0.5">
+          <button
+            onClick={() => onSender(m.participant || m.from)}
+            className="block text-[11px] font-semibold text-wa-dark dark:text-wa mb-0.5 hover:underline text-left"
+            title="View contact"
+          >
             {resolveName(m.participant || m.from) ?? senderName(m)}
-          </div>
+          </button>
         )}
         {m.replyTo && (
           <QuoteView
@@ -790,6 +978,7 @@ function Bubble({
         )}
         {m.body && !m.hasMedia && <LinkPreviewCard message={m} />}
         <div className="flex items-center justify-end gap-1 mt-0.5 text-[10px] text-neutral-500 dark:text-neutral-300/70">
+          {isEdited(m) && <span className="italic">edited</span>}
           {formatTime(m.timestamp)}
           {mine && <AckIcon ack={m.ack} />}
         </div>
@@ -847,6 +1036,13 @@ function PollView({ message: m }: { message: WAMessage }) {
   );
 }
 
+/** WhatsApp marks edits via Info.Edit ("1") or an editedMessage wrapper; our own edits set `edited`. */
+function isEdited(m: WAMessage & { edited?: boolean }) {
+  if (m.edited) return true;
+  const d = m._data as { Info?: { Edit?: string }; Message?: Record<string, unknown> } | undefined;
+  return d?.Info?.Edit === "1" || !!d?.Message?.editedMessage;
+}
+
 function AckIcon({ ack, className }: { ack: number; className?: string }) {
   if (ack <= 0) return <Clock size={12} className={className} />;
   if (ack === 1) return <Check size={12} className={className} />;
@@ -865,6 +1061,7 @@ function Composer({
   onClearEdit,
   resolveName,
   myIds,
+  onEditLast,
 }: {
   session: string;
   chatId: string;
@@ -874,6 +1071,7 @@ function Composer({
   onClearEdit: () => void;
   resolveName: MentionResolver;
   myIds: string[];
+  onEditLast: () => void;
 }) {
   const [text, setText] = useState("");
   const [uploading, setUploading] = useState(false);
@@ -903,6 +1101,7 @@ function Composer({
     }
   };
   const noteTyping = () => {
+    if (!useSettings.getState().sendTyping) return;
     const now = Date.now();
     if (now - typingRef.current.last > 4000) {
       typingRef.current.last = now;
@@ -922,7 +1121,7 @@ function Composer({
       try {
         await requireClient().editMessage(session, chatId, editing.id, t);
         qc.setQueryData(qk.messages(session, chatId), (old?: WAMessage[]) =>
-          old?.map((m) => (m.id === editing.id ? { ...m, body: t } : m)),
+          old?.map((m) => (m.id === editing.id ? { ...m, body: t, edited: true } : m)),
         );
         setText("");
         onClearEdit();
@@ -933,6 +1132,7 @@ function Composer({
     }
     setText("");
     try {
+      receiptBeforeSend();
       await send.mutateAsync({ text: t, replyTo: replyTo?.id });
       onClearReply();
     } catch (e) {
@@ -941,8 +1141,14 @@ function Composer({
     }
   };
 
+  /** "Mark as read only when I reply": send the receipt right before our message goes out. */
+  const receiptBeforeSend = () => {
+    if (useSettings.getState().readReceipts === "on-reply") requireClient().sendSeen(session, chatId).catch(() => {});
+  };
+
   /** Put a freshly sent message into the cache and refresh the chat list. */
   const appendSent = (msg: WAMessage) => {
+    receiptBeforeSend();
     qc.setQueryData(qk.messages(session, chatId), (old?: WAMessage[]) => (old ? [msg, ...old] : old));
     qc.invalidateQueries({ queryKey: qk.chats(session) });
   };
@@ -951,6 +1157,7 @@ function Composer({
     setUploading(true);
     setErr(null);
     try {
+      receiptBeforeSend();
       const c = requireClient();
       const data = await fileToBase64(file);
       const payload = { mimetype: file.type || "application/octet-stream", filename: file.name, data };
@@ -1047,6 +1254,20 @@ function Composer({
           }}
         />
         <AttachMenu disabled={uploading} onPick={pick} />
+        <EmojiButton
+          onPick={(emoji) => {
+            const ta = taRef.current;
+            const start = ta?.selectionStart ?? text.length;
+            const end = ta?.selectionEnd ?? text.length;
+            const next = text.slice(0, start) + emoji + text.slice(end);
+            setText(next);
+            requestAnimationFrame(() => {
+              if (!ta) return;
+              ta.focus();
+              ta.selectionStart = ta.selectionEnd = start + emoji.length;
+            });
+          }}
+        />
         <textarea
           ref={taRef}
           value={text}
@@ -1062,6 +1283,10 @@ function Composer({
             if (e.key === "Escape" && editing) {
               onClearEdit();
               setText("");
+            }
+            if (e.key === "ArrowUp" && !text && !editing) {
+              e.preventDefault();
+              onEditLast();
             }
           }}
           rows={1}

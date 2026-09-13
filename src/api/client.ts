@@ -4,6 +4,7 @@ import type {
   Contact,
   GowsGroup,
   GroupInfo,
+  JoinRequest,
   MeInfo,
   PresenceInfo,
   ServerVersion,
@@ -145,6 +146,40 @@ export class WahaClient {
     return this.get<MeInfo>(`/api/sessions/${enc(session)}/me`);
   }
 
+  // ── My profile ────────────────────────────────────────────────────────
+  myProfile(session: string) {
+    return this.get<{ id: string; name: string; picture: string | null; status?: string | null }>(`/api/${enc(session)}/profile`);
+  }
+  setProfileName(session: string, name: string) {
+    return this.put<void>(`/api/${enc(session)}/profile/name`, { name });
+  }
+  setProfileStatus(session: string, status: string) {
+    return this.put<void>(`/api/${enc(session)}/profile/status`, { status });
+  }
+  setProfilePicture(session: string, file: { mimetype: string; filename: string; data: string }) {
+    return this.put<void>(`/api/${enc(session)}/profile/picture`, { file });
+  }
+  deleteProfilePicture(session: string) {
+    return this.del<void>(`/api/${enc(session)}/profile/picture`);
+  }
+
+  // ── Status (stories) ──────────────────────────────────────────────────
+  statusMessages(session: string, limit = 300) {
+    return this.messages(session, "status@broadcast", { limit, downloadMedia: false });
+  }
+  postTextStatus(session: string, text: string, backgroundColor = "#128c7e", font = 0) {
+    return this.post<unknown>(`/api/${enc(session)}/status/text`, { text, backgroundColor, font });
+  }
+  postImageStatus(session: string, file: { mimetype: string; filename: string; data: string }, caption?: string) {
+    return this.post<unknown>(`/api/${enc(session)}/status/image`, { file, caption });
+  }
+  postVideoStatus(session: string, file: { mimetype: string; filename: string; data: string }, caption?: string) {
+    return this.post<unknown>(`/api/${enc(session)}/status/video`, { file, caption, convert: true });
+  }
+  deleteStatus(session: string, id: string) {
+    return this.post<unknown>(`/api/${enc(session)}/status/delete`, { id });
+  }
+
   // ── Auth ──────────────────────────────────────────────────────────────
   /** Returns PNG bytes of the QR code. */
   qrImage(session: string) {
@@ -232,6 +267,12 @@ export class WahaClient {
   forwardMessage(session: string, toChatId: string, messageId: string) {
     return this.post<WAMessage>("/api/forwardMessage", { session, chatId: toChatId, messageId });
   }
+  deleteChat(session: string, chatId: string) {
+    return this.del<void>(`/api/${enc(session)}/chats/${enc(chatId)}`);
+  }
+  markUnread(session: string, chatId: string) {
+    return this.post<void>(`/api/${enc(session)}/chats/${enc(chatId)}/unread`);
+  }
   archiveChat(session: string, chatId: string) {
     return this.post<void>(`/api/${enc(session)}/chats/${enc(chatId)}/archive`);
   }
@@ -296,8 +337,8 @@ export class WahaClient {
   sendPoll(session: string, chatId: string, name: string, options: string[], multipleAnswers = false) {
     return this.post<WAMessage>("/api/sendPoll", { session, chatId, poll: { name, options, multipleAnswers } });
   }
-  sendSeen(session: string, chatId: string, messageIds?: string[]) {
-    return this.post<void>("/api/sendSeen", { session, chatId, messageIds });
+  sendSeen(session: string, chatId: string, messageIds?: string[], participant?: string) {
+    return this.post<void>("/api/sendSeen", { session, chatId, messageIds, participant });
   }
   react(session: string, messageId: string, reaction: string) {
     return this.put<void>("/api/reaction", { session, messageId, reaction });
@@ -348,6 +389,15 @@ export class WahaClient {
   demoteAdmins(session: string, id: string, ids: string[]) {
     return this.groupParticipants(session, id, "admin/demote", ids);
   }
+  joinRequests(session: string, id: string) {
+    return this.get<JoinRequest[]>(`/api/${enc(session)}/groups/${enc(id)}/participants/join-requests`);
+  }
+  approveJoinRequests(session: string, id: string, ids: string[]) {
+    return this.groupParticipants(session, id, "participants/join-requests/approve", ids);
+  }
+  rejectJoinRequests(session: string, id: string, ids: string[]) {
+    return this.groupParticipants(session, id, "participants/join-requests/reject", ids);
+  }
   setGroupSubject(session: string, id: string, subject: string) {
     return this.put<void>(`/api/${enc(session)}/groups/${enc(id)}/subject`, { subject });
   }
@@ -362,6 +412,17 @@ export class WahaClient {
   }
   leaveGroup(session: string, id: string) {
     return this.post<void>(`/api/${enc(session)}/groups/${enc(id)}/leave`);
+  }
+  /** All known LID → phone mappings (paged). */
+  lids(session: string, limit = 5000, offset = 0) {
+    return this.get<{ lid: string; pn: string | null }[]>(`/api/${enc(session)}/lids`, { limit, offset });
+  }
+  /** Map a LID (linked id) to the phone-number id. */
+  lidToPhone(session: string, lid: string) {
+    return this.get<{ lid: string; pn: string | null }>(`/api/${enc(session)}/lids/${enc(lid)}`);
+  }
+  profilePicture(session: string, contactId: string) {
+    return this.get<{ profilePictureURL: string | null }>("/api/contacts/profile-picture", { session, contactId });
   }
   contactInfo(session: string, contactId: string) {
     return this.get<Contact>("/api/contacts", { session, contactId });

@@ -31,6 +31,10 @@
     "fs:default",
     "fs:allow-write-file",
     "updater:default",
-    "process:default"
+    "process:default",
+    "sql:default",
+    "sql:allow-execute",
+    "sql:allow-select",
+    "sql:allow-load"
   ]
 }

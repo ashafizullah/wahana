@@ -8,13 +8,15 @@ import { useUnread } from "@/store/unread";
 import { useEventLog } from "@/store/eventLog";
 import { usePushNames } from "@/store/pushNames";
 import { useReactions, type ReactionEvent } from "@/store/reactions";
+import { useReceipts, type AckEvent } from "@/store/receipts";
+import { useRevoked } from "@/store/revoked";
 import { messageChatId } from "@/lib/utils";
 import { pushPresence } from "@/realtime/usePresence";
 import type { PresenceInfo } from "@/api/types";
 
 export type SocketState = "idle" | "connecting" | "open" | "closed";
 
-const EVENTS = ["session.status", "message.any", "message.ack", "message.reaction", "message.revoked", "message.edited", "presence.update"];
+const EVENTS = ["session.status", "message.any", "message.ack", "message.ack.group", "message.reaction", "message.revoked", "message.edited", "presence.update"];
 
 /**
  * Keeps a single WebSocket to WAHA's /ws endpoint and pushes events into the
@@ -106,8 +108,14 @@ export function useWahaSocket() {
           if (!m.fromMe && notifRef.current) void notifyIncoming(m);
           break;
         }
+        case "message.ack.group": {
+          const p = e.payload as AckEvent;
+          useReceipts.getState().apply(p, e.timestamp > 1e12 ? e.timestamp : e.timestamp * 1000, true);
+          break;
+        }
         case "message.ack": {
           const p = e.payload as MessageAckPayload;
+          useReceipts.getState().apply(p as AckEvent, e.timestamp > 1e12 ? e.timestamp : e.timestamp * 1000);
           for (const id of new Set([p.from, p.to].filter(Boolean))) {
             qc.setQueryData(qk.messages(e.session, id), (old?: WAMessage[]) =>
               old?.map((x) => (x.id === p.id ? { ...x, ack: p.ack as WAMessage["ack"], ackName: p.ackName } : x)),
@@ -123,7 +131,24 @@ export function useWahaSocket() {
           useReactions.getState().apply(e.payload as ReactionEvent);
           break;
         }
-        case "message.revoked":
+        case "message.revoked": {
+          const p = e.payload as { revokedMessageId?: string; before?: WAMessage | null; after?: WAMessage | null };
+          const ref = p.before ?? p.after;
+          if (ref) {
+            const chatId = messageChatId(ref);
+            useRevoked.getState().add({
+              id: p.revokedMessageId ?? ref.id,
+              chat: `${e.session}:${chatId}`,
+              timestamp: p.before?.timestamp ?? ref.timestamp,
+              fromMe: ref.fromMe,
+              participant: ref.participant,
+              from: ref.from,
+            });
+          }
+          qc.invalidateQueries({ queryKey: ["messages", e.session] });
+          qc.invalidateQueries({ queryKey: qk.chats(e.session) });
+          break;
+        }
         case "message.edited": {
           qc.invalidateQueries({ queryKey: ["messages", e.session] });
           qc.invalidateQueries({ queryKey: qk.chats(e.session) });

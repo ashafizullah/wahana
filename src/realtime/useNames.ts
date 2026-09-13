@@ -5,6 +5,27 @@ import { requireClient, useSettings } from "@/store/settings";
 import { isGroup } from "@/lib/utils";
 import { usePushNames } from "@/store/pushNames";
 
+/** Full LID → phone table from the server, fetched once per session and kept in memory. */
+export function useLidTable(session: string) {
+  const client = useSettings((s) => s.client);
+  return useQuery({
+    queryKey: ["lids", session],
+    queryFn: async () => {
+      const c = requireClient();
+      const map = new Map<string, string>();
+      for (let offset = 0; ; offset += 5000) {
+        const page = await c.lids(session, 5000, offset);
+        for (const { lid, pn } of page) if (pn) map.set(lid.split("@")[0]!, pn.split("@")[0]!);
+        if (page.length < 5000) break;
+      }
+      return map;
+    },
+    enabled: !!client && !!session,
+    staleTime: 60 * 60_000,
+    gcTime: 24 * 60 * 60_000,
+  });
+}
+
 export function useGroupInfo(session: string, chatId: string) {
   const client = useSettings((s) => s.client);
   return useQuery({
@@ -25,6 +46,7 @@ export function useNameResolver(session: string, chatId: string) {
   const { data: group } = useGroupInfo(session, chatId);
   const { data: sessions } = useSessions();
   const pushNames = usePushNames((s) => s.names);
+  const { data: lids } = useLidTable(session);
   const me = sessions?.find((s) => s.name === session)?.me;
 
   const map = useMemo(() => {
@@ -54,24 +76,26 @@ export function useNameResolver(session: string, chatId: string) {
 
   // Second pass: if a LID maps to a phone number that itself has a contact name, prefer the name.
   const resolve = useCallback(
-    (id: string): string | undefined => {
+    (id: string | null | undefined): string | undefined => {
+      if (!id) return undefined;
       const digits = id.split("@")[0]!.split(":")[0]!;
-      const v = map.get(digits);
-      // Real names win; otherwise a harvested push name ("~Name" like WhatsApp); otherwise the phone.
       const isReal = (x?: string) => !!x && !x.startsWith("+") && !x.startsWith("~");
+      const v = map.get(digits);
       if (isReal(v)) return v;
-      if (v?.startsWith("+")) {
-        const byPhone = map.get(v.slice(1));
+      // Phone digits for this id: from the group/contacts map ("+62…") or the server LID table.
+      const phone = v?.startsWith("+") ? v.slice(1) : lids?.get(digits);
+      if (phone) {
+        const byPhone = map.get(phone);
         if (isReal(byPhone)) return byPhone;
-        const pn = pushNames[digits] ?? pushNames[v.slice(1)];
+        const pn = pushNames[digits] ?? pushNames[phone];
         if (pn) return `~${pn}`;
-        return byPhone ?? v;
+        return `+${phone}`;
       }
       const pn = pushNames[digits];
       if (pn) return `~${pn}`;
       return v;
     },
-    [map, pushNames],
+    [map, pushNames, lids],
   );
   return resolve;
 }

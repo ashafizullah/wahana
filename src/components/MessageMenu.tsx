@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Reply, SmilePlus, Pencil, Trash2, Copy, Forward, Pin, Loader2, X, Search } from "lucide-react";
+import { Reply, SmilePlus, Pencil, Trash2, Copy, Forward, Pin, Loader2, X, Search, Info } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { requireClient } from "@/store/settings";
 import { qk, useChats } from "@/api/queries";
@@ -7,6 +7,9 @@ import type { WAMessage } from "@/api/types";
 import { cn, displayId } from "@/lib/utils";
 import { Button, Input, Avatar } from "@/components/ui";
 import { useReactions } from "@/store/reactions";
+import { useHidden } from "@/store/hidden";
+import { useRevoked } from "@/store/revoked";
+import { confirm } from "@/components/Confirm";
 
 const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
 
@@ -24,6 +27,7 @@ export function MessageMenu({
   onClose,
   onReply,
   onEdit,
+  onInfo,
 }: {
   message: WAMessage;
   session: string;
@@ -32,6 +36,7 @@ export function MessageMenu({
   onClose: () => void;
   onReply: () => void;
   onEdit: () => void;
+  onInfo: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const qc = useQueryClient();
@@ -72,9 +77,23 @@ export function MessageMenu({
     }
   };
 
-  const remove = () => {
-    if (!window.confirm("Delete this message?")) return;
-    void run("delete", () => requireClient().deleteMessage(session, chatId, m.id));
+  const remove = async () => {
+    const choices = [
+      ...(m.fromMe ? [{ id: "everyone", label: "Delete for everyone", hint: "Removes it from the chat for all participants (own messages, recent only).", danger: true }] : []),
+      { id: "me", label: "Delete for me", hint: "Hides it in Wahana only; it stays on your phone and for others." },
+    ];
+    const choice = await confirm({ title: "Delete message?", choices });
+    if (!choice) return;
+    if (choice === "everyone") {
+      await run("delete", async () => {
+        await requireClient().deleteMessage(session, chatId, m.id);
+        useRevoked.getState().add({ id: m.id, chat: `${session}:${chatId}`, timestamp: m.timestamp, fromMe: true, participant: m.participant, from: m.from });
+      });
+    }
+    else {
+      useHidden.getState().hide(m.id);
+      onClose();
+    }
   };
 
   const pinned = Boolean((m._data as { Info?: { Pinned?: boolean } } | undefined)?.Info?.Pinned);
@@ -113,6 +132,7 @@ export function MessageMenu({
         ))}
       </div>
       <Item icon={Reply} label="Reply" onClick={() => { onReply(); onClose(); }} />
+      <Item icon={Info} label="Info" onClick={() => { onInfo(); onClose(); }} />
       <Item
         icon={SmilePlus}
         label="Remove reaction"
@@ -145,8 +165,14 @@ export function MessageMenu({
           )
         }
       />
-      {m.fromMe && m.body && !m.hasMedia && <Item icon={Pencil} label="Edit" onClick={() => { onEdit(); onClose(); }} />}
-      {m.fromMe && <Item icon={Trash2} label="Delete for everyone" danger onClick={remove} />}
+      {m.fromMe && m.body && (
+        <Item
+          icon={Pencil}
+          label={Date.now() / 1000 - m.timestamp > 15 * 60 ? "Edit (older than 15 min)" : m.hasMedia ? "Edit caption" : "Edit"}
+          onClick={() => { onEdit(); onClose(); }}
+        />
+      )}
+      <Item icon={Trash2} label="Delete…" danger onClick={() => void remove()} />
       {(busy || err) && (
         <div className="px-3 py-1.5 text-xs text-neutral-500 flex items-center gap-1 selectable">
           {busy ? <Loader2 size={12} className="animate-spin" /> : <span className="text-red-600">{err}</span>}

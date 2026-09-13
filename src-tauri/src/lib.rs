@@ -169,6 +169,19 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(
+            tauri_plugin_sql::Builder::default()
+                .add_migrations(
+                    "sqlite:wahana.db",
+                    vec![tauri_plugin_sql::Migration {
+                        version: 1,
+                        description: "scheduler tables",
+                        sql: include_str!("../migrations/001_scheduler.sql"),
+                        kind: tauri_plugin_sql::MigrationKind::Up,
+                    }],
+                )
+                .build(),
+        )
         .invoke_handler(tauri::generate_handler![
             save_api_key,
             get_api_key,

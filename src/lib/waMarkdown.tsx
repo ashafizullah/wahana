@@ -7,7 +7,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
  * "1. " numbered lists, "> " quotes and clickable URLs.
  */
 /** Resolves a mention id (digits, `@lid` or `@c.us`) to a display name; return undefined to leave as-is. */
-export type MentionResolver = (id: string) => string | undefined;
+export type MentionResolver = (id: string | null | undefined) => string | undefined;
 
 export function WaMarkdown({ text, mentions }: { text: string; mentions?: MentionResolver }) {
   return <>{renderBlocks(text, mentions)}</>;

@@ -60,7 +60,7 @@ export function QuoteView({
   onClick?: () => void;
   className?: string;
 }) {
-  const participant = ("participant" in quote ? quote.participant : null) || ("from" in quote ? quote.from : null) || "";
+  const participant = (("participant" in quote ? quote.participant : null) || ("from" in quote ? quote.from : null) || "") as string;
   const mine = ("fromMe" in quote && quote.fromMe) || myIds.some((id) => id && participant.split("@")[0] === id.split("@")[0]);
   const who = mine ? "You" : resolveName(participant) ?? participant.split("@")[0];
   const { thumb, text, kind } = describeQuoted(quote);

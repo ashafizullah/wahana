@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
-import { Loader2, Play, Square, RotateCw, LogOut, Trash2, Plus, RefreshCw } from "lucide-react";
+import { confirm } from "@/components/Confirm";
+import { Loader2, Play, Square, RotateCw, LogOut, Trash2, Plus, RefreshCw, UserPen } from "lucide-react";
+import { ProfileModal } from "@/components/ProfileModal";
 import { useSessions, useSessionAction, useServerVersion } from "@/api/queries";
 import { useSettings } from "@/store/settings";
 import { Badge, Button, Input, Avatar } from "@/components/ui";
@@ -116,6 +118,7 @@ function SessionCard({
   onAction: (a: "start" | "stop" | "restart" | "logout" | "delete") => void;
 }) {
   const running = s.status !== "STOPPED";
+  const [profile, setProfile] = useState(false);
   return (
     <div
       className={cn(
@@ -138,6 +141,11 @@ function SessionCard({
           )}
         </div>
         <div className="ml-auto flex gap-1">
+          {s.status === "WORKING" && (
+            <Button size="sm" variant="secondary" onClick={() => setProfile(true)} title="Edit my profile">
+              <UserPen size={14} />
+            </Button>
+          )}
           {!active && (
             <Button size="sm" variant="secondary" onClick={onSelect}>
               Use
@@ -162,8 +170,8 @@ function SessionCard({
             size="sm"
             variant="danger"
             disabled={busy}
-            onClick={() => {
-              if (window.confirm(`Delete session "${s.name}"?`)) onAction("delete");
+            onClick={async () => {
+              if (await confirm({ title: `Delete session "${s.name}"?`, danger: true, confirmLabel: "Confirm" })) onAction("delete");
             }}
             title="Delete"
           >
@@ -172,6 +180,7 @@ function SessionCard({
         </div>
       </div>
       {s.status === "SCAN_QR_CODE" && <QrLogin session={s.name} />}
+      {profile && <ProfileModal session={s.name} onClose={() => setProfile(false)} />}
     </div>
   );
 }

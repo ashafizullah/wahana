@@ -31,6 +31,10 @@ export interface Prefs {
   cacheLimitMb: number;
   /** Fetch Open Graph previews for links whose message has no embedded preview. */
   linkPreviews: boolean;
+  /** Send "typing…" presence to the other side while composing. */
+  sendTyping: boolean;
+  /** When to send read receipts (blue ticks): on opening a chat, only when you reply, or never. */
+  readReceipts: "always" | "on-reply" | "manual" | "never";
 }
 
 const DEFAULT_PREFS: Prefs = {
@@ -41,6 +45,8 @@ const DEFAULT_PREFS: Prefs = {
   autoLoadAudio: true,
   cacheLimitMb: 1024,
   linkPreviews: true,
+  sendTyping: true,
+  readReceipts: "always",
 };
 
 interface SettingsState extends Prefs {
@@ -94,6 +100,8 @@ export const useSettings = create<SettingsState>((set, get) => ({
       const v = await s.get<Prefs[typeof k]>(k);
       if (v !== undefined && v !== null) (prefs as Record<string, unknown>)[k] = v;
     }
+    const legacyReceipts = await s.get<boolean>("sendReadReceipts");
+    if (legacyReceipts === false) prefs.readReceipts = "never";
     let profiles = (await s.get<Profile[]>("profiles")) ?? [];
     let active = (await s.get<string>("activeProfile")) ?? "";
 
@@ -118,6 +126,11 @@ export const useSettings = create<SettingsState>((set, get) => ({
     if (!profiles.some((p) => p.id === active)) active = profiles[0]?.id ?? "";
     const prof = profiles.find((p) => p.id === active);
     if (prof && !apiKey) apiKey = await readKey(prof.id);
+    // Dev: every cargo rebuild is a new binary, so macOS may deny keychain access until re-approved.
+    // Fall back to the dev key when the profile points at the dev server.
+    if (import.meta.env.DEV && prof && !apiKey && import.meta.env.VITE_WAHA_API_KEY && prof.baseUrl.replace(/\/+$/, "") === (import.meta.env.VITE_WAHA_BASE_URL ?? "").replace(/\/+$/, "")) {
+      apiKey = import.meta.env.VITE_WAHA_API_KEY;
+    }
 
     set({
       hydrated: true,

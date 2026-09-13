@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { CheckCircle2, XCircle, Loader2, Plug, Image as ImageIcon, Bell, Info, Plus, Trash2, Server, HardDrive, RefreshCw } from "lucide-react";
+import { confirm } from "@/components/Confirm";
+import { CheckCircle2, XCircle, Loader2, Plug, Image as ImageIcon, Bell, Info, Plus, Trash2, Server, HardDrive, RefreshCw, SlidersHorizontal } from "lucide-react";
 import { cacheClear, cacheStats, formatBytes, type CacheStats } from "@/lib/mediaCache";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSettings } from "@/store/settings";
@@ -24,6 +25,9 @@ export function SettingsScreen({ onSaved }: { onSaved: () => void }) {
         </Section>
         <Section icon={HardDrive} title="Storage" description="Downloaded media is kept on disk so it is not fetched again. Oldest files are evicted when the cap is reached.">
           <StorageSection />
+        </Section>
+        <Section icon={SlidersHorizontal} title="Tweaks" description="Behaviour switches. They apply to what Wahana does — your phone follows its own WhatsApp settings.">
+          <TweaksSection />
         </Section>
         <Section icon={Bell} title="Notifications">
           <NotificationsSection />
@@ -152,7 +156,7 @@ function ProfilesSection() {
               className="text-neutral-400 hover:text-red-600"
               title="Remove server"
               onClick={async () => {
-                if (window.confirm(`Remove server "${p.name}"?`)) {
+                if (await confirm({ title: `Remove server "${p.name}"?`, danger: true, confirmLabel: "Confirm" })) {
                   await removeProfile(p.id);
                   qc.clear();
                 }
@@ -268,7 +272,7 @@ function ConnectionSection({ onSaved }: { onSaved: () => void }) {
             variant="ghost"
             className="ml-auto text-red-600"
             onClick={async () => {
-              if (!window.confirm("Remove all servers and keys from this device?")) return;
+              if (!(await confirm({ title: "Remove all servers and keys from this device?", danger: true, confirmLabel: "Confirm" }))) return;
               await settings.clear();
               setBaseUrl("");
               setApiKey("");
@@ -301,12 +305,7 @@ function MediaSection() {
       <Toggle label="Auto-load videos" hint="Videos can be large; off shows a blurred frame with the size." checked={s.autoLoadVideos} onChange={(v) => set({ autoLoadVideos: v })} />
       <Toggle label="Auto-load voice notes & audio" checked={s.autoLoadAudio} onChange={(v) => set({ autoLoadAudio: v })} />
       <p className="text-xs text-neutral-500">Documents are never downloaded automatically — click to open.</p>
-      <Toggle
-        label="Fetch link previews"
-        hint="When a message with a link has no preview from the sender, fetch the page's title/description/image. Off = only sender-provided previews."
-        checked={s.linkPreviews}
-        onChange={(v) => set({ linkPreviews: v })}
-      />
+
     </>
   );
 }
@@ -350,7 +349,7 @@ function StorageSection() {
           className="shrink-0"
           disabled={busy || !stats?.files}
           onClick={async () => {
-            if (!window.confirm("Delete all cached media? They will be downloaded again when viewed.")) return;
+            if (!(await confirm({ title: "Delete all cached media? They will be downloaded again when viewed.", danger: true, confirmLabel: "Confirm" }))) return;
             setBusy(true);
             try {
               await cacheClear();
@@ -381,6 +380,52 @@ function StorageSection() {
         />
         <span className="text-sm text-neutral-500">MB</span>
       </div>
+    </>
+  );
+}
+
+// ── Tweaks ───────────────────────────────────────────────────────────────
+
+function TweaksSection() {
+  const s = useSettings();
+  const qc = useQueryClient();
+  const receiptOptions: { value: typeof s.readReceipts; label: string; hint: string }[] = [
+    { value: "always", label: "When I open the chat", hint: "Blue ticks as soon as the conversation is on screen (WhatsApp default)." },
+    { value: "on-reply", label: "Only when I reply", hint: "Read the chat silently; ticks turn blue the moment you send a message, file or reaction-free reply." },
+    { value: "manual", label: "Manually, with a button", hint: "Nothing is sent when you open a chat. A ✓✓ button in the chat header sends the receipt when you decide." },
+    { value: "never", label: "Never", hint: "Senders keep grey ticks. Status views are not reported either." },
+  ];
+  return (
+    <>
+      <Toggle
+        label="Show typing indicator"
+        hint='Sends "typing…" while you write. Off = they only see the message when it arrives.'
+        checked={s.sendTyping}
+        onChange={(v) => s.save({ sendTyping: v })}
+      />
+      <div>
+        <div className="text-sm mb-1">Read receipts (blue ticks)</div>
+        <div className="space-y-1.5">
+          {receiptOptions.map((o) => (
+            <label key={o.value} className="flex items-start gap-2 cursor-pointer">
+              <input type="radio" name="readReceipts" className="mt-1" checked={s.readReceipts === o.value} onChange={() => s.save({ readReceipts: o.value })} />
+              <span>
+                <span className="block text-sm">{o.label}</span>
+                <span className="block text-xs text-neutral-500">{o.hint}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+      </div>
+      <Toggle
+        label="Fetch link previews"
+        hint="When a link has no preview from the sender, fetch the page's title/description/image yourself (a request to that site). Off = only sender-provided previews."
+        checked={s.linkPreviews}
+        onChange={async (v) => {
+          await s.save({ linkPreviews: v });
+          qc.invalidateQueries({ queryKey: ["messages"] });
+        }}
+      />
     </>
   );
 }

@@ -1,20 +1,28 @@
 import { useEffect, useState } from "react";
-import { MessageSquare, Radio, Settings as SettingsIcon, Loader2, Download, X, Activity } from "lucide-react";
+import { MessageSquare, Radio, Settings as SettingsIcon, Loader2, Download, X, Activity, CircleDashed, CalendarClock } from "lucide-react";
 import { useSettings } from "@/store/settings";
 import { useWahaSocket } from "@/realtime/useWahaSocket";
 import { SettingsScreen } from "@/screens/SettingsScreen";
 import { SessionsScreen } from "@/screens/SessionsScreen";
 import { ChatScreen } from "@/screens/ChatScreen";
 import { EventsScreen } from "@/screens/EventsScreen";
+import { StatusScreen } from "@/screens/StatusScreen";
+import { SchedulerScreen } from "@/screens/SchedulerScreen";
+import { useScheduler } from "@/realtime/useScheduler";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { ConfirmHost } from "@/components/Confirm";
+import { useHidden } from "@/store/hidden";
+import { useRevoked } from "@/store/revoked";
 import { cn } from "@/lib/utils";
 import { totalUnread, useUnread } from "@/store/unread";
 import { useBadge } from "@/realtime/useBadge";
 import { usePushNames } from "@/store/pushNames";
 import { useReactions } from "@/store/reactions";
+import { useReceipts } from "@/store/receipts";
 import { useUpdater } from "@/realtime/useUpdater";
 import { Button } from "@/components/ui";
 
-type Tab = "chats" | "sessions" | "events" | "settings";
+type Tab = "chats" | "status" | "scheduler" | "sessions" | "events" | "settings";
 
 export default function App() {
   const { hydrated, hydrate, client } = useSettings();
@@ -24,16 +32,23 @@ export default function App() {
   const hydrateUnread = useUnread((s) => s.hydrate);
   const hydratePushNames = usePushNames((s) => s.hydrate);
   const hydrateReactions = useReactions((s) => s.hydrate);
+  const hydrateReceipts = useReceipts((s) => s.hydrate);
+  const hydrateHidden = useHidden((s) => s.hydrate);
+  const hydrateRevoked = useRevoked((s) => s.hydrate);
   const unread = totalUnread(unreadCounts);
   useBadge(unread);
   const updater = useUpdater();
+  useScheduler();
 
   useEffect(() => {
     void hydrate();
     void hydrateUnread();
     void hydratePushNames();
     void hydrateReactions();
-  }, [hydrate, hydrateUnread, hydratePushNames, hydrateReactions]);
+    void hydrateReceipts();
+    void hydrateHidden();
+    void hydrateRevoked();
+  }, [hydrate, hydrateUnread, hydratePushNames, hydrateReactions, hydrateReceipts, hydrateHidden, hydrateRevoked]);
 
   useEffect(() => {
     if (hydrated && !client) setTab("settings");
@@ -44,7 +59,7 @@ export default function App() {
     const onKey = (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey;
       if (!mod) return;
-      const tabs: Record<string, Tab> = { "1": "chats", "2": "sessions", "3": "events", "4": "settings" };
+      const tabs: Record<string, Tab> = { "1": "chats", "2": "status", "3": "scheduler", "4": "sessions", "5": "events", "6": "settings" };
       if (tabs[e.key]) {
         e.preventDefault();
         setTab(tabs[e.key]!);
@@ -71,13 +86,16 @@ export default function App() {
 
   const nav: { id: Tab; icon: typeof MessageSquare; label: string }[] = [
     { id: "chats", icon: MessageSquare, label: "Chats (⌘1)" },
-    { id: "sessions", icon: Radio, label: "Sessions (⌘2)" },
-    { id: "events", icon: Activity, label: "Events (⌘3)" },
-    { id: "settings", icon: SettingsIcon, label: "Settings (⌘4)" },
+    { id: "status", icon: CircleDashed, label: "Status (⌘2)" },
+    { id: "scheduler", icon: CalendarClock, label: "Scheduler (⌘3)" },
+    { id: "sessions", icon: Radio, label: "Sessions (⌘4)" },
+    { id: "events", icon: Activity, label: "Events (⌘5)" },
+    { id: "settings", icon: SettingsIcon, label: "Settings (⌘6)" },
   ];
 
   return (
     <div className="h-full flex">
+      <ConfirmHost />
       <aside className="w-16 shrink-0 flex flex-col items-center py-4 gap-2 bg-wa-teal text-white/80">
         {nav.map((n) => (
           <button
@@ -126,10 +144,14 @@ export default function App() {
           </div>
         )}
         <div className="flex-1 min-h-0 flex">
-          {tab === "chats" && <ChatScreen onNeedSetup={() => setTab("settings")} />}
-          {tab === "sessions" && <SessionsScreen />}
-          {tab === "events" && <EventsScreen />}
-          {tab === "settings" && <SettingsScreen onSaved={() => setTab("sessions")} />}
+          <ErrorBoundary key={tab} label={tab}>
+            {tab === "chats" && <ChatScreen onNeedSetup={() => setTab("settings")} />}
+            {tab === "status" && <StatusScreen />}
+            {tab === "scheduler" && <SchedulerScreen />}
+            {tab === "sessions" && <SessionsScreen />}
+            {tab === "events" && <EventsScreen />}
+            {tab === "settings" && <SettingsScreen onSaved={() => setTab("sessions")} />}
+          </ErrorBoundary>
         </div>
       </main>
     </div>

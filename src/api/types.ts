@@ -93,3 +93,12 @@ export interface PresenceInfo {
   id: string;
   presences: { participant: string; lastKnownPresence: PresenceStatus; lastSeen?: number | null }[];
 }
+
+/** Pending membership request (GOWS): `requesterId` is a LID, `timestamp` unix seconds. */
+export interface JoinRequest {
+  requesterId: string;
+  addedById?: string | null;
+  parentGroupId?: string | null;
+  requestMethod?: string | null;
+  timestamp?: number | null;
+}

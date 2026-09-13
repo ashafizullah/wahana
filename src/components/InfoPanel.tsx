@@ -1,14 +1,14 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { X, Loader2, Users, Images, ChevronRight, ChevronLeft } from "lucide-react";
+import { X, Loader2, Images, ChevronRight, ChevronLeft } from "lucide-react";
 import { requireClient } from "@/store/settings";
-import { Avatar, Badge } from "@/components/ui";
+import { Avatar } from "@/components/ui";
 import { displayId, isGroup } from "@/lib/utils";
 import type { ChatOverview } from "@/api/types";
 import { WaMarkdown, type MentionResolver } from "@/lib/waMarkdown";
 import { useNameResolver } from "@/realtime/useNames";
 import { ChatMedia } from "@/components/ChatMedia";
-import { GroupTools, ParticipantList } from "@/components/GroupManage";
+import { GroupTools, ParticipantsRow } from "@/components/GroupManage";
 
 /** Right-hand details panel for the open chat (group participants or contact info). */
 export function InfoPanel({
@@ -75,17 +75,9 @@ export function InfoPanel({
             {groupQ.error && <div className="p-4 text-xs text-red-600 selectable">{(groupQ.error as Error).message}</div>}
             {groupQ.data && (
               <>
-                {groupQ.data.Topic && (
-                  <div className="p-4 border-b border-neutral-100 dark:border-neutral-800 text-sm break-words selectable">
-                    <WaMarkdown text={groupQ.data.Topic} mentions={resolveName} />
-                  </div>
-                )}
-                <GroupTools session={session} chatId={chatId} group={groupQ.data} myIds={myIds} onLeft={onClose} />
-                <div className="px-4 py-2 flex items-center gap-2 text-xs text-neutral-500">
-                  <Users size={12} /> {groupQ.data.Participants?.length ?? groupQ.data.ParticipantCount ?? 0} participants
-                  {groupQ.data.IsAnnounce && <Badge tone="amber">admins only</Badge>}
-                </div>
-                <ParticipantList session={session} chatId={chatId} group={groupQ.data} myIds={myIds} resolveName={resolveName} />
+                {groupQ.data.Topic && <Description text={groupQ.data.Topic} resolveName={resolveName} />}
+                <GroupTools session={session} chatId={chatId} group={groupQ.data} myIds={myIds} resolveName={resolveName} onLeft={onClose} />
+                <ParticipantsRow session={session} chatId={chatId} group={groupQ.data} myIds={myIds} resolveName={resolveName} />
               </>
             )}
           </>
@@ -98,5 +90,23 @@ export function InfoPanel({
         </button>
       )}
     </aside>
+  );
+}
+
+/** Group description clamped to a few lines with a "Read more" toggle. */
+function Description({ text, resolveName }: { text: string; resolveName: MentionResolver }) {
+  const [open, setOpen] = useState(false);
+  const long = text.length > 220 || text.split("\n").length > 4;
+  return (
+    <div className="p-4 border-b border-neutral-100 dark:border-neutral-800 text-sm">
+      <div className={"break-words selectable " + (open || !long ? "" : "line-clamp-4")}>
+        <WaMarkdown text={text} mentions={resolveName} />
+      </div>
+      {long && (
+        <button onClick={() => setOpen((v) => !v)} className="mt-1 text-xs font-medium text-wa-dark dark:text-wa hover:underline">
+          {open ? "Show less" : "Read more"}
+        </button>
+      )}
+    </div>
   );
 }
