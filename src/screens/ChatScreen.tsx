@@ -27,15 +27,17 @@ import { useDrafts } from "@/store/drafts";
 import { MentionPicker, type MentionCandidate } from "@/components/MentionPicker";
 import { QuickReplyPicker } from "@/components/QuickReplyPicker";
 import { useGroupInfo } from "@/realtime/useNames";
-import { useChatPrefs } from "@/store/chatPrefs";
+import { useChatPrefs, type AutoTranslate } from "@/store/chatPrefs";
+const EMPTY_AUTO: AutoTranslate = {};
 import { usePolls } from "@/store/polls";
 import { Pin, BellOff } from "lucide-react";
 import { LabelsDialog, useLabelMap, useLabels } from "@/components/LabelsDialog";
 import { exportChat, type ExportFormat } from "@/lib/exportChat";
-import { MoreVertical, Download, Languages, Sparkles, WandSparkles, Undo2, RefreshCw, Loader2 as Spinner } from "lucide-react";
+import { MoreVertical, Download, Languages, Sparkles, WandSparkles, Undo2, RefreshCw, ScanText, Copy, Loader2 as Spinner } from "lucide-react";
 import { SummaryModal } from "@/components/SummaryModal";
 import { useTranslations } from "@/store/translations";
-import { aiConfigured, translate, langName, rewriteDraft, smartReplies, REWRITE_MODES, type RewriteMode } from "@/lib/ai";
+import { useImageNotes } from "@/store/imageNotes";
+import { aiConfigured, translate, langName, rewriteDraft, smartReplies, REWRITE_MODES, LANGUAGES, type RewriteMode } from "@/lib/ai";
 import { transcript } from "@/lib/exportChat";
 import type { MentionResolver } from "@/lib/waMarkdown";
 import { WaMarkdown, stripWaMarkdown, replaceMentions } from "@/lib/waMarkdown";
@@ -480,6 +482,8 @@ function Conversation({ session, chatId, onOpenChat }: { session: string; chatId
   const [moreOpen, setMoreOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [summary, setSummary] = useState(false);
+  const autoTr = useChatPrefs((s) => s.autoTranslate[`${session}:${chatId}`] ?? EMPTY_AUTO);
+  const setAutoTranslate = useChatPrefs((s) => s.setAutoTranslate);
   // Last-opened time captured before markSeen() below overwrites it, for "since I last read" summaries.
   const seenAtRef = useRef<number | undefined>(undefined);
   const readMode = useSettings((s) => s.readReceipts);
@@ -619,6 +623,22 @@ function Conversation({ session, chatId, onOpenChat }: { session: string; chatId
     setHasMore(true);
   }, [chatId]);
 
+  // Auto-translate incoming: the newest incoming messages that have no translation yet. Each id is tried once per target.
+  const autoTried = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const target = autoTr.in;
+    if (!target || !aiConfigured()) return;
+    const t = useTranslations.getState();
+    const todo = [...ordered].reverse().filter((m) => !m.fromMe && m.body && !(m as WAMessage & { waiting?: boolean }).waiting).slice(0, 20)
+      .filter((m) => !t.byMsg[m.id] && !autoTried.current.has(`${target}:${m.id}`));
+    for (const m of todo) {
+      autoTried.current.add(`${target}:${m.id}`);
+      t.set(m.id, { target, loading: true });
+      translate(m.body, target, m.id)
+        .then((text) => useTranslations.getState().set(m.id, { target, text }))
+        .catch((e) => useTranslations.getState().set(m.id, { target, error: e instanceof Error ? e.message : String(e) }));
+    }
+  }, [ordered, autoTr.in]);
   const setOpen = useUnread((s) => s.setOpen);
   const markSeen = useUnread((s) => s.markSeen);
   useEffect(() => {
@@ -833,6 +853,34 @@ function Conversation({ session, chatId, onOpenChat }: { session: string; chatId
               >
                 <Sparkles size={14} /> Summarize with AI
               </button>
+              {aiConfigured() && (
+                <div className="px-3 py-1.5 space-y-1.5">
+                  <div className="flex items-center gap-1 text-[11px] text-neutral-500"><Languages size={12} /> Auto-translate (this chat)</div>
+                  <label className="flex items-center gap-2 text-xs">
+                    <span className="w-24 shrink-0 text-neutral-500">Incoming →</span>
+                    <select
+                      value={autoTr.in ?? ""}
+                      onChange={(e) => setAutoTranslate(`${session}:${chatId}`, { in: e.target.value || undefined })}
+                      className="flex-1 min-w-0 rounded-md border border-neutral-300 dark:border-neutral-700 bg-transparent px-1.5 py-0.5 text-xs outline-none"
+                    >
+                      <option value="">Off</option>
+                      {LANGUAGES.map(([c, n]) => <option key={c} value={c}>{n}</option>)}
+                    </select>
+                  </label>
+                  <label className="flex items-center gap-2 text-xs">
+                    <span className="w-24 shrink-0 text-neutral-500">My messages →</span>
+                    <select
+                      value={autoTr.out ?? ""}
+                      onChange={(e) => setAutoTranslate(`${session}:${chatId}`, { out: e.target.value || undefined })}
+                      className="flex-1 min-w-0 rounded-md border border-neutral-300 dark:border-neutral-700 bg-transparent px-1.5 py-0.5 text-xs outline-none"
+                    >
+                      <option value="">Off (send as typed)</option>
+                      {LANGUAGES.map(([c, n]) => <option key={c} value={c}>{n}</option>)}
+                    </select>
+                  </label>
+                  <div className="text-[10px] text-neutral-400">Incoming: shown under each new message. Outgoing: your draft is translated right before sending.</div>
+                </div>
+              )}
               <div className="my-1 border-t border-neutral-200 dark:border-neutral-800" />
               <div className="px-3 py-1 text-[11px] text-neutral-500">Export loaded messages ({ordered.length})</div>
               {(["txt", "html", "json"] as ExportFormat[]).map((f) => (
@@ -1128,6 +1176,7 @@ function Bubble({
           </div>
         )}
         <TranslationView id={m.id} />
+        <ImageNoteView id={m.id} />
         {m.body && !m.hasMedia && <LinkPreviewCard message={m} />}
         <div className="flex items-center justify-end gap-1 mt-0.5 text-[10px] text-neutral-500 dark:text-neutral-300/70">
           {isEdited(m) && <span className="italic">edited</span>}
@@ -1170,6 +1219,25 @@ function TranslationView({ id }: { id: string }) {
       {t.loading && <span className="flex items-center gap-1 opacity-70"><Spinner size={10} className="animate-spin" /> translating…</span>}
       {t.error && <span className="text-red-600 selectable">{t.error}</span>}
       {t.text && <div className="whitespace-pre-wrap break-words selectable">{t.text}</div>}
+    </div>
+  );
+}
+
+/** AI description / OCR result under an image bubble. */
+function ImageNoteView({ id }: { id: string }) {
+  const n = useImageNotes((s) => s.byMsg[id]);
+  const clear = useImageNotes((s) => s.clear);
+  if (!n) return null;
+  return (
+    <div className="mt-1 rounded-md border-l-2 border-violet-400 bg-violet-50/70 dark:bg-violet-900/20 px-2 py-1 text-xs">
+      <div className="flex items-center gap-1 text-[10px] text-violet-700 dark:text-violet-300 mb-0.5">
+        {n.kind === "ocr" ? <ScanText size={10} /> : <Sparkles size={10} />} {n.kind === "ocr" ? "Extracted text" : "Description"}
+        {n.text && <button className="ml-auto opacity-60 hover:opacity-100" onClick={() => void navigator.clipboard.writeText(n.text!)} title="Copy"><Copy size={10} /></button>}
+        <button className={cn("opacity-60 hover:opacity-100", !n.text && "ml-auto")} onClick={() => clear(id)} title="Hide"><X size={10} /></button>
+      </div>
+      {n.loading && <span className="flex items-center gap-1 opacity-70"><Spinner size={10} className="animate-spin" /> {n.kind === "ocr" ? "reading text…" : "looking at the image…"}</span>}
+      {n.error && <span className="text-red-600 selectable">{n.error}</span>}
+      {n.text && <div className="whitespace-pre-wrap break-words selectable">{n.text}</div>}
     </div>
   );
 }
@@ -1426,6 +1494,8 @@ function Composer({
     setDraft(draftKey, v);
   };
   const [uploading, setUploading] = useState(false);
+  const [translating, setTranslating] = useState(false);
+  const autoOut = useChatPrefs((s) => s.autoTranslate[`${session}:${chatId}`]?.out); // NB: chatPrefs keys are session:chatId
   const [dialog, setDialog] = useState<AttachKind | null>(null);
   const [mention, setMention] = useState<{ start: number; query: string } | null>(null);
   const [slash, setSlash] = useState<string | null>(null); // "/query" at the start of the composer
@@ -1508,8 +1578,17 @@ function Composer({
     setText("");
     try {
       receiptBeforeSend();
-      const mentions = [...t.matchAll(/@(\d{6,20})/g)].map((x) => chipTable.get(x[1]!)?.id ?? mentionIds.current.get(x[1]!)).filter((x): x is string => !!x);
-      await send.mutateAsync({ text: t, replyTo: replyTo?.id, mentions: [...new Set(mentions)] });
+      let out = t;
+      if (autoOut && aiConfigured()) {
+        setTranslating(true);
+        try {
+          out = (await translate(t, autoOut)) || t;
+        } finally {
+          setTranslating(false);
+        }
+      }
+      const mentions = [...out.matchAll(/@(\d{6,20})/g)].map((x) => chipTable.get(x[1]!)?.id ?? mentionIds.current.get(x[1]!)).filter((x): x is string => !!x);
+      await send.mutateAsync({ text: out, replyTo: replyTo?.id, mentions: [...new Set(mentions)] });
       onClearReply();
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -1741,8 +1820,8 @@ function Composer({
             el.style.height = Math.min(el.scrollHeight, 160) + "px";
           }}
         />
-        <Button onClick={submit} disabled={!text.trim() || send.isPending} title="Send">
-          {send.isPending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+        <Button onClick={submit} disabled={!text.trim() || send.isPending || translating} title={autoOut ? `Send (translated to ${langName(autoOut)})` : "Send"}>
+          {send.isPending || translating ? <Loader2 size={16} className="animate-spin" /> : autoOut ? <Languages size={16} /> : <Send size={16} />}
         </Button>
       </div>
     </div>

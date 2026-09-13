@@ -18,7 +18,7 @@ export interface Backup {
   activeProfile: string;
   /** Only when the user opted in — plain text. */
   secrets?: Record<string, string>;
-  chatPrefs: { pinned: Record<string, number>; muted: Record<string, 1>; archived: Record<string, 1> };
+  chatPrefs: { pinned: Record<string, number>; muted: Record<string, 1>; archived: Record<string, 1>; autoTranslate?: Record<string, { in?: string; out?: string }> };
   quickReplies: QuickReply[];
   schedules: Omit<Schedule, "media_b64">[];
 }
@@ -47,6 +47,7 @@ export async function exportBackup(includeSecrets: boolean): Promise<string | nu
       pinned: (await chatPrefsStore.get("pinned")) ?? {},
       muted: (await chatPrefsStore.get("muted")) ?? {},
       archived: (await chatPrefsStore.get("archived")) ?? {},
+      autoTranslate: (await chatPrefsStore.get("autoTranslate")) ?? {},
     },
     quickReplies: await d.select<QuickReply[]>("SELECT * FROM quick_replies"),
     schedules: await d.select<Omit<Schedule, "media_b64">[]>(
@@ -108,6 +109,7 @@ export async function restoreBackup(b: Backup, opts: RestoreOptions) {
     await cp.set("pinned", b.chatPrefs.pinned ?? {});
     await cp.set("muted", b.chatPrefs.muted ?? {});
     await cp.set("archived", b.chatPrefs.archived ?? {});
+    await cp.set("autoTranslate", b.chatPrefs.autoTranslate ?? {});
   }
   const d = await db();
   if (opts.quickReplies && b.quickReplies) {

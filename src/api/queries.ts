@@ -37,7 +37,17 @@ export function useChats(session: string) {
   const client = useSettings((s) => s.client);
   return useQuery({
     queryKey: qk.chats(session),
-    queryFn: () => requireClient().chatsOverview(session, 100),
+    queryFn: async () => {
+      const c = requireClient();
+      // The overview has no name/picture for newsletters; fill them from the followed-channels list (best effort).
+      const [chats, channels] = await Promise.all([c.chatsOverview(session, 100), c.channels(session).catch(() => [])]);
+      if (!channels.length) return chats;
+      const byId = new Map(channels.map((ch) => [ch.id, ch]));
+      return chats.map((chat) => {
+        const ch = chat.id.endsWith("@newsletter") ? byId.get(chat.id) : undefined;
+        return ch ? { ...chat, name: chat.name || ch.name, picture: chat.picture || ch.picture || ch.preview || null } : chat;
+      });
+    },
     enabled: !!client && !!session,
     staleTime: 10_000,
   });

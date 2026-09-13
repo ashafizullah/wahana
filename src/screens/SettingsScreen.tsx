@@ -525,16 +525,18 @@ function AiSection() {
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <Label>Translate incoming messages to</Label>
+          <Label>My language</Label>
           <select value={s.aiTranslateTo} onChange={(e) => s.save({ aiTranslateTo: e.target.value })} className="w-full rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-2 text-sm outline-none">
             {LANGUAGES.map(([c, n]) => <option key={c} value={c}>{n}</option>)}
           </select>
+          <p className="text-[11px] text-neutral-500 mt-1">The language you read in. Incoming messages are translated into it; summaries and image descriptions are written in it.</p>
         </div>
         <div>
-          <Label>Translate my drafts to (🌐 in composer)</Label>
+          <Label>Target language</Label>
           <select value={s.aiComposeTo} onChange={(e) => s.save({ aiComposeTo: e.target.value })} className="w-full rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-2 text-sm outline-none">
             {LANGUAGES.map(([c, n]) => <option key={c} value={c}>{n}</option>)}
           </select>
+          <p className="text-[11px] text-neutral-500 mt-1">The language the other side reads. The 🌐 button in the composer translates your draft into it. Per-chat overrides: chat menu ⋮ → Auto-translate.</p>
         </div>
       </div>
       <div>

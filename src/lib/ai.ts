@@ -169,3 +169,75 @@ Return exactly 3 suggestions as a JSON array of strings and nothing else. Each s
   }
   return raw.split("\n").map((l) => l.replace(/^\s*(?:[-*\d.)]+\s*)?/, "").trim()).filter(Boolean).slice(0, 3);
 }
+
+/** Vision completion: system + text + one image (base64) → text. Uses the main model (vision-capable), never the fast one. */
+export async function completeWithImage(system: string, user: string, image: { data: string; mediaType: string }, opts: { maxTokens?: number } = {}): Promise<string> {
+  const c = config();
+  if (!c.apiKey) throw new Error("AI API key is not set (Settings → AI).");
+  const maxTokens = opts.maxTokens ?? 2048;
+  system = personaPreamble() + system;
+
+  if (c.provider === "anthropic") {
+    const client = new Anthropic({
+      apiKey: c.apiKey,
+      baseURL: c.baseUrl.trim() || undefined,
+      fetch: tauriFetch as unknown as typeof fetch,
+      dangerouslyAllowBrowser: true,
+      maxRetries: 1,
+    });
+    const res = await client.messages.create({
+      model: c.model,
+      max_tokens: maxTokens,
+      system,
+      messages: [{
+        role: "user",
+        content: [
+          { type: "image", source: { type: "base64", media_type: image.mediaType as "image/jpeg" | "image/png" | "image/gif" | "image/webp", data: image.data } },
+          { type: "text", text: user },
+        ],
+      }],
+      output_config: { effort: "low" },
+    });
+    if (res.stop_reason === "refusal") throw new Error("The model declined this request.");
+    return res.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("").trim();
+  }
+
+  const base = c.baseUrl.replace(/\/+$/, "");
+  const url = /\/chat\/completions$/.test(base) ? base : `${base}/chat/completions`;
+  const res = await tauriFetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${c.apiKey}` },
+    body: JSON.stringify({
+      model: c.model,
+      max_tokens: maxTokens,
+      temperature: 0.2,
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: [{ type: "image_url", image_url: { url: `data:${image.mediaType};base64,${image.data}` } }, { type: "text", text: user }] },
+      ],
+    }),
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    let msg = `${res.status} ${res.statusText}`;
+    try {
+      const j = JSON.parse(text) as { error?: { message?: string } | string; message?: string };
+      msg = (typeof j.error === "string" ? j.error : j.error?.message) ?? j.message ?? msg;
+    } catch {
+      /* keep */
+    }
+    throw new Error(msg);
+  }
+  const j = JSON.parse(text) as { choices?: { message?: { content?: string | { text?: string }[] } }[] };
+  const content = j.choices?.[0]?.message?.content;
+  return (typeof content === "string" ? content : (content ?? []).map((p) => p.text ?? "").join("")).trim();
+}
+
+/** Describe an image or extract its text. `language` = output language for descriptions (OCR keeps the source text as-is). */
+export function analyzeImage(image: { data: string; mediaType: string }, kind: "describe" | "ocr", language: string, caption?: string) {
+  const system = kind === "ocr"
+    ? "Extract all text from the image exactly as written, preserving line breaks, numbers, and layout order (top to bottom, left to right). Output only the text — no commentary. If the image contains no readable text, reply with exactly: (no text found)"
+    : `Describe this image from a WhatsApp chat in ${langName(language)}: what it shows, any people/objects/scene, and any visible text (quote it). Be concise (2–5 sentences); if it is a screenshot, receipt, invoice or document, summarize its key content and figures instead.`;
+  const user = caption ? `The sender's caption: "${caption}"` : kind === "ocr" ? "Extract the text." : "Describe the image.";
+  return completeWithImage(system, user, image, { maxTokens: 2048 });
+}

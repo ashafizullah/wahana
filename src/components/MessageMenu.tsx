@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { Reply, SmilePlus, Pencil, Trash2, Copy, Forward, Pin, Loader2, X, Search, Info, Languages } from "lucide-react";
-import { aiConfigured, translate, langName, LANGUAGES } from "@/lib/ai";
+import { Reply, SmilePlus, Pencil, Trash2, Copy, Forward, Pin, Loader2, X, Search, Info, Languages, ScanText, ImageIcon } from "lucide-react";
+import { aiConfigured, translate, langName, LANGUAGES, analyzeImage } from "@/lib/ai";
 import { useTranslations } from "@/store/translations";
+import { useImageNotes, type ImageNoteKind } from "@/store/imageNotes";
+import { loadMessageMedia } from "@/lib/mediaCache";
+import { mediaKind } from "@/store/settings";
 import { useSettings } from "@/store/settings";
 import { useQueryClient } from "@tanstack/react-query";
 import { requireClient } from "@/store/settings";
@@ -56,6 +59,25 @@ export function MessageMenu({
       .then((text) => t.set(m.id, { target, text }))
       .catch((e) => t.set(m.id, { target, error: e instanceof Error ? e.message : String(e) }));
   };
+
+  const runImage = (kind: ImageNoteKind) => {
+    onClose();
+    const notes = useImageNotes.getState();
+    notes.set(m.id, { kind, loading: true });
+    (async () => {
+      const { blob, mimetype } = await loadMessageMedia(requireClient(), session, chatId, m);
+      const data = await new Promise<string>((res, rej) => {
+        const r = new FileReader();
+        r.onload = () => res((r.result as string).split(",")[1] ?? "");
+        r.onerror = () => rej(r.error);
+        r.readAsDataURL(blob);
+      });
+      return analyzeImage({ data, mediaType: mimetype.split(";")[0]! }, kind, useSettings.getState().aiTranslateTo, m.body || undefined);
+    })()
+      .then((text) => notes.set(m.id, { kind, text }))
+      .catch((e) => notes.set(m.id, { kind, error: e instanceof Error ? e.message : String(e) }));
+  };
+  const isImage = m.hasMedia && mediaKind(m) === "image";
 
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
@@ -164,6 +186,12 @@ export function MessageMenu({
             </div>
           )}
         </div>
+      )}
+      {isImage && aiConfigured() && (
+        <>
+          <Item icon={ImageIcon} label="Describe image (AI)" onClick={() => runImage("describe")} />
+          <Item icon={ScanText} label="Extract text (OCR)" onClick={() => runImage("ocr")} />
+        </>
       )}
       <Item
         icon={SmilePlus}
