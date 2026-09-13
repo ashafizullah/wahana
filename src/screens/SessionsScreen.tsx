@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { confirm } from "@/components/Confirm";
-import { Loader2, Play, Square, RotateCw, LogOut, Trash2, Plus, RefreshCw, UserPen } from "lucide-react";
+import { Loader2, Play, Square, RotateCw, LogOut, Trash2, Plus, RefreshCw, UserPen, Webhook } from "lucide-react";
 import { ProfileModal } from "@/components/ProfileModal";
+import { WebhooksModal } from "@/components/WebhooksModal";
 import { useSessions, useSessionAction, useServerVersion } from "@/api/queries";
 import { useSettings } from "@/store/settings";
 import { Badge, Button, Input, Avatar } from "@/components/ui";
@@ -119,6 +120,8 @@ function SessionCard({
 }) {
   const running = s.status !== "STOPPED";
   const [profile, setProfile] = useState(false);
+  const [webhooks, setWebhooks] = useState(false);
+  const hookCount = s.config?.webhooks?.length ?? 0;
   return (
     <div
       className={cn(
@@ -146,6 +149,9 @@ function SessionCard({
               <UserPen size={14} />
             </Button>
           )}
+          <Button size="sm" variant="secondary" onClick={() => setWebhooks(true)} title={`Webhooks (${hookCount})`}>
+            <Webhook size={14} />{hookCount > 0 && <span className="text-[10px]">{hookCount}</span>}
+          </Button>
           {!active && (
             <Button size="sm" variant="secondary" onClick={onSelect}>
               Use
@@ -181,6 +187,7 @@ function SessionCard({
       </div>
       {s.status === "SCAN_QR_CODE" && <QrLogin session={s.name} />}
       {profile && <ProfileModal session={s.name} onClose={() => setProfile(false)} />}
+      {webhooks && <WebhooksModal session={s} onClose={() => setWebhooks(false)} />}
     </div>
   );
 }

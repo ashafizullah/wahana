@@ -20,6 +20,9 @@ export interface Contact {
 }
 export type GroupInfo = Schemas["GroupInfo"];
 export type Label = Schemas["Label"];
+export type Channel = Schemas["Channel"];
+export type SessionConfig = Schemas["SessionConfig"];
+export type WebhookConfig = Schemas["WebhookConfig"];
 export interface ServerVersion {
   version: string;
   engine: string;
@@ -77,6 +80,7 @@ export interface GowsGroup {
   GroupCreated?: string;
   IsAnnounce?: boolean;
   IsLocked?: boolean;
+  IsJoinApprovalRequired?: boolean;
   ParticipantCount?: number;
   Participants?: {
     JID: string;

@@ -173,12 +173,20 @@ pub fn run() {
             tauri_plugin_sql::Builder::default()
                 .add_migrations(
                     "sqlite:wahana.db",
-                    vec![tauri_plugin_sql::Migration {
-                        version: 1,
-                        description: "scheduler tables",
-                        sql: include_str!("../migrations/001_scheduler.sql"),
-                        kind: tauri_plugin_sql::MigrationKind::Up,
-                    }],
+                    vec![
+                        tauri_plugin_sql::Migration {
+                            version: 1,
+                            description: "scheduler tables",
+                            sql: include_str!("../migrations/001_scheduler.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                        tauri_plugin_sql::Migration {
+                            version: 2,
+                            description: "quick replies and broadcasts",
+                            sql: include_str!("../migrations/002_quick_replies_broadcasts.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                    ],
                 )
                 .build(),
         )

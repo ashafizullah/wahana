@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { confirm } from "@/components/Confirm";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, Loader2, Plus, Trash2, X, Type, Image as ImageIcon, RefreshCw, Pause, Play } from "lucide-react";
+import { ChevronLeft, ChevronRight, Loader2, Plus, Trash2, X, Type, Image as ImageIcon, RefreshCw, Pause, Play, CheckCheck } from "lucide-react";
 import { useStatusSeen } from "@/store/statusSeen";
 import { requireClient, useSettings } from "@/store/settings";
 import { useNameResolver } from "@/realtime/useNames";
@@ -127,7 +127,8 @@ function StoryViewer({ session, name, stories, mine, onDeleted }: { session: str
   const client = useSettings((s) => s.client);
   const seen = useStatusSeen((s) => s.seen);
   const mark = useStatusSeen((s) => s.mark);
-  const sendReceipts = useSettings((s) => s.readReceipts !== "never");
+  const readMode = useSettings((s) => s.readReceipts);
+  const [reported, setReported] = useState<Record<string, boolean>>({}); // story id → receipt sent (manual mode)
   // Start at the oldest unseen update; if everything was seen, replay from the beginning.
   const [i, setI] = useState(() => {
     const idx = stories.findIndex((st) => !seen[st.m.id]);
@@ -142,14 +143,19 @@ function StoryViewer({ session, name, stories, mine, onDeleted }: { session: str
   const videoRef = useRef<HTMLVideoElement>(null);
   const story = stories[Math.min(i, stories.length - 1)]!;
 
-  // Mark as viewed locally and tell WhatsApp (the sender sees you in "viewed by").
+  const reportView = (st: Story) => {
+    const participant = st.m.participant || st.m.from;
+    return requireClient()
+      .sendSeen(session, STATUS_CHAT, [st.m.id], participant)
+      .then(() => setReported((r) => ({ ...r, [st.m.id]: true })))
+      .catch(() => {});
+  };
+
+  // Mark as viewed locally; tell WhatsApp (the sender sees you in "viewed by") unless the tweak says manual/never.
   useEffect(() => {
     if (mine || seen[story.m.id]) return;
     mark(story.m.id);
-    if (sendReceipts) {
-      const participant = story.m.participant || story.m.from;
-      requireClient().sendSeen(session, STATUS_CHAT, [story.m.id], participant).catch(() => {});
-    }
+    if (readMode === "always" || readMode === "on-reply") void reportView(story);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [story.m.id]);
 
@@ -226,6 +232,16 @@ function StoryViewer({ session, name, stories, mine, onDeleted }: { session: str
           <div className="font-medium truncate">{name}</div>
           <div className="text-xs text-white/60">{new Date(story.m.timestamp * 1000).toLocaleString([], { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })} · {i + 1}/{stories.length}</div>
         </div>
+        {!mine && readMode === "manual" && (
+          <button
+            onClick={() => reportView(story)}
+            disabled={!!reported[story.m.id]}
+            className={cn("flex items-center gap-1 rounded-full px-2.5 py-1 text-xs", reported[story.m.id] ? "text-sky-400" : "bg-wa text-wa-teal hover:bg-wa/90")}
+            title={reported[story.m.id] ? "Marked as viewed" : "Let the sender know you viewed this status"}
+          >
+            <CheckCheck size={14} /> {reported[story.m.id] ? "Viewed" : "Mark viewed"}
+          </button>
+        )}
         <button onClick={() => setPaused((p) => !p)} className="text-white/70 hover:text-white" title={paused ? "Play" : "Pause"}>
           {paused ? <Play size={16} /> : <Pause size={16} />}
         </button>

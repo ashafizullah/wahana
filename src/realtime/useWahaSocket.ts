@@ -10,13 +10,16 @@ import { usePushNames } from "@/store/pushNames";
 import { useReactions, type ReactionEvent } from "@/store/reactions";
 import { useReceipts, type AckEvent } from "@/store/receipts";
 import { useRevoked } from "@/store/revoked";
+import { usePolls, type PollVoteEvent } from "@/store/polls";
+import { useChatPrefs } from "@/store/chatPrefs";
+import { useCalls, type CallEvent } from "@/store/calls";
 import { messageChatId } from "@/lib/utils";
 import { pushPresence } from "@/realtime/usePresence";
 import type { PresenceInfo } from "@/api/types";
 
 export type SocketState = "idle" | "connecting" | "open" | "closed";
 
-const EVENTS = ["session.status", "message.any", "message.ack", "message.ack.group", "message.reaction", "message.revoked", "message.edited", "presence.update"];
+const EVENTS = ["session.status", "message.any", "message.waiting", "message.ack", "message.ack.group", "message.reaction", "message.revoked", "message.edited", "presence.update", "engine.event", "poll.vote", "chat.archive", "call.received", "call.accepted", "call.rejected"];
 
 /**
  * Keeps a single WebSocket to WAHA's /ws endpoint and pushes events into the
@@ -72,6 +75,26 @@ export function useWahaSocket() {
     };
 
     const handle = (e: WahaEvent) => {
+      // Raw engine events are only used to detect undecryptable messages; keep receipts out of the log.
+      if (e.event === "engine.event") {
+        const p = e.payload as { event?: string; data?: { Info?: { Chat?: string; Sender?: string; SenderAlt?: string; ID?: string; Timestamp?: string; IsFromMe?: boolean } } };
+        if (p.event === "events.UndecryptableMessage" && p.data?.Info) {
+          useEventLog.getState().push(e);
+          const i = p.data.Info;
+          let chat = i.Chat ?? "";
+          if (chat.endsWith("@lid") && i.SenderAlt) chat = i.SenderAlt.replace(/:\d+/, "").replace(/@s\.whatsapp\.net$/, "@c.us");
+          useRevoked.getState().add({
+            kind: "waiting",
+            id: i.ID ?? "",
+            chat: `${e.session}:${chat}`,
+            timestamp: i.Timestamp ? Math.floor(new Date(i.Timestamp).getTime() / 1000) : Math.floor(Date.now() / 1000),
+            fromMe: !!i.IsFromMe,
+            participant: i.Sender?.replace(/:\d+@/, "@") ?? null,
+            from: chat,
+          });
+        }
+        return;
+      }
       useEventLog.getState().push(e);
       switch (e.event) {
         case "session.status": {
@@ -97,6 +120,7 @@ export function useWahaSocket() {
             if (match) chatId = match.id;
           }
           if (!m.fromMe) useUnread.getState().incoming(e.session, chatId);
+          useRevoked.getState().remove(`${e.session}:${chatId}`, m.id);
           for (const id of new Set([chatId, m.from, m.to].filter(Boolean))) {
             qc.setQueryData(qk.messages(e.session, id), (old?: WAMessage[]) => {
               if (!old) return old;
@@ -105,7 +129,7 @@ export function useWahaSocket() {
             });
           }
           qc.invalidateQueries({ queryKey: qk.chats(e.session) });
-          if (!m.fromMe && notifRef.current) void notifyIncoming(m);
+          if (!m.fromMe && notifRef.current && !useChatPrefs.getState().muted[`${e.session}:${chatId}`]) void notifyIncoming(m);
           break;
         }
         case "message.ack.group": {
@@ -121,6 +145,22 @@ export function useWahaSocket() {
               old?.map((x) => (x.id === p.id ? { ...x, ack: p.ack as WAMessage["ack"], ackName: p.ackName } : x)),
             );
           }
+          break;
+        }
+        case "poll.vote": {
+          usePolls.getState().apply(e.payload as PollVoteEvent);
+          break;
+        }
+        case "chat.archive": {
+          const p = e.payload as { id: string; archived: boolean };
+          useChatPrefs.getState().toggle("archived", `${e.session}:${p.id}`, p.archived);
+          qc.invalidateQueries({ queryKey: qk.chats(e.session) });
+          break;
+        }
+        case "call.received":
+        case "call.accepted":
+        case "call.rejected": {
+          useCalls.getState().apply(e.session, e.event, e.payload as CallEvent);
           break;
         }
         case "presence.update": {

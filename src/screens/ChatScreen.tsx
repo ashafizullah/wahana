@@ -22,6 +22,16 @@ import { confirm } from "@/components/Confirm";
 import { useHidden } from "@/store/hidden";
 import { tombstonesFor, useRevoked } from "@/store/revoked";
 import { bareId, summarize, useReactions } from "@/store/reactions";
+import { useDrafts } from "@/store/drafts";
+import { MentionPicker, type MentionCandidate } from "@/components/MentionPicker";
+import { QuickReplyPicker } from "@/components/QuickReplyPicker";
+import { useGroupInfo } from "@/realtime/useNames";
+import { useChatPrefs } from "@/store/chatPrefs";
+import { usePolls } from "@/store/polls";
+import { Pin, BellOff } from "lucide-react";
+import { LabelsDialog, useLabelMap, useLabels } from "@/components/LabelsDialog";
+import { exportChat, type ExportFormat } from "@/lib/exportChat";
+import { MoreVertical, Download } from "lucide-react";
 import type { MentionResolver } from "@/lib/waMarkdown";
 import { WaMarkdown, stripWaMarkdown } from "@/lib/waMarkdown";
 import type { ChatOverview, WAMessage } from "@/api/types";
@@ -95,7 +105,15 @@ function ChatList({
   const [newChat, setNewChat] = useState(false);
   const [rowMenu, setRowMenu] = useState<{ chat: ChatOverview; x: number; y: number } | null>(null);
   const qc = useQueryClient();
-  const [filter, setFilter] = useState<"all" | "unread" | "groups">("all");
+  const [filter, setFilter] = useState<"all" | "unread" | "groups" | "archived">("all");
+  const pinned = useChatPrefs((s) => s.pinned);
+  const muted = useChatPrefs((s) => s.muted);
+  const archived = useChatPrefs((s) => s.archived);
+  const togglePref = useChatPrefs((s) => s.toggle);
+  const { data: labels } = useLabels(session);
+  const { data: labelMap } = useLabelMap(session);
+  const [labelFilter, setLabelFilter] = useState<string>("");
+  const [labelsFor, setLabelsFor] = useState<ChatOverview | null>(null);
   const counts = useUnread((s) => s.counts);
   const lastSeen = useUnread((s) => s.lastSeen);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -110,13 +128,17 @@ function ChatList({
 
   const chats = useMemo(() => {
     let list = (data ?? []).filter((c) => c.id !== "status@broadcast");
+    const key = (c: ChatOverview) => `${session}:${c.id}`;
+    if (filter === "archived") list = list.filter((c) => archived[key(c)]);
+    else list = list.filter((c) => !archived[key(c)]);
     if (filter === "groups") list = list.filter((c) => isGroup(c.id));
     if (filter === "unread") list = list.filter((c) => unreadFor({ counts, lastSeen }, session, c.id, c.lastMessage) > 0);
+    if (labelFilter) list = list.filter((c) => labelMap?.[c.id]?.includes(labelFilter));
     const term = q.trim().toLowerCase();
-    return term
-      ? list.filter((c) => (c.name ?? "").toLowerCase().includes(term) || c.id.includes(term))
-      : list;
-  }, [data, q, filter, counts, lastSeen, session]);
+    if (term) list = list.filter((c) => (c.name ?? "").toLowerCase().includes(term) || c.id.includes(term));
+    // Pinned chats float to the top (most recently pinned first).
+    return [...list].sort((a, b) => (pinned[key(b)] ?? 0) - (pinned[key(a)] ?? 0));
+  }, [data, q, filter, counts, lastSeen, session, pinned, archived, labelFilter, labelMap]);
   const listRef = useRef<HTMLDivElement>(null);
   const virtualizer = useVirtualizer({
     count: chats.length,
@@ -153,8 +175,14 @@ function ChatList({
             <SquarePen size={16} />
           </Button>
         </div>
-        <div className="flex gap-1.5">
-          {(["all", "unread", "groups"] as const).map((f) => (
+        <div className="flex gap-1.5 items-center">
+          {labels && labels.length > 0 && (
+            <select value={labelFilter} onChange={(e) => setLabelFilter(e.target.value)} className="rounded-full bg-neutral-100 dark:bg-neutral-800 px-2 py-0.5 text-[11px] outline-none max-w-[110px]" title="Filter by label">
+              <option value="">All labels</option>
+              {labels.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+            </select>
+          )}
+          {(["all", "unread", "groups", "archived"] as const).map((f) => (
             <button
               key={f}
               onClick={() => setFilter(f)}
@@ -169,6 +197,7 @@ function ChatList({
         </div>
       </div>
       {newChat && <NewChatDialog session={session} onPick={onSelect} onClose={() => setNewChat(false)} />}
+      {labelsFor && <LabelsDialog session={session} chatId={labelsFor.id} chatName={labelsFor.name || displayId(labelsFor.id)} onClose={() => setLabelsFor(null)} />}
       {rowMenu && (
         <ChatRowMenu
           chat={rowMenu.chat}
@@ -186,12 +215,22 @@ function ChatList({
               await confirm({ title: "Couldn't delete chat", message: e instanceof Error ? e.message : String(e), confirmLabel: "OK" });
             }
           }}
+          pinned={!!pinned[`${session}:${rowMenu.chat.id}`]}
+          muted={!!muted[`${session}:${rowMenu.chat.id}`]}
+          archived={!!archived[`${session}:${rowMenu.chat.id}`]}
+          onPin={() => togglePref("pinned", `${session}:${rowMenu.chat.id}`)}
+          onLabels={() => setLabelsFor(rowMenu.chat)}
+          onMute={() => togglePref("muted", `${session}:${rowMenu.chat.id}`)}
           onArchive={async () => {
+            const key = `${session}:${rowMenu.chat.id}`;
+            const wasArchived = !!archived[key];
             try {
-              await requireClient().archiveChat(session, rowMenu.chat.id);
+              if (wasArchived) await requireClient().unarchiveChat(session, rowMenu.chat.id);
+              else await requireClient().archiveChat(session, rowMenu.chat.id);
+              togglePref("archived", key, !wasArchived);
               qc.invalidateQueries({ queryKey: qk.chats(session) });
             } catch (e) {
-              await confirm({ title: "Couldn't archive chat", message: e instanceof Error ? e.message : String(e), confirmLabel: "OK" });
+              await confirm({ title: wasArchived ? "Couldn't unarchive chat" : "Couldn't archive chat", message: e instanceof Error ? e.message : String(e), confirmLabel: "OK" });
             }
           }}
           onUnread={async () => {
@@ -310,7 +349,7 @@ function previewKind(m: WAMessage) {
   return "";
 }
 
-function ChatRowMenu({ chat, pos, onClose, onDelete, onArchive, onUnread }: { chat: ChatOverview; pos: { x: number; y: number }; onClose: () => void; onDelete: () => void; onArchive: () => void; onUnread: () => void }) {
+function ChatRowMenu({ chat, pos, onClose, onDelete, onArchive, onUnread, onPin, onMute, onLabels, pinned, muted, archived }: { chat: ChatOverview; pos: { x: number; y: number }; onClose: () => void; onDelete: () => void; onArchive: () => void; onUnread: () => void; onPin: () => void; onMute: () => void; onLabels: () => void; pinned: boolean; muted: boolean; archived: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const onDown = (e: MouseEvent) => ref.current && !ref.current.contains(e.target as Node) && onClose();
@@ -328,10 +367,13 @@ function ChatRowMenu({ chat, pos, onClose, onDelete, onArchive, onUnread }: { ch
     </button>
   );
   return (
-    <div ref={ref} style={{ left: Math.min(pos.x, window.innerWidth - 200), top: Math.min(pos.y, window.innerHeight - 160) }} className="fixed z-50 w-48 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-xl py-1">
+    <div ref={ref} style={{ left: Math.min(pos.x, window.innerWidth - 200), top: Math.min(pos.y, window.innerHeight - 220) }} className="fixed z-50 w-52 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-xl py-1">
       <div className="px-3 py-1 text-[11px] text-neutral-500 truncate">{chat.name || displayId(chat.id)}</div>
+      {item(pinned ? "Unpin" : "Pin to top", onPin)}
+      {item(muted ? "Unmute notifications" : "Mute notifications", onMute)}
+      {item("Labels…", onLabels)}
       {item("Mark as unread", onUnread)}
-      {item("Archive chat", onArchive)}
+      {item(archived ? "Unarchive chat" : "Archive chat", onArchive)}
       {item("Delete chat…", onDelete, true)}
     </div>
   );
@@ -355,6 +397,11 @@ function ChatRow({
   const counts = useUnread((s) => s.counts);
   const lastSeen = useUnread((s) => s.lastSeen);
   const unread = unreadFor({ counts, lastSeen }, session, chat.id, lm);
+  const isPinned = useChatPrefs((s) => !!s.pinned[`${session}:${chat.id}`]);
+  const isMuted = useChatPrefs((s) => !!s.muted[`${session}:${chat.id}`]);
+  const { data: allLabels } = useLabels(session);
+  const { data: lmap } = useLabelMap(session);
+  const chatLabels = (lmap?.[chat.id] ?? []).map((id) => allLabels?.find((l) => l.id === id)).filter((x): x is NonNullable<typeof x> => !!x);
   const kindLabel = lm ? previewKind(lm) : "";
   const body = lm?.body ? stripWaMarkdown(lm.body) : "";
   // Media with a caption → "📷 caption"; media without → "📷 Photo"; text → text.
@@ -379,7 +426,12 @@ function ChatRow({
           {isGroup(chat.id) && <Users size={12} className="text-neutral-400 shrink-0" />}
           {isChannel(chat.id) && <Megaphone size={12} className="text-neutral-400 shrink-0" />}
           <span className="font-medium truncate">{name}</span>
-          {lm && <span className="ml-auto text-[11px] text-neutral-400 shrink-0">{formatTime(lm.timestamp)}</span>}
+          <span className="ml-auto flex items-center gap-1 shrink-0">
+            {chatLabels.slice(0, 3).map((l) => <span key={l.id} title={l.name} className="w-2 h-2 rounded-full" style={{ background: l.colorHex || "#999" }} />)}
+            {isMuted && <BellOff size={11} className="text-neutral-400" />}
+            {isPinned && <Pin size={11} className="text-neutral-400" />}
+            {lm && <span className="text-[11px] text-neutral-400">{formatTime(lm.timestamp)}</span>}
+          </span>
         </div>
         <div className="flex items-center gap-2">
           <div className={cn("text-xs truncate flex-1", unread ? "text-neutral-800 dark:text-neutral-100 font-medium" : "text-neutral-500")}>
@@ -412,6 +464,8 @@ function Conversation({ session, chatId, onOpenChat }: { session: string; chatId
   const [info, setInfo] = useState(false);
   const [msgInfo, setMsgInfo] = useState<WAMessage | null>(null);
   const [contactId, setContactId] = useState<string | null>(null);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const readMode = useSettings((s) => s.readReceipts);
   const [readSentFor, setReadSentFor] = useState<string | null>(null); // id of the last incoming message we've acknowledged manually
   const [search, setSearch] = useState<string | null>(null); // null = closed
@@ -428,15 +482,18 @@ function Conversation({ session, chatId, onOpenChat }: { session: string; chatId
   const hiddenIds = useHidden((s) => s.ids);
   const revokedItems = useRevoked((s) => s.items);
   const ordered = useMemo(() => {
-    const list: (WAMessage & { revoked?: boolean })[] = (messages ?? []).filter((m) => !hiddenIds[m.id]);
+    const list: (WAMessage & { revoked?: boolean; waiting?: boolean })[] = (messages ?? []).filter((m) => !hiddenIds[m.id]);
     const stones = tombstonesFor(revokedItems, `${session}:${chatId}`);
     if (stones.length) {
       const have = new Map(list.map((m) => [bareId(m.id), m]));
       const oldest = list.length ? Math.min(...list.map((m) => m.timestamp)) : 0;
       for (const t of stones) {
         const existing = have.get(t.id);
-        if (existing) existing.revoked = true;
-        else if (t.timestamp >= oldest) {
+        if (existing) {
+          if ((t.kind ?? "revoked") === "revoked") existing.revoked = true;
+          continue; // the real message arrived → no "waiting" placeholder needed
+        }
+        if (t.timestamp >= oldest) {
           // Synthesize a placeholder in the loaded range so it keeps its position.
           list.push({
             id: `revoked_${chatId}_${t.id}`,
@@ -451,8 +508,9 @@ function Conversation({ session, chatId, onOpenChat }: { session: string; chatId
             ackName: "",
             source: "app",
             mediaUrl: "",
-            revoked: true,
-          } as WAMessage & { revoked: boolean });
+            revoked: (t.kind ?? "revoked") === "revoked",
+            waiting: t.kind === "waiting",
+          } as WAMessage & { revoked: boolean; waiting: boolean });
         }
       }
     }
@@ -736,6 +794,36 @@ function Conversation({ session, chatId, onOpenChat }: { session: string; chatId
         <Button variant="ghost" size="sm" onClick={() => setInfo((v) => !v)} title="Info">
           <Info size={16} />
         </Button>
+        <div className="relative">
+          <Button variant="ghost" size="sm" onClick={() => setMoreOpen((v) => !v)} title="More"><MoreVertical size={16} /></Button>
+          {moreOpen && (
+            <div className="absolute right-0 top-full mt-1 z-30 w-56 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-xl py-1 text-sm" onMouseLeave={() => setMoreOpen(false)}>
+              <div className="px-3 py-1 text-[11px] text-neutral-500">Export loaded messages ({ordered.length})</div>
+              {(["txt", "html", "json"] as ExportFormat[]).map((f) => (
+                <button
+                  key={f}
+                  disabled={exporting}
+                  onClick={async () => {
+                    setMoreOpen(false);
+                    setExporting(true);
+                    try {
+                      const p = await exportChat(name, ordered.filter((m) => !(m as WAMessage & { waiting?: boolean }).waiting), f, resolveName);
+                      if (p) await confirm({ title: "Exported", message: p, confirmLabel: "OK" });
+                    } catch (e) {
+                      await confirm({ title: "Export failed", message: e instanceof Error ? e.message : String(e), confirmLabel: "OK" });
+                    } finally {
+                      setExporting(false);
+                    }
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                >
+                  <Download size={14} /> Export as .{f}
+                </button>
+              ))}
+              <div className="px-3 py-1 text-[10px] text-neutral-400">Scroll up first to include older messages.</div>
+            </div>
+          )}
+        </div>
       </header>
       {search !== null && (
         <div className="shrink-0 bg-white dark:bg-neutral-900 border-b border-neutral-200 dark:border-neutral-800 px-4 py-2 space-y-1">
@@ -898,7 +986,20 @@ function Bubble({
   onSender: (id: string) => void;
 }) {
   const mine = m.fromMe;
-  const revoked = (m as WAMessage & { revoked?: boolean }).revoked;
+  const { revoked, waiting } = m as WAMessage & { revoked?: boolean; waiting?: boolean };
+  if (waiting) {
+    return (
+      <div className={cn("flex", mine ? "justify-end" : "justify-start")}>
+        <div className="max-w-[70%] rounded-lg px-3 py-1.5 text-sm italic text-neutral-500 dark:text-neutral-400 border border-dashed border-amber-400/60 bg-amber-50/60 dark:bg-amber-900/20" title="WhatsApp could not deliver the encryption key for this message to this session yet. It is retried automatically; the sender's phone has to be online.">
+          {group && !mine && (
+            <div className="text-[11px] font-semibold not-italic text-wa-dark dark:text-wa mb-0.5">{resolveName(m.participant || m.from) ?? senderName(m)}</div>
+          )}
+          ⏳ Waiting for this message. This may take a while.
+          <div className="text-right text-[10px] not-italic mt-0.5">{formatTime(m.timestamp)}</div>
+        </div>
+      </div>
+    );
+  }
   if (revoked) {
     return (
       <div className={cn("flex", mine ? "justify-end" : "justify-start")}>
@@ -970,7 +1071,7 @@ function Bubble({
           </a>
         )}
         {m.vCards?.map((v, i) => <VCardView key={i} vcard={v} />)}
-        <PollView message={m} />
+        <PollView message={m} session={session} chatId={chatId} />
         {m.body && (
           <div className="break-words">
             <WaMarkdown text={m.body} mentions={resolveName} />
@@ -1019,19 +1120,61 @@ function VCardView({ vcard }: { vcard: string }) {
   );
 }
 
-function PollView({ message: m }: { message: WAMessage }) {
+function PollView({ message: m, session, chatId }: { message: WAMessage; session: string; chatId: string }) {
   const msg = (m._data as { Message?: Record<string, { name?: string; options?: { optionName: string }[]; selectableOptionsCount?: number }> } | undefined)?.Message;
   const poll = msg?.pollCreationMessageV3 ?? msg?.pollCreationMessage ?? msg?.pollCreationMessageV2;
+  const votes = usePolls((s) => s.byPoll[bareId(m.id)]);
+  const setOwn = usePolls((s) => s.setOwn);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
   if (!poll) return null;
+  const multiple = poll.selectableOptionsCount === 0;
+  const mine = votes?.me ?? [];
+  const tally = new Map<string, number>();
+  for (const opts of Object.values(votes ?? {})) for (const o of opts) tally.set(o, (tally.get(o) ?? 0) + 1);
+  const total = Object.keys(votes ?? {}).length;
+
+  const vote = async (option: string) => {
+    const next = multiple ? (mine.includes(option) ? mine.filter((x) => x !== option) : [...mine, option]) : mine.includes(option) ? [] : [option];
+    setBusy(true);
+    setErr(null);
+    try {
+      await requireClient().votePoll(session, chatId, m.id, next);
+      setOwn(m.id, next);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
-    <div className="my-1 space-y-1">
+    <div className="my-1 space-y-1 min-w-[200px]">
       <div className="font-medium">📊 {poll.name}</div>
-      {poll.options?.map((o, i) => (
-        <div key={i} className="rounded-md bg-black/5 dark:bg-white/10 px-2 py-1 text-xs">
-          {o.optionName}
-        </div>
-      ))}
-      <div className="text-[10px] opacity-60">{poll.selectableOptionsCount === 0 ? "Multiple answers" : "Single answer"}</div>
+      {poll.options?.map((o, i) => {
+        const n = tally.get(o.optionName) ?? 0;
+        const pct = total ? Math.round((n / total) * 100) : 0;
+        const chosen = mine.includes(o.optionName);
+        return (
+          <button
+            key={i}
+            disabled={busy}
+            onClick={() => vote(o.optionName)}
+            className={cn("relative w-full overflow-hidden rounded-md bg-black/5 dark:bg-white/10 px-2 py-1 text-xs text-left", chosen && "ring-1 ring-wa-dark")}
+          >
+            <span className="absolute inset-y-0 left-0 bg-wa/30" style={{ width: `${pct}%` }} />
+            <span className="relative flex items-center gap-1.5">
+              <span className={cn("w-3 h-3 rounded-full border", chosen ? "bg-wa-dark border-wa-dark" : "border-neutral-400")} />
+              <span className="flex-1">{o.optionName}</span>
+              <span className="opacity-70">{n}</span>
+            </span>
+          </button>
+        );
+      })}
+      <div className="text-[10px] opacity-60">
+        {total} vote{total === 1 ? "" : "s"} · {multiple ? "multiple answers" : "single answer"} · counted from live events
+      </div>
+      {err && <div className="text-[10px] text-red-600 selectable">{err}</div>}
     </div>
   );
 }
@@ -1073,9 +1216,39 @@ function Composer({
   myIds: string[];
   onEditLast: () => void;
 }) {
-  const [text, setText] = useState("");
+  const draftKey = `${session}:${chatId}`;
+  const setDraft = useDrafts((s) => s.set);
+  const [text, setTextRaw] = useState(() => useDrafts.getState().drafts[draftKey] ?? "");
+  const setText = (v: string) => {
+    setTextRaw(v);
+    setDraft(draftKey, v);
+  };
   const [uploading, setUploading] = useState(false);
   const [dialog, setDialog] = useState<AttachKind | null>(null);
+  const [mention, setMention] = useState<{ start: number; query: string } | null>(null);
+  const [slash, setSlash] = useState<string | null>(null); // "/query" at the start of the composer
+  const { data: chatsForCtx } = useChats(session);
+  const chatCtx = useMemo(() => {
+    const c = chatsForCtx?.find((x) => x.id === chatId);
+    return { name: c?.name ?? displayId(chatId), phone: chatId.endsWith("@c.us") ? `+${chatId.split("@")[0]}` : "" };
+  }, [chatsForCtx, chatId]);
+  const mentionIds = useRef<Map<string, string>>(new Map()); // "@phone" in text → id
+  const { data: groupInfo } = useGroupInfo(session, chatId);
+  const mentionCandidates = useMemo<MentionCandidate[]>(() => {
+    if (!isGroup(chatId)) return [];
+    return (groupInfo?.Participants ?? [])
+      .map((p) => {
+        const phone = p.PhoneNumber?.split("@")[0] ?? "";
+        if (!phone) return null;
+        return { id: `${phone}@c.us`, phone, name: resolveName(p.JID) ?? resolveName(`${phone}@c.us`) ?? p.DisplayName ?? `+${phone}` };
+      })
+      .filter((x): x is MentionCandidate => !!x)
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [groupInfo, chatId, resolveName]);
+
+  const chipTable = useMemo(() => new Map(mentionCandidates.map((c) => [c.phone, c])), [mentionCandidates]);
+  const draggingRef = useRef(0);
+  const [dragging, setDragging] = useState(false);
   const [fileAccept, setFileAccept] = useState<string | undefined>(undefined);
   const [err, setErr] = useState<string | null>(null);
   const send = useSendText(session, chatId);
@@ -1133,7 +1306,8 @@ function Composer({
     setText("");
     try {
       receiptBeforeSend();
-      await send.mutateAsync({ text: t, replyTo: replyTo?.id });
+      const mentions = [...t.matchAll(/@(\d{6,20})/g)].map((x) => chipTable.get(x[1]!)?.id ?? mentionIds.current.get(x[1]!)).filter((x): x is string => !!x);
+      await send.mutateAsync({ text: t, replyTo: replyTo?.id, mentions: [...new Set(mentions)] });
       onClearReply();
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -1196,7 +1370,53 @@ function Composer({
     });
 
   return (
-    <div className="shrink-0 bg-white dark:bg-neutral-900 border-t border-neutral-200 dark:border-neutral-800 p-3 space-y-2">
+    <div
+      className={cn("relative shrink-0 bg-white dark:bg-neutral-900 border-t border-neutral-200 dark:border-neutral-800 p-3 space-y-2", dragging && "ring-2 ring-inset ring-wa-dark")}
+      onDragEnter={(e) => { e.preventDefault(); draggingRef.current++; setDragging(true); }}
+      onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; }}
+      onDragLeave={() => { draggingRef.current--; if (draggingRef.current <= 0) { draggingRef.current = 0; setDragging(false); } }}
+      onDrop={(e) => {
+        e.preventDefault();
+        draggingRef.current = 0;
+        setDragging(false);
+        const f = [...e.dataTransfer.files][0];
+        if (f) void attach(f);
+      }}
+    >
+      {dragging && <div className="absolute inset-0 grid place-items-center bg-white/80 dark:bg-neutral-900/80 text-sm font-medium text-wa-dark z-10 pointer-events-none">Drop to send</div>}
+      {slash !== null && (
+        <QuickReplyPicker
+          query={slash}
+          ctx={chatCtx}
+          onClose={() => setSlash(null)}
+          onPick={(t) => {
+            setText(t);
+            setSlash(null);
+            requestAnimationFrame(() => taRef.current?.focus());
+          }}
+        />
+      )}
+      {mention && (
+        <MentionPicker
+          query={mention.query}
+          candidates={mentionCandidates}
+          onClose={() => setMention(null)}
+          onPick={(c) => {
+            const before = text.slice(0, mention.start);
+            const after = text.slice(mention.start + 1 + mention.query.length);
+            const inserted = `@${c.phone} `;
+            mentionIds.current.set(c.phone, c.id);
+            setText(before + inserted + after);
+            setMention(null);
+            requestAnimationFrame(() => {
+              const ta = taRef.current;
+              if (!ta) return;
+              ta.focus();
+              ta.selectionStart = ta.selectionEnd = before.length + inserted.length;
+            });
+          }}
+        />
+      )}
       {editing && (
         <div className="flex items-center gap-2 rounded-lg bg-amber-50 dark:bg-amber-900/30 px-3 py-1.5 text-xs">
           <span className="font-semibold text-amber-700 dark:text-amber-300">Editing message</span>
@@ -1272,8 +1492,23 @@ function Composer({
           ref={taRef}
           value={text}
           onChange={(e) => {
-            setText(e.target.value);
-            if (e.target.value) noteTyping();
+            const v = e.target.value;
+            setText(v);
+            if (v) noteTyping();
+            // "@query" right before the caret → open the mention picker (groups only)
+            const caret = e.target.selectionStart ?? v.length;
+            const before = v.slice(0, caret);
+            const m = before.match(/(?:^|\s)@([^\s@]*)$/);
+            setMention(m && mentionCandidates.length ? { start: caret - m[1]!.length - 1, query: m[1]! } : null);
+            const sl = v.match(/^\/(\S*)$/);
+            setSlash(sl ? sl[1]! : null);
+          }}
+          onPaste={(e) => {
+            const f = [...e.clipboardData.files][0];
+            if (f) {
+              e.preventDefault();
+              void attach(f);
+            }
           }}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {

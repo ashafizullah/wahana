@@ -14,6 +14,8 @@ const store = () => (storePromise ??= load(STORE_FILE, { autoSave: true, default
 let flush: ReturnType<typeof setTimeout> | undefined;
 
 export interface Tombstone {
+  /** "revoked" = deleted for everyone; "waiting" = could not be decrypted yet (WhatsApp "Waiting for this message"). */
+  kind?: "revoked" | "waiting";
   id: string; // bare message id
   chat: string; // session:chatId
   timestamp: number; // original send time (unix s) when known, else revoke time
@@ -27,6 +29,7 @@ interface State {
   items: Record<string, Tombstone>; // key: chat + ":" + id
   hydrate: () => Promise<void>;
   add: (t: Omit<Tombstone, "at" | "id"> & { id: string }) => void;
+  remove: (chat: string, id: string) => void;
 }
 
 export const useRevoked = create<State>((set, get) => ({
@@ -35,10 +38,22 @@ export const useRevoked = create<State>((set, get) => ({
     const s = await store();
     set({ items: (await s.get<Record<string, Tombstone>>("items")) ?? {} });
   },
+  remove(chat, id) {
+    const key = `${chat}:${bareId(id)}`;
+    if (!get().items[key]) return;
+    set((st) => {
+      const items = { ...st.items };
+      delete items[key];
+      return { items };
+    });
+    clearTimeout(flush);
+    flush = setTimeout(() => void store().then((s) => s.set("items", get().items)), 1000);
+  },
   add(t) {
     const id = bareId(t.id);
     const key = `${t.chat}:${id}`;
-    if (get().items[key]) return;
+    const cur = get().items[key];
+    if (cur && (cur.kind ?? "revoked") === (t.kind ?? "revoked")) return;
     set((st) => {
       const items = { ...st.items, [key]: { ...t, id, at: Math.floor(Date.now() / 1000) } };
       const keys = Object.keys(items);

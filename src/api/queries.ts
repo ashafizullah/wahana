@@ -89,8 +89,8 @@ export function useContacts(session: string) {
 export function useSendText(session: string, chatId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ text, replyTo }: { text: string; replyTo?: string }) =>
-      requireClient().sendText(session, chatId, text, replyTo),
+    mutationFn: ({ text, replyTo, mentions }: { text: string; replyTo?: string; mentions?: string[] }) =>
+      requireClient().sendText(session, chatId, text, replyTo, mentions),
     onSuccess: (msg) => {
       qc.setQueryData(qk.messages(session, chatId), (old?: WAMessage[]) =>
         old && !old.some((m) => m.id === msg.id) ? [msg, ...old] : old,

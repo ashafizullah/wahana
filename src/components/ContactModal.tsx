@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { X, MessageSquare, Copy, Check, Phone } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { X, MessageSquare, Copy, Check, Phone, Ban, UserPlus, Loader2 } from "lucide-react";
+import { Input } from "@/components/ui";
+import { confirm } from "@/components/Confirm";
 import { requireClient } from "@/store/settings";
 import { Avatar, Button } from "@/components/ui";
 import type { MentionResolver } from "@/lib/waMarkdown";
@@ -21,6 +23,12 @@ export function ContactModal({
   onClose: () => void;
 }) {
   const [copied, setCopied] = useState(false);
+  const qc = useQueryClient();
+  const [saving, setSaving] = useState(false);
+  const [first, setFirst] = useState("");
+  const [last, setLast] = useState("");
+  const [busy, setBusy] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     document.addEventListener("keydown", onKey);
@@ -83,13 +91,57 @@ export function ContactModal({
           )}
           {contact.data?.isBusiness && <span className="text-[11px] rounded-full bg-neutral-100 dark:bg-neutral-800 px-2 py-0.5">Business account</span>}
         </div>
-        {onOpenChat && (
-          <div className="border-t border-neutral-100 dark:border-neutral-800 p-3">
+        <div className="border-t border-neutral-100 dark:border-neutral-800 p-3 space-y-2">
+          {onOpenChat && (
             <Button className="w-full" disabled={!phoneId && !id} onClick={() => { onOpenChat(phoneId ?? id); onClose(); }}>
               <MessageSquare size={14} /> Message
             </Button>
-          </div>
-        )}
+          )}
+          {saving ? (
+            <div className="space-y-2">
+              <div className="flex gap-2">
+                <Input placeholder="First name" value={first} onChange={(e) => setFirst(e.target.value)} autoFocus />
+                <Input placeholder="Last name" value={last} onChange={(e) => setLast(e.target.value)} />
+              </div>
+              <div className="flex gap-2 justify-end">
+                <Button size="sm" variant="secondary" onClick={() => setSaving(false)}>Cancel</Button>
+                <Button size="sm" disabled={!first.trim() || busy === "save"} onClick={async () => { setBusy("save"); setMsg(null); try { await requireClient().saveContact(session, phoneId ?? id, first.trim(), last.trim()); setMsg("Saved to your phone contacts."); setSaving(false); qc.invalidateQueries({ queryKey: ["contacts", session] }); qc.invalidateQueries({ queryKey: ["contact", session, id] }); } catch (e) { setMsg(e instanceof Error ? e.message : String(e)); } finally { setBusy(null); } }}>
+                  {busy === "save" ? <Loader2 size={12} className="animate-spin" /> : "Save"}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex gap-2">
+              {!realName && phoneId && (
+                <Button variant="secondary" className="flex-1" onClick={() => { setFirst(pushname ?? ""); setSaving(true); }}><UserPlus size={14} /> Save contact</Button>
+              )}
+              <Button
+                variant="ghost"
+                className="flex-1 text-red-600"
+                disabled={busy === "block"}
+                onClick={async () => {
+                  const target = phoneId ?? id;
+                  const choice = await confirm({ title: `Block or unblock ${title}?`, message: "Blocked contacts can't call or message you. WhatsApp doesn't tell them.", choices: [{ id: "block", label: "Block", danger: true }, { id: "unblock", label: "Unblock" }] });
+                  if (!choice) return;
+                  setBusy("block");
+                  setMsg(null);
+                  try {
+                    if (choice === "block") await requireClient().blockContact(session, target);
+                    else await requireClient().unblockContact(session, target);
+                    setMsg(choice === "block" ? "Blocked." : "Unblocked.");
+                  } catch (e) {
+                    setMsg(e instanceof Error ? e.message : String(e));
+                  } finally {
+                    setBusy(null);
+                  }
+                }}
+              >
+                {busy === "block" ? <Loader2 size={14} className="animate-spin" /> : <Ban size={14} />} Block / unblock
+              </Button>
+            </div>
+          )}
+          {msg && <div className="text-xs text-neutral-600 dark:text-neutral-300 selectable">{msg}</div>}
+        </div>
       </div>
     </div>
   );

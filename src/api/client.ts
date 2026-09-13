@@ -5,6 +5,9 @@ import type {
   GowsGroup,
   GroupInfo,
   JoinRequest,
+  Label,
+  Channel,
+  SessionConfig,
   MeInfo,
   PresenceInfo,
   ServerVersion,
@@ -278,14 +281,16 @@ export class WahaClient {
   }
 
   // ── Sending ───────────────────────────────────────────────────────────
-  sendText(session: string, chatId: string, text: string, replyTo?: string) {
-    return this.post<WAMessage>("/api/sendText", {
-      session,
-      chatId,
-      text,
-      reply_to: replyTo,
-      linkPreview: true,
-    });
+  async sendText(session: string, chatId: string, text: string, replyTo?: string, mentions?: string[]) {
+    const body = { session, chatId, text, reply_to: replyTo, linkPreview: true };
+    if (!mentions?.length) return this.post<WAMessage>("/api/sendText", body);
+    try {
+      // Newer WAHA builds accept an explicit `mentions` list; older ones detect "@phone" in the text.
+      return await this.post<WAMessage>("/api/sendText", { ...body, mentions });
+    } catch (e) {
+      if (e instanceof WahaError && e.status === 400 && /mentions/i.test(e.message)) return this.post<WAMessage>("/api/sendText", body);
+      throw e;
+    }
   }
   sendImage(
     session: string,
@@ -336,6 +341,15 @@ export class WahaClient {
   }
   sendPoll(session: string, chatId: string, name: string, options: string[], multipleAnswers = false) {
     return this.post<WAMessage>("/api/sendPoll", { session, chatId, poll: { name, options, multipleAnswers } });
+  }
+  votePoll(session: string, chatId: string, pollMessageId: string, votes: string[]) {
+    return this.post<void>("/api/sendPollVote", { session, chatId, pollMessageId, votes });
+  }
+  rejectCall(session: string, callId: string, from: string) {
+    return this.post<void>(`/api/${enc(session)}/calls/reject`, { id: callId, from });
+  }
+  unarchiveChat(session: string, chatId: string) {
+    return this.post<void>(`/api/${enc(session)}/chats/${enc(chatId)}/unarchive`);
   }
   sendSeen(session: string, chatId: string, messageIds?: string[], participant?: string) {
     return this.post<void>("/api/sendSeen", { session, chatId, messageIds, participant });
@@ -434,6 +448,89 @@ export class WahaClient {
   }
   subscribePresence(session: string, chatId: string) {
     return this.post<void>(`/api/${enc(session)}/presence/${enc(chatId)}/subscribe`);
+  }
+
+  // ── Labels ────────────────────────────────────────────────────────────
+  labels(session: string) {
+    return this.get<Label[]>(`/api/${enc(session)}/labels`);
+  }
+  createLabel(session: string, name: string, colorHex: string) {
+    return this.post<Label>(`/api/${enc(session)}/labels`, { name, colorHex });
+  }
+  updateLabel(session: string, id: string, name: string, colorHex: string) {
+    return this.put<Label>(`/api/${enc(session)}/labels/${enc(id)}`, { name, colorHex });
+  }
+  deleteLabel(session: string, id: string) {
+    return this.del<void>(`/api/${enc(session)}/labels/${enc(id)}`);
+  }
+  chatLabels(session: string, chatId: string) {
+    return this.get<Label[]>(`/api/${enc(session)}/labels/chats/${enc(chatId)}`);
+  }
+  setChatLabels(session: string, chatId: string, ids: string[]) {
+    return this.put<void>(`/api/${enc(session)}/labels/chats/${enc(chatId)}`, { labels: ids.map((id) => ({ id })) });
+  }
+  labelChats(session: string, labelId: string) {
+    return this.get<{ id: string }[]>(`/api/${enc(session)}/labels/${enc(labelId)}/chats`);
+  }
+
+  // ── Channels ──────────────────────────────────────────────────────────
+  channels(session: string) {
+    return this.get<Channel[]>(`/api/${enc(session)}/channels`);
+  }
+  channel(session: string, id: string) {
+    return this.get<Channel>(`/api/${enc(session)}/channels/${enc(id)}`);
+  }
+  searchChannels(session: string, text: string, limit = 30) {
+    return this.post<{ page?: { startCursor?: string; endCursor?: string }; channels: Channel[] }>(`/api/${enc(session)}/channels/search/by-text`, { text, categories: [], limit, startCursor: "" });
+  }
+  followChannel(session: string, id: string) {
+    return this.post<void>(`/api/${enc(session)}/channels/${enc(id)}/follow`);
+  }
+  unfollowChannel(session: string, id: string) {
+    return this.post<void>(`/api/${enc(session)}/channels/${enc(id)}/unfollow`);
+  }
+  channelPreview(session: string, id: string, limit = 20) {
+    return this.get<WAMessage[]>(`/api/${enc(session)}/channels/${enc(id)}/messages/preview`, { limit, downloadMedia: false });
+  }
+
+  // ── Contacts management / groups creation ─────────────────────────────
+  blockContact(session: string, contactId: string) {
+    return this.post<void>("/api/contacts/block", { session, contactId });
+  }
+  unblockContact(session: string, contactId: string) {
+    return this.post<void>("/api/contacts/unblock", { session, contactId });
+  }
+  saveContact(session: string, chatId: string, firstName: string, lastName = "") {
+    return this.put<void>(`/api/${enc(session)}/contacts/${enc(chatId)}`, { firstName, lastName });
+  }
+  createGroup(session: string, name: string, participantIds: string[]) {
+    return this.post<GowsGroup & { id?: string }>(`/api/${enc(session)}/groups`, { name, participants: participantIds.map((id) => ({ id })) });
+  }
+  joinGroup(session: string, codeOrUrl: string) {
+    return this.post<{ id: string }>(`/api/${enc(session)}/groups/join`, { code: codeOrUrl });
+  }
+  joinInfo(session: string, codeOrUrl: string) {
+    return this.get<GowsGroup>(`/api/${enc(session)}/groups/join-info`, { code: codeOrUrl });
+  }
+  setGroupPicture(session: string, id: string, file: { mimetype: string; filename: string; data: string }) {
+    return this.put<void>(`/api/${enc(session)}/groups/${enc(id)}/picture`, { file });
+  }
+  deleteGroupPicture(session: string, id: string) {
+    return this.del<void>(`/api/${enc(session)}/groups/${enc(id)}/picture`);
+  }
+  setGroupMessagesAdminOnly(session: string, id: string, adminsOnly: boolean) {
+    return this.put<void>(`/api/${enc(session)}/groups/${enc(id)}/settings/security/messages-admin-only`, { adminsOnly });
+  }
+  setGroupInfoAdminOnly(session: string, id: string, adminsOnly: boolean) {
+    return this.put<void>(`/api/${enc(session)}/groups/${enc(id)}/settings/security/info-admin-only`, { adminsOnly });
+  }
+  setGroupMembershipApproval(session: string, id: string, required: boolean) {
+    return this.put<void>(`/api/${enc(session)}/groups/${enc(id)}/settings/security/membership-approval`, { newMembersApprovalRequired: required });
+  }
+
+  // ── Session config (webhooks) ─────────────────────────────────────────
+  updateSessionConfig(name: string, config: SessionConfig) {
+    return this.put<SessionInfo>(`/api/sessions/${enc(name)}`, { config });
   }
 
   // ── Media ─────────────────────────────────────────────────────────────

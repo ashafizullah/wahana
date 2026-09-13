@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { confirm } from "@/components/Confirm";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Crown, Shield, MoreVertical, UserPlus, Link as LinkIcon, RefreshCw, LogOut, Pencil, Loader2, Copy, Check, UserCheck, X as XIcon, Users } from "lucide-react";
+import { Crown, Shield, MoreVertical, UserPlus, Link as LinkIcon, RefreshCw, LogOut, Pencil, Loader2, Copy, Check, UserCheck, X as XIcon, Users, Camera, Lock, Download } from "lucide-react";
+import { fileToBase64 } from "@/lib/utils";
+import { save } from "@tauri-apps/plugin-dialog";
+import { writeTextFile } from "@tauri-apps/plugin-fs";
 import { requireClient } from "@/store/settings";
 import { Avatar, Button, Input } from "@/components/ui";
 import { cn, displayId } from "@/lib/utils";
@@ -220,6 +223,8 @@ export function GroupTools({
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const picRef = useRef<HTMLInputElement>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const run = async (name: string, fn: () => Promise<unknown>, refresh = true) => {
     setBusy(name);
@@ -259,6 +264,16 @@ export function GroupTools({
               <Input placeholder="628123456789" value={phone} onChange={(e) => setPhone(e.target.value)} autoFocus />
               <Button size="sm" type="submit" disabled={busy === "Add"}>{busy === "Add" ? <Loader2 size={12} className="animate-spin" /> : "Add"}</Button>
             </form>
+          )}
+          <input ref={picRef} type="file" accept="image/*" hidden onChange={async (e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) await run("Photo", async () => requireClient().setGroupPicture(session, chatId, { mimetype: f.type || "image/jpeg", filename: f.name, data: await fileToBase64(f) })); }} />
+          <Row icon={Camera} label="Change group photo" busy={busy === "Photo"} onClick={() => picRef.current?.click()} />
+          <Row icon={Lock} label="Group settings" onClick={() => setSettingsOpen((v) => !v)} />
+          {settingsOpen && (
+            <div className="px-4 pb-2 space-y-2">
+              <SettingToggle label="Only admins can send messages" checked={!!group.IsAnnounce} busy={busy === "announce"} onChange={(v) => run("announce", () => requireClient().setGroupMessagesAdminOnly(session, chatId, v))} />
+              <SettingToggle label="Only admins can edit group info" checked={!!group.IsLocked} busy={busy === "locked"} onChange={(v) => run("locked", () => requireClient().setGroupInfoAdminOnly(session, chatId, v))} />
+              <SettingToggle label="Approve new members" checked={!!group.IsJoinApprovalRequired} busy={busy === "approval"} onChange={(v) => run("approval", () => requireClient().setGroupMembershipApproval(session, chatId, v))} />
+            </div>
           )}
           <Row icon={Pencil} label="Change group name" onClick={() => { setEditing("subject"); setText(group.Name); }} />
           <Row icon={Pencil} label="Change description" onClick={() => { setEditing("description"); setText(group.Topic ?? ""); }} />
@@ -330,6 +345,23 @@ export function GroupTools({
         </div>
       )}
       <Row
+        icon={Download}
+        label="Export participants (CSV)"
+        busy={busy === "csv"}
+        onClick={async () => {
+          const path = await save({ defaultPath: `${group.Name.replace(/[^\w.-]+/g, "_")}-participants.csv`, filters: [{ name: "CSV", extensions: ["csv"] }] });
+          if (!path) return;
+          await run("csv", async () => {
+            const rows = [["name", "phone", "jid", "admin"]];
+            for (const p of group.Participants ?? []) {
+              const phone = p.PhoneNumber?.split("@")[0] ?? "";
+              rows.push([resolveName(p.JID) ?? p.DisplayName ?? "", phone ? `+${phone}` : "", p.JID, p.IsSuperAdmin ? "owner" : p.IsAdmin ? "admin" : ""]);
+            }
+            await writeTextFile(path, rows.map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n"));
+          }, false);
+        }}
+      />
+      <Row
         icon={LogOut}
         label="Leave group"
         danger
@@ -343,6 +375,19 @@ export function GroupTools({
         }}
       />
     </div>
+  );
+}
+
+function SettingToggle({ label, checked, busy, onChange }: { label: string; checked: boolean; busy?: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <label className="flex items-center gap-3 text-sm cursor-pointer">
+      <span className="flex-1">{label}</span>
+      {busy ? <Loader2 size={14} className="animate-spin" /> : (
+        <button type="button" role="switch" aria-checked={checked} onClick={() => onChange(!checked)} className={cn("relative h-5 w-9 rounded-full transition", checked ? "bg-wa-dark" : "bg-neutral-300 dark:bg-neutral-700")}>
+          <span className={cn("absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition", checked ? "left-[18px]" : "left-0.5")} />
+        </button>
+      )}
+    </label>
   );
 }
 

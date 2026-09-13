@@ -1,6 +1,8 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { confirm } from "@/components/Confirm";
-import { CheckCircle2, XCircle, Loader2, Plug, Image as ImageIcon, Bell, Info, Plus, Trash2, Server, HardDrive, RefreshCw, SlidersHorizontal } from "lucide-react";
+import { CheckCircle2, XCircle, Loader2, Plug, Image as ImageIcon, Bell, Info, Plus, Trash2, Server, HardDrive, RefreshCw, SlidersHorizontal, Zap, Pencil } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { deleteQuickReply, listQuickReplies, saveQuickReply, type QuickReply } from "@/store/quickReplies";
 import { cacheClear, cacheStats, formatBytes, type CacheStats } from "@/lib/mediaCache";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSettings } from "@/store/settings";
@@ -28,6 +30,9 @@ export function SettingsScreen({ onSaved }: { onSaved: () => void }) {
         </Section>
         <Section icon={SlidersHorizontal} title="Tweaks" description="Behaviour switches. They apply to what Wahana does — your phone follows its own WhatsApp settings.">
           <TweaksSection />
+        </Section>
+        <Section icon={Zap} title="Quick replies" description="Type / in the composer to insert one. Variables: {name} {phone} {time} {date}.">
+          <QuickRepliesSection />
         </Section>
         <Section icon={Bell} title="Notifications">
           <NotificationsSection />
@@ -392,7 +397,7 @@ function TweaksSection() {
   const receiptOptions: { value: typeof s.readReceipts; label: string; hint: string }[] = [
     { value: "always", label: "When I open the chat", hint: "Blue ticks as soon as the conversation is on screen (WhatsApp default)." },
     { value: "on-reply", label: "Only when I reply", hint: "Read the chat silently; ticks turn blue the moment you send a message, file or reaction-free reply." },
-    { value: "manual", label: "Manually, with a button", hint: "Nothing is sent when you open a chat. A ✓✓ button in the chat header sends the receipt when you decide." },
+    { value: "manual", label: "Manually, with a button", hint: "Nothing is sent when you open a chat or a status. A ✓✓ button (chat header / status viewer) sends the receipt when you decide." },
     { value: "never", label: "Never", hint: "Senders keep grey ticks. Status views are not reported either." },
   ];
   return (
@@ -426,6 +431,63 @@ function TweaksSection() {
           qc.invalidateQueries({ queryKey: ["messages"] });
         }}
       />
+    </>
+  );
+}
+
+// ── Quick replies ────────────────────────────────────────────────────────
+
+function QuickRepliesSection() {
+  const profile = useSettings((s) => s.activeProfile);
+  const qc = useQueryClient();
+  const q = useQuery({ queryKey: ["quick-replies", profile], queryFn: () => listQuickReplies(profile), enabled: !!profile });
+  const [editing, setEditing] = useState<Partial<QuickReply> | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const refresh = () => qc.invalidateQueries({ queryKey: ["quick-replies", profile] });
+
+  return (
+    <>
+      <ul className="space-y-1">
+        {q.data?.map((r) => (
+          <li key={r.id} className="flex items-start gap-2 rounded-lg bg-neutral-50 dark:bg-neutral-800/60 px-3 py-2">
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-medium">/{r.shortcut}</span>
+              <span className="block text-xs text-neutral-500 whitespace-pre-wrap selectable">{r.text}</span>
+            </span>
+            <button className="text-neutral-400 hover:text-neutral-700" onClick={() => setEditing(r)} title="Edit"><Pencil size={14} /></button>
+            <button className="text-neutral-400 hover:text-red-600" title="Delete" onClick={async () => { if (await confirm({ title: `Delete /${r.shortcut}?`, danger: true, confirmLabel: "Delete" })) { await deleteQuickReply(r.id); refresh(); } }}><Trash2 size={14} /></button>
+          </li>
+        ))}
+        {q.data?.length === 0 && !editing && <li className="text-sm text-neutral-500">No quick replies yet.</li>}
+      </ul>
+      {editing ? (
+        <div className="space-y-2 rounded-lg border border-dashed border-neutral-300 dark:border-neutral-700 p-3">
+          <div><Label>Shortcut</Label><Input value={editing.shortcut ?? ""} onChange={(e) => setEditing({ ...editing, shortcut: e.target.value })} placeholder="thanks" autoFocus /></div>
+          <div>
+            <Label>Text</Label>
+            <textarea value={editing.text ?? ""} onChange={(e) => setEditing({ ...editing, text: e.target.value })} rows={3} placeholder="Terima kasih {name}, pesanan kamu sedang diproses." className="w-full rounded-lg border border-neutral-300 dark:border-neutral-700 bg-transparent px-3 py-2 text-sm outline-none" />
+          </div>
+          {err && <div className="text-xs text-red-600">{err}</div>}
+          <div className="flex gap-2">
+            <Button
+              onClick={async () => {
+                const shortcut = (editing.shortcut ?? "").replace(/^\//, "").trim();
+                if (!shortcut || /\s/.test(shortcut)) return setErr("Shortcut must be one word.");
+                if (!(editing.text ?? "").trim()) return setErr("Text is required.");
+                await saveQuickReply({ id: editing.id ?? Math.random().toString(36).slice(2, 10), profile, shortcut, text: editing.text!.trim() });
+                setEditing(null);
+                setErr(null);
+                refresh();
+              }}
+            >
+              Save
+            </Button>
+            <Button variant="secondary" onClick={() => { setEditing(null); setErr(null); }}>Cancel</Button>
+          </div>
+        </div>
+      ) : (
+        <Button variant="secondary" onClick={() => setEditing({})}><Plus size={14} /> Add quick reply</Button>
+      )}
     </>
   );
 }
