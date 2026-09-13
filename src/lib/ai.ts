@@ -101,3 +101,17 @@ export async function testAi(cfg: AiConfig) {
   const out = await complete("Reply with exactly: OK", "ping", { maxTokens: 16, cfg });
   return out;
 }
+
+/** Summarize a chat transcript (see `transcript()` in exportChat.ts). Output uses WhatsApp formatting so it renders with WaMarkdown. */
+export function summarizeChat(text: string, opts: { chatName: string; isGroup: boolean; language: string; question?: string }) {
+  const system = `You summarize WhatsApp conversations for the user, who appears in the transcript as "You". This is a ${opts.isGroup ? "group chat" : "private chat"} named "${opts.chatName}".
+Write in ${langName(opts.language)}. Format with WhatsApp markup only: *bold* for section titles, "- " bullets, no Markdown headings (#), no tables, no code blocks.
+${opts.question ? `Answer the user's question using only the transcript. If the transcript does not contain the answer, say so briefly.` : `Sections (omit a section if empty):
+*Ringkasan* / *Summary* — 2–4 sentences on what the conversation was about.
+*Keputusan* / *Decisions* — things agreed or concluded.
+*Tugas & tenggat* / *Action items* — who has to do what, with dates/amounts if mentioned.
+*Pertanyaan terbuka* / *Open questions* — things still waiting for an answer, especially ones addressed to You.
+Use the section titles in the output language. Attribute statements to people by name. Be concise; keep the facts, drop the small talk. Media appears as [photo], [voice], etc. — mention it only when relevant.`}`;
+  const user = opts.question ? `Question: ${opts.question}\n\nTranscript:\n${text}` : `Transcript:\n${text}`;
+  return complete(system, user, { maxTokens: 2048 });
+}

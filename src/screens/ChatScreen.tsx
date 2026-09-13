@@ -32,7 +32,8 @@ import { usePolls } from "@/store/polls";
 import { Pin, BellOff } from "lucide-react";
 import { LabelsDialog, useLabelMap, useLabels } from "@/components/LabelsDialog";
 import { exportChat, type ExportFormat } from "@/lib/exportChat";
-import { MoreVertical, Download, Languages, Loader2 as Spinner } from "lucide-react";
+import { MoreVertical, Download, Languages, Sparkles, Loader2 as Spinner } from "lucide-react";
+import { SummaryModal } from "@/components/SummaryModal";
 import { useTranslations } from "@/store/translations";
 import { aiConfigured, translate, langName } from "@/lib/ai";
 import type { MentionResolver } from "@/lib/waMarkdown";
@@ -474,6 +475,9 @@ function Conversation({ session, chatId, onOpenChat }: { session: string; chatId
   const [contactId, setContactId] = useState<string | null>(null);
   const [moreOpen, setMoreOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [summary, setSummary] = useState(false);
+  // Last-opened time captured before markSeen() below overwrites it, for "since I last read" summaries.
+  const seenAtRef = useRef<number | undefined>(undefined);
   const readMode = useSettings((s) => s.readReceipts);
   const [readSentFor, setReadSentFor] = useState<string | null>(null); // id of the last incoming message we've acknowledged manually
   const [search, setSearch] = useState<string | null>(null); // null = closed
@@ -614,6 +618,7 @@ function Conversation({ session, chatId, onOpenChat }: { session: string; chatId
   const setOpen = useUnread((s) => s.setOpen);
   const markSeen = useUnread((s) => s.markSeen);
   useEffect(() => {
+    seenAtRef.current = useUnread.getState().lastSeen[chatKey(session, chatId)];
     setOpen(chatKey(session, chatId));
     return () => setOpen(null);
   }, [session, chatId, setOpen]);
@@ -803,6 +808,11 @@ function Conversation({ session, chatId, onOpenChat }: { session: string; chatId
             </div>
           )}
         </div>
+        {aiConfigured() && (
+          <Button variant="ghost" size="sm" onClick={() => setSummary(true)} title="Summarize with AI">
+            <Sparkles size={16} />
+          </Button>
+        )}
         <Button variant="ghost" size="sm" onClick={() => { setSearch((v) => (v === null ? "" : null)); setTimeout(() => document.getElementById("msg-search")?.focus(), 0); }} title="Search in chat (⌘F)">
           <Search size={16} />
         </Button>
@@ -813,6 +823,13 @@ function Conversation({ session, chatId, onOpenChat }: { session: string; chatId
           <Button variant="ghost" size="sm" onClick={() => setMoreOpen((v) => !v)} title="More"><MoreVertical size={16} /></Button>
           {moreOpen && (
             <div className="absolute right-0 top-full mt-1 z-30 w-56 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-xl py-1 text-sm" onMouseLeave={() => setMoreOpen(false)}>
+              <button
+                onClick={() => { setMoreOpen(false); setSummary(true); }}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-neutral-100 dark:hover:bg-neutral-800"
+              >
+                <Sparkles size={14} /> Summarize with AI
+              </button>
+              <div className="my-1 border-t border-neutral-200 dark:border-neutral-800" />
               <div className="px-3 py-1 text-[11px] text-neutral-500">Export loaded messages ({ordered.length})</div>
               {(["txt", "html", "json"] as ExportFormat[]).map((f) => (
                 <button
@@ -968,6 +985,19 @@ function Conversation({ session, chatId, onOpenChat }: { session: string; chatId
       )}
     </div>
     {info && <InfoPanel session={session} chatId={chatId} chat={chat} myIds={myIds} onClose={() => setInfo(false)} />}
+    {summary && (
+      <SummaryModal
+        session={session}
+        chatId={chatId}
+        chatName={name}
+        messages={ordered}
+        resolve={resolveName}
+        seenAt={seenAtRef.current}
+        hasMore={hasMore}
+        onLoadOlder={loadOlder}
+        onClose={() => setSummary(false)}
+      />
+    )}
     </>
   );
 }
