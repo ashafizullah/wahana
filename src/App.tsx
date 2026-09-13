@@ -20,6 +20,7 @@ import { useChatPrefs } from "@/store/chatPrefs";
 import { usePolls } from "@/store/polls";
 import { useCalls } from "@/store/calls";
 import { CallBanner } from "@/components/CallBanner";
+import { useLiveMessages } from "@/store/liveMessages";
 import { cn } from "@/lib/utils";
 import { totalUnread, useUnread } from "@/store/unread";
 import { useBadge } from "@/realtime/useBadge";
@@ -46,6 +47,7 @@ export default function App() {
   const hydrateChatPrefs = useChatPrefs((s) => s.hydrate);
   const hydratePolls = usePolls((s) => s.hydrate);
   const hydrateCalls = useCalls((s) => s.hydrate);
+  const hydrateLive = useLiveMessages((s) => s.hydrate);
   const unread = totalUnread(unreadCounts);
   useBadge(unread);
   const updater = useUpdater();
@@ -64,7 +66,8 @@ export default function App() {
     void hydrateChatPrefs();
     void hydratePolls();
     void hydrateCalls();
-  }, [hydrate, hydrateUnread, hydratePushNames, hydrateReactions, hydrateReceipts, hydrateHidden, hydrateRevoked, hydrateDrafts, hydrateChatPrefs, hydratePolls, hydrateCalls]);
+    void hydrateLive();
+  }, [hydrate, hydrateUnread, hydratePushNames, hydrateReactions, hydrateReceipts, hydrateHidden, hydrateRevoked, hydrateDrafts, hydrateChatPrefs, hydratePolls, hydrateCalls, hydrateLive]);
 
   useEffect(() => {
     if (hydrated && !client) setTab("settings");

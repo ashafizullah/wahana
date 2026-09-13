@@ -21,6 +21,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { confirm } from "@/components/Confirm";
 import { useHidden } from "@/store/hidden";
 import { tombstonesFor, useRevoked } from "@/store/revoked";
+import { useLiveMessages } from "@/store/liveMessages";
 import { bareId, summarize, useReactions } from "@/store/reactions";
 import { useDrafts } from "@/store/drafts";
 import { MentionPicker, type MentionCandidate } from "@/components/MentionPicker";
@@ -488,8 +489,15 @@ function Conversation({ session, chatId, onOpenChat }: { session: string; chatId
   // Messages arrive newest-first from the API; render oldest-first, minus the ones deleted "for me".
   const hiddenIds = useHidden((s) => s.ids);
   const revokedItems = useRevoked((s) => s.items);
+  const live = useLiveMessages((s) => s.byChat[`${session}:${chatId}`]);
   const ordered = useMemo(() => {
     const list: (WAMessage & { revoked?: boolean; waiting?: boolean })[] = (messages ?? []).filter((m) => !hiddenIds[m.id]);
+    // Messages we received live but the server no longer returns (WAHA storage gaps): keep them in the loaded range.
+    if (live?.length && messages) {
+      const have = new Set(list.map((m) => m.id));
+      const oldest = list.length ? Math.min(...list.map((m) => m.timestamp)) : 0;
+      for (const m of live) if (!have.has(m.id) && !hiddenIds[m.id] && m.timestamp >= oldest) list.push(m);
+    }
     const stones = tombstonesFor(revokedItems, `${session}:${chatId}`);
     if (stones.length) {
       const have = new Map(list.map((m) => [bareId(m.id), m]));
@@ -522,7 +530,7 @@ function Conversation({ session, chatId, onOpenChat }: { session: string; chatId
       }
     }
     return list.sort((a, b) => a.timestamp - b.timestamp);
-  }, [messages, hiddenIds, revokedItems, session, chatId]);
+  }, [messages, hiddenIds, revokedItems, session, chatId, live]);
 
   const [hasMore, setHasMore] = useState(true);
   const [loadingOlder, setLoadingOlder] = useState(false);

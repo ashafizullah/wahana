@@ -13,6 +13,7 @@ import { useRevoked } from "@/store/revoked";
 import { usePolls, type PollVoteEvent } from "@/store/polls";
 import { useChatPrefs } from "@/store/chatPrefs";
 import { useCalls, type CallEvent } from "@/store/calls";
+import { useLiveMessages } from "@/store/liveMessages";
 import { messageChatId } from "@/lib/utils";
 import { pushPresence } from "@/realtime/usePresence";
 import type { PresenceInfo } from "@/api/types";
@@ -121,6 +122,7 @@ export function useWahaSocket() {
           }
           if (!m.fromMe) useUnread.getState().incoming(e.session, chatId);
           useRevoked.getState().remove(`${e.session}:${chatId}`, m.id);
+          useLiveMessages.getState().add(e.session, chatId, m);
           for (const id of new Set([chatId, m.from, m.to].filter(Boolean))) {
             qc.setQueryData(qk.messages(e.session, id), (old?: WAMessage[]) => {
               if (!old) return old;

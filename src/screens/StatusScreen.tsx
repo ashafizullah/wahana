@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { confirm } from "@/components/Confirm";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, Loader2, Plus, Trash2, X, Type, Image as ImageIcon, RefreshCw, Pause, Play, CheckCheck } from "lucide-react";
+import { ChevronLeft, ChevronRight, Loader2, Plus, Trash2, X, Type, Image as ImageIcon, RefreshCw, Pause, Play, CheckCheck, Search } from "lucide-react";
 import { useStatusSeen } from "@/store/statusSeen";
 import { requireClient, useSettings } from "@/store/settings";
 import { useNameResolver } from "@/realtime/useNames";
@@ -41,6 +41,7 @@ export function StatusScreen() {
   const [compose, setCompose] = useState(false);
   const seen = useStatusSeen((s) => s.seen);
   const hydrateSeen = useStatusSeen((s) => s.hydrate);
+  const [search, setSearch] = useState("");
   useEffect(() => {
     void hydrateSeen();
   }, [hydrateSeen]);
@@ -64,10 +65,23 @@ export function StatusScreen() {
       const key = m.fromMe ? "me" : m.participant || m.from;
       (by.get(key) ?? by.set(key, []).get(key)!).push(toStory(m));
     }
+    const term = search.trim().toLowerCase().replace(/^\+/, "");
     return [...by.entries()]
-      .map(([id, stories]) => ({ id, stories: stories.sort((a, b) => a.m.timestamp - b.m.timestamp) }))
-      .sort((a, b) => (a.id === "me" ? -1 : b.id === "me" ? 1 : b.stories[b.stories.length - 1]!.m.timestamp - a.stories[a.stories.length - 1]!.m.timestamp));
-  }, [q.data]);
+      .map(([id, stories]) => {
+        const sorted = stories.sort((a, b) => a.m.timestamp - b.m.timestamp);
+        const name = id === "me" ? "My status" : resolveName(id) ?? displayId(id);
+        const unseen = id === "me" ? 0 : sorted.filter((st) => !seen[st.m.id]).length;
+        return { id, stories: sorted, name, unseen, latest: sorted[sorted.length - 1]!.m.timestamp };
+      })
+      .filter((g) => !term || g.name.toLowerCase().includes(term) || g.id.replace(/\D/g, "").includes(term.replace(/\D/g, "") || "\u0000"))
+      .sort((a, b) => {
+        if (a.id === "me") return -1;
+        if (b.id === "me") return 1;
+        // Contacts with unseen updates first, fully-viewed ones sink to the bottom; newest first within each group.
+        if (!!a.unseen !== !!b.unseen) return a.unseen ? -1 : 1;
+        return b.latest - a.latest;
+      });
+  }, [q.data, seen, resolveName, search]);
 
   const current = groups.find((g) => g.id === selected) ?? null;
 
@@ -76,22 +90,35 @@ export function StatusScreen() {
   return (
     <>
       <div className="w-80 shrink-0 flex flex-col border-r border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900">
-        <div className="h-14 shrink-0 flex items-center gap-2 px-4 border-b border-neutral-200 dark:border-neutral-800">
-          <span className="font-semibold flex-1">Status</span>
-          <Button size="sm" variant="ghost" onClick={() => q.refetch()} title="Refresh"><RefreshCw size={14} className={cn(q.isFetching && "animate-spin")} /></Button>
-          <Button size="sm" onClick={() => setCompose(true)} title="Post a status"><Plus size={14} /></Button>
+        <div className="shrink-0 border-b border-neutral-200 dark:border-neutral-800">
+          <div className="h-14 flex items-center gap-2 px-4">
+            <span className="font-semibold flex-1">Status</span>
+            <Button size="sm" variant="ghost" onClick={() => q.refetch()} title="Refresh"><RefreshCw size={14} className={cn(q.isFetching && "animate-spin")} /></Button>
+            <Button size="sm" onClick={() => setCompose(true)} title="Post a status"><Plus size={14} /></Button>
+          </div>
+          <div className="relative px-3 pb-3">
+            <Search size={14} className="absolute left-5.5 top-2.5 text-neutral-400" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={(e) => e.key === "Escape" && setSearch("")}
+              placeholder="Search by name or number"
+              className="w-full rounded-lg bg-neutral-100 dark:bg-neutral-800 pl-8 pr-3 py-1.5 text-sm outline-none"
+            />
+          </div>
         </div>
         <div className="flex-1 overflow-y-auto">
           {q.isLoading && <Loader2 className="animate-spin text-neutral-400 m-4" />}
           {q.error && <div className="p-4 text-xs text-red-600 selectable">{(q.error as Error).message}</div>}
           {!q.isLoading && groups.length === 0 && <p className="p-4 text-sm text-neutral-500">No status updates in the last 24 hours.</p>}
-          {groups.map((g) => {
+          {groups.map((g, i) => {
             const last = g.stories[g.stories.length - 1]!;
-            const name = g.id === "me" ? "My status" : resolveName(g.id) ?? displayId(g.id);
-            const unseen = g.id === "me" ? 0 : g.stories.filter((st) => !seen[st.m.id]).length;
+            const { name, unseen } = g;
+            const firstViewed = g.id !== "me" && !unseen && (i === 0 || groups[i - 1]!.id === "me" || !!groups[i - 1]!.unseen);
             return (
+              <div key={g.id}>
+              {firstViewed && <div className="px-4 pt-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-neutral-400">Viewed</div>}
               <button
-                key={g.id}
                 onClick={() => setSelected(g.id)}
                 className={cn("w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-neutral-100 dark:hover:bg-neutral-800", selected === g.id && "bg-neutral-100 dark:bg-neutral-800")}
               >
@@ -107,12 +134,31 @@ export function StatusScreen() {
                   </div>
                 </div>
               </button>
+              </div>
             );
           })}
+          {!q.isLoading && groups.length === 0 && search && <p className="p-4 text-sm text-neutral-500">No status matches “{search}”.</p>}
         </div>
       </div>
       {current ? (
-        <StoryViewer key={current.id} session={session} name={current.id === "me" ? "My status" : resolveName(current.id) ?? displayId(current.id)} stories={current.stories} mine={current.id === "me"} onDeleted={() => qc.invalidateQueries({ queryKey: ["status", session] })} />
+        <StoryViewer
+          key={current.id}
+          session={session}
+          name={current.name}
+          stories={current.stories}
+          mine={current.id === "me"}
+          onDeleted={() => qc.invalidateQueries({ queryKey: ["status", session] })}
+          onNextContact={(() => {
+            const i = groups.findIndex((g) => g.id === current.id);
+            const next = groups[i + 1];
+            return next ? () => setSelected(next.id) : undefined;
+          })()}
+          onPrevContact={(() => {
+            const i = groups.findIndex((g) => g.id === current.id);
+            const prev = groups[i - 1];
+            return prev ? () => setSelected(prev.id) : undefined;
+          })()}
+        />
       ) : (
         <div className="flex-1 grid place-items-center text-neutral-500 text-sm">Select a contact to view their status</div>
       )}
@@ -123,7 +169,24 @@ export function StatusScreen() {
 
 const IMAGE_SECONDS = 6;
 
-function StoryViewer({ session, name, stories, mine, onDeleted }: { session: string; name: string; stories: Story[]; mine: boolean; onDeleted: () => void }) {
+function StoryViewer({
+  session,
+  name,
+  stories,
+  mine,
+  onDeleted,
+  onNextContact,
+  onPrevContact,
+}: {
+  session: string;
+  name: string;
+  stories: Story[];
+  mine: boolean;
+  onDeleted: () => void;
+  /** Called when the last story of this contact finishes / is skipped past; undefined = last contact. */
+  onNextContact?: () => void;
+  onPrevContact?: () => void;
+}) {
   const client = useSettings((s) => s.client);
   const seen = useStatusSeen((s) => s.seen);
   const mark = useStatusSeen((s) => s.mark);
@@ -175,8 +238,9 @@ function StoryViewer({ session, name, stories, mine, onDeleted }: { session: str
       const p = (Date.now() - started) / (IMAGE_SECONDS * 1000);
       if (p >= 1) {
         clearInterval(t);
-        setI((x) => (x < stories.length - 1 ? x + 1 : x));
-        if (i >= stories.length - 1) setPaused(true);
+        if (i < stories.length - 1) setI(i + 1);
+        else if (onNextContact) onNextContact();
+        else setPaused(true);
       } else setProgress(p);
     }, 50);
     return () => clearInterval(t);
@@ -209,13 +273,13 @@ function StoryViewer({ session, name, stories, mine, onDeleted }: { session: str
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "ArrowLeft") { setI((x) => Math.max(0, x - 1)); setPaused(false); }
-      if (e.key === "ArrowRight") { setI((x) => Math.min(stories.length - 1, x + 1)); setPaused(false); }
+      if (e.key === "ArrowLeft") { if (i > 0) setI(i - 1); else onPrevContact?.(); setPaused(false); }
+      if (e.key === "ArrowRight") { if (i < stories.length - 1) setI(i + 1); else onNextContact?.(); setPaused(false); }
       if (e.key === " ") { e.preventDefault(); setPaused((p) => !p); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [stories.length]);
+  }, [stories.length, i, onNextContact, onPrevContact]);
 
   return (
     <div className="flex-1 min-w-0 flex flex-col bg-neutral-950 text-white" onClick={(e) => { if ((e.target as HTMLElement).closest("button,video,a")) return; setPaused((p) => !p); }}>
@@ -268,8 +332,8 @@ function StoryViewer({ session, name, stories, mine, onDeleted }: { session: str
         )}
       </div>
       <div className="relative flex-1 min-h-0 flex items-center justify-center p-4 overflow-hidden">
-        <button onClick={() => setI((x) => Math.max(0, x - 1))} disabled={i === 0} className="absolute left-3 top-1/2 -translate-y-1/2 p-2 rounded-full bg-white/10 hover:bg-white/20 disabled:opacity-20"><ChevronLeft /></button>
-        <button onClick={() => setI((x) => Math.min(stories.length - 1, x + 1))} disabled={i >= stories.length - 1} className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-full bg-white/10 hover:bg-white/20 disabled:opacity-20"><ChevronRight /></button>
+        <button onClick={() => { if (i > 0) setI(i - 1); else onPrevContact?.(); setPaused(false); }} disabled={i === 0 && !onPrevContact} className="absolute left-3 top-1/2 -translate-y-1/2 p-2 rounded-full bg-white/10 hover:bg-white/20 disabled:opacity-20" title={i === 0 ? "Previous contact" : "Previous"}><ChevronLeft /></button>
+        <button onClick={() => { if (i < stories.length - 1) setI(i + 1); else onNextContact?.(); setPaused(false); }} disabled={i >= stories.length - 1 && !onNextContact} className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-full bg-white/10 hover:bg-white/20 disabled:opacity-20" title={i >= stories.length - 1 ? "Next contact" : "Next"}><ChevronRight /></button>
         {story.kind === "text" ? (
           <div className="h-full max-h-full aspect-[9/16] max-w-full rounded-2xl flex items-center justify-center p-8 text-center text-2xl font-medium" style={{ background: story.bg ?? "#128c7e" }}>
             <WaMarkdown text={story.text} />
@@ -290,7 +354,7 @@ function StoryViewer({ session, name, stories, mine, onDeleted }: { session: str
               controls
               className="max-h-full max-w-full object-contain rounded-xl"
               onTimeUpdate={(e) => e.currentTarget.duration && setProgress(e.currentTarget.currentTime / e.currentTarget.duration)}
-              onEnded={() => (i < stories.length - 1 ? setI(i + 1) : setPaused(true))}
+              onEnded={() => (i < stories.length - 1 ? setI(i + 1) : onNextContact ? onNextContact() : setPaused(true))}
             />
           ) : (
             <img src={blob} alt="" className="max-h-full max-w-full object-contain rounded-xl" />
