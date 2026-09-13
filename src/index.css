@@ -1,0 +1,20 @@
+@import "tailwindcss";
+
+@theme {
+  --color-wa: #25d366;
+  --color-wa-dark: #128c7e;
+  --color-wa-teal: #075e54;
+}
+
+:root {
+  color-scheme: light dark;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+html, body, #root { height: 100%; margin: 0; }
+body { @apply bg-neutral-50 text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100; overflow: hidden; }
+* { user-select: none; -webkit-user-select: none; }
+input, textarea, .selectable { user-select: text; -webkit-user-select: text; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { @apply bg-neutral-300 dark:bg-neutral-700 rounded-full; }
