@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { autoLoadMimePrefixes, requireClient, useSettings } from "@/store/settings";
+import { usePushNames } from "@/store/pushNames";
 import type { WAMessage } from "./types";
 
 export const qk = {
@@ -54,14 +55,22 @@ export function useMediaPrefixes() {
 export function useMessages(session: string, chatId: string | null) {
   const client = useSettings((s) => s.client);
   const prefixes = useMediaPrefixes();
+  const qc = useQueryClient();
   return useQuery({
     queryKey: qk.messages(session, chatId ?? ""),
-    queryFn: () =>
-      requireClient().messages(session, chatId!, {
+    queryFn: async () => {
+      const list = await requireClient().messages(session, chatId!, {
         limit: 60,
         downloadMedia: prefixes.length > 0,
         downloadMediaMimetypes: prefixes,
-      }),
+      });
+      usePushNames.getState().learn(list);
+      // A refetch only returns the newest page; keep older pages the user already scrolled to.
+      const prev = qc.getQueryData<WAMessage[]>(qk.messages(session, chatId!)) ?? [];
+      const ids = new Set(list.map((m) => m.id));
+      const oldest = list[list.length - 1]?.timestamp ?? 0;
+      return [...list, ...prev.filter((m) => !ids.has(m.id) && m.timestamp < oldest)];
+    },
     enabled: !!client && !!session && !!chatId,
     staleTime: 30_000,
   });

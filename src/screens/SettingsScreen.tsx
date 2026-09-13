@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { CheckCircle2, XCircle, Loader2, Plug, Image as ImageIcon, Bell, Info, Plus, Trash2, Server } from "lucide-react";
+import { CheckCircle2, XCircle, Loader2, Plug, Image as ImageIcon, Bell, Info, Plus, Trash2, Server, HardDrive, RefreshCw } from "lucide-react";
+import { cacheClear, cacheStats, formatBytes, type CacheStats } from "@/lib/mediaCache";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSettings } from "@/store/settings";
 import { WahaClient } from "@/api/client";
@@ -20,6 +21,9 @@ export function SettingsScreen({ onSaved }: { onSaved: () => void }) {
         </Section>
         <Section icon={ImageIcon} title="Media" description="Choose what downloads automatically. Disabled kinds show a blurred preview until you click them — saves bandwidth and server work.">
           <MediaSection />
+        </Section>
+        <Section icon={HardDrive} title="Storage" description="Downloaded media is kept on disk so it is not fetched again. Oldest files are evicted when the cap is reached.">
+          <StorageSection />
         </Section>
         <Section icon={Bell} title="Notifications">
           <NotificationsSection />
@@ -297,6 +301,86 @@ function MediaSection() {
       <Toggle label="Auto-load videos" hint="Videos can be large; off shows a blurred frame with the size." checked={s.autoLoadVideos} onChange={(v) => set({ autoLoadVideos: v })} />
       <Toggle label="Auto-load voice notes & audio" checked={s.autoLoadAudio} onChange={(v) => set({ autoLoadAudio: v })} />
       <p className="text-xs text-neutral-500">Documents are never downloaded automatically — click to open.</p>
+      <Toggle
+        label="Fetch link previews"
+        hint="When a message with a link has no preview from the sender, fetch the page's title/description/image. Off = only sender-provided previews."
+        checked={s.linkPreviews}
+        onChange={(v) => set({ linkPreviews: v })}
+      />
+    </>
+  );
+}
+
+// ── Storage ──────────────────────────────────────────────────────────────
+
+function StorageSection() {
+  const limit = useSettings((s) => s.cacheLimitMb);
+  const save = useSettings((s) => s.save);
+  const [stats, setStats] = useState<CacheStats | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [limitText, setLimitText] = useState(String(limit));
+
+  const refresh = async () => {
+    try {
+      setStats(await cacheStats());
+    } catch (e) {
+      console.warn(e);
+    }
+  };
+  useEffect(() => {
+    void refresh();
+  }, []);
+  useEffect(() => setLimitText(String(limit)), [limit]);
+
+  return (
+    <>
+      <div className="flex items-center gap-3 text-sm">
+        <span className="flex-1 min-w-0">
+          <span className="block font-medium">{stats ? `${formatBytes(stats.bytes)} · ${stats.files} file${stats.files === 1 ? "" : "s"}` : "—"}</span>
+          {stats && (
+            <span className="block text-xs text-neutral-500 selectable truncate" title={stats.path}>
+              {stats.path}
+            </span>
+          )}
+        </span>
+        <Button size="sm" variant="ghost" className="shrink-0" onClick={refresh} title="Refresh"><RefreshCw size={14} /></Button>
+        <Button
+          size="sm"
+          variant="danger"
+          className="shrink-0"
+          disabled={busy || !stats?.files}
+          onClick={async () => {
+            if (!window.confirm("Delete all cached media? They will be downloaded again when viewed.")) return;
+            setBusy(true);
+            try {
+              await cacheClear();
+              await refresh();
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          {busy ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />} Clear cache
+        </Button>
+      </div>
+      <div className="flex items-center gap-3">
+        <span className="flex-1">
+          <span className="block text-sm">Cache limit</span>
+          <span className="block text-xs text-neutral-500">Megabytes; 0 means unlimited.</span>
+        </span>
+        <Input
+          className="w-28 text-right"
+          type="number"
+          min={0}
+          value={limitText}
+          onChange={(e) => setLimitText(e.target.value)}
+          onBlur={() => {
+            const n = Math.max(0, Math.round(Number(limitText) || 0));
+            if (n !== limit) void save({ cacheLimitMb: n });
+          }}
+        />
+        <span className="text-sm text-neutral-500">MB</span>
+      </div>
     </>
   );
 }

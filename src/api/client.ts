@@ -90,7 +90,12 @@ export class WahaClient {
     if (opts.raw) return (await res.arrayBuffer()) as unknown as T;
     if (res.status === 204) return undefined as T;
     const text = await res.text();
-    return (text ? JSON.parse(text) : undefined) as T;
+    if (!text) return undefined as T;
+    try {
+      return JSON.parse(text) as T;
+    } catch {
+      return text as unknown as T; // a few endpoints answer with plain text (e.g. invite links)
+    }
   }
 
   private get<T>(path: string, query?: Query) {
@@ -173,6 +178,9 @@ export class WahaClient {
       limit?: number;
       offset?: number;
       before?: number;
+      /** Unix seconds; with `sortOrder: "asc"` this pages forward in time. */
+      after?: number;
+      sortOrder?: "asc" | "desc";
       downloadMedia?: boolean;
       /** Only pre-download media whose mimetype starts with one of these. */
       downloadMediaMimetypes?: string[];
@@ -184,6 +192,9 @@ export class WahaClient {
       downloadMedia: opts.downloadMedia ?? true,
       downloadMediaMimetypes: opts.downloadMediaMimetypes?.length ? opts.downloadMediaMimetypes : undefined,
       "filter.timestamp.lte": opts.before,
+      "filter.timestamp.gte": opts.after,
+      sortBy: opts.sortOrder ? "timestamp" : undefined,
+      sortOrder: opts.sortOrder,
     });
   }
   /** Single message; with downloadMedia the server fetches the media and fills `media.url`. */
@@ -299,7 +310,7 @@ export class WahaClient {
   }
 
   // ── Contacts & groups ─────────────────────────────────────────────────
-  contacts(session: string, limit = 500, offset = 0) {
+  contacts(session: string, limit = 3000, offset = 0) {
     return this.get<Contact[]>("/api/contacts/all", {
       session,
       limit,
@@ -318,6 +329,39 @@ export class WahaClient {
   }
   groupInfo(session: string, id: string) {
     return this.get<GowsGroup>(`/api/${enc(session)}/groups/${enc(id)}`);
+  }
+  // ── Group management ──────────────────────────────────────────────────
+  private groupParticipants(session: string, id: string, action: string, ids: string[]) {
+    return this.post<unknown>(`/api/${enc(session)}/groups/${enc(id)}/${action}`, {
+      participants: ids.map((pid) => ({ id: pid })),
+    });
+  }
+  addParticipants(session: string, id: string, ids: string[]) {
+    return this.groupParticipants(session, id, "participants/add", ids);
+  }
+  removeParticipants(session: string, id: string, ids: string[]) {
+    return this.groupParticipants(session, id, "participants/remove", ids);
+  }
+  promoteAdmins(session: string, id: string, ids: string[]) {
+    return this.groupParticipants(session, id, "admin/promote", ids);
+  }
+  demoteAdmins(session: string, id: string, ids: string[]) {
+    return this.groupParticipants(session, id, "admin/demote", ids);
+  }
+  setGroupSubject(session: string, id: string, subject: string) {
+    return this.put<void>(`/api/${enc(session)}/groups/${enc(id)}/subject`, { subject });
+  }
+  setGroupDescription(session: string, id: string, description: string) {
+    return this.put<void>(`/api/${enc(session)}/groups/${enc(id)}/description`, { description });
+  }
+  groupInviteCode(session: string, id: string) {
+    return this.get<string>(`/api/${enc(session)}/groups/${enc(id)}/invite-code`);
+  }
+  revokeGroupInviteCode(session: string, id: string) {
+    return this.post<string>(`/api/${enc(session)}/groups/${enc(id)}/invite-code/revoke`);
+  }
+  leaveGroup(session: string, id: string) {
+    return this.post<void>(`/api/${enc(session)}/groups/${enc(id)}/leave`);
   }
   contactInfo(session: string, contactId: string) {
     return this.get<Contact>("/api/contacts", { session, contactId });

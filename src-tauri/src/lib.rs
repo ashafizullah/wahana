@@ -1,5 +1,8 @@
 use keyring::Entry;
+use serde::Serialize;
+use std::{fs, path::PathBuf, time::SystemTime};
 use tauri::{
+    ipc::{InvokeBody, Request, Response},
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     AppHandle, Manager,
@@ -34,6 +37,118 @@ fn delete_api_key(profile: String) -> Result<(), String> {
     }
 }
 
+// ── Media cache (downloaded media kept on disk so it is not fetched twice) ──
+
+fn cache_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    let dir = app
+        .path()
+        .app_cache_dir()
+        .map_err(|e| e.to_string())?
+        .join("media");
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    Ok(dir)
+}
+
+/// Keys are message ids + extension; keep them filesystem-safe.
+fn safe_key(key: &str) -> String {
+    key.chars()
+        .map(|c| if c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_') { c } else { '_' })
+        .collect()
+}
+
+#[derive(Serialize)]
+struct CacheStats {
+    bytes: u64,
+    files: u64,
+    path: String,
+}
+
+fn scan(dir: &PathBuf) -> Vec<(PathBuf, u64, SystemTime)> {
+    fs::read_dir(dir)
+        .map(|rd| {
+            rd.filter_map(|e| e.ok())
+                .filter_map(|e| {
+                    let md = e.metadata().ok()?;
+                    if !md.is_file() {
+                        return None;
+                    }
+                    Some((e.path(), md.len(), md.modified().unwrap_or(SystemTime::UNIX_EPOCH)))
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+#[tauri::command]
+fn media_cache_has(app: AppHandle, key: String) -> Result<bool, String> {
+    Ok(cache_dir(&app)?.join(safe_key(&key)).is_file())
+}
+
+/// Returns the cached bytes as a raw ArrayBuffer (no JSON overhead).
+#[tauri::command]
+fn media_cache_get(app: AppHandle, key: String) -> Result<Response, String> {
+    let path = cache_dir(&app)?.join(safe_key(&key));
+    let bytes = fs::read(&path).map_err(|e| e.to_string())?;
+    // Touch mtime so eviction is LRU-ish.
+    let _ = fs::File::open(&path).and_then(|f| f.set_modified(SystemTime::now()));
+    Ok(Response::new(bytes))
+}
+
+/// Body is the raw file; `x-key` header names it, `x-limit` (bytes) caps the cache size.
+#[tauri::command]
+fn media_cache_put(app: AppHandle, request: Request<'_>) -> Result<(), String> {
+    let header = |name: &str| {
+        request
+            .headers()
+            .get(name)
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.to_string())
+    };
+    let key = header("x-key").ok_or("missing x-key")?;
+    let limit: u64 = header("x-limit").and_then(|s| s.parse().ok()).unwrap_or(0);
+    let bytes = match request.body() {
+        InvokeBody::Raw(b) => b.clone(),
+        InvokeBody::Json(_) => return Err("expected raw body".into()),
+    };
+    let dir = cache_dir(&app)?;
+    fs::write(dir.join(safe_key(&key)), &bytes).map_err(|e| e.to_string())?;
+
+    if limit > 0 {
+        let mut files = scan(&dir);
+        let mut total: u64 = files.iter().map(|f| f.1).sum();
+        if total > limit {
+            files.sort_by_key(|f| f.2); // oldest first
+            for (path, size, _) in files {
+                if total <= limit {
+                    break;
+                }
+                if fs::remove_file(&path).is_ok() {
+                    total -= size;
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn media_cache_stats(app: AppHandle) -> Result<CacheStats, String> {
+    let dir = cache_dir(&app)?;
+    let files = scan(&dir);
+    Ok(CacheStats {
+        bytes: files.iter().map(|f| f.1).sum(),
+        files: files.len() as u64,
+        path: dir.to_string_lossy().into_owned(),
+    })
+}
+
+#[tauri::command]
+fn media_cache_clear(app: AppHandle) -> Result<(), String> {
+    let dir = cache_dir(&app)?;
+    fs::remove_dir_all(&dir).map_err(|e| e.to_string())?;
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())
+}
+
 /// Bring the main window back (it is hidden, not closed, when the user closes it).
 fn show_main(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
@@ -57,7 +172,12 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             save_api_key,
             get_api_key,
-            delete_api_key
+            delete_api_key,
+            media_cache_has,
+            media_cache_get,
+            media_cache_put,
+            media_cache_stats,
+            media_cache_clear
         ])
         .setup(|app| {
             let show = MenuItem::with_id(app, "show", "Open Wahana", true, None::<&str>)?;

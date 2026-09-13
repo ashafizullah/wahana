@@ -27,6 +27,10 @@ export interface Prefs {
   autoLoadStickers: boolean;
   autoLoadVideos: boolean;
   autoLoadAudio: boolean;
+  /** On-disk media cache cap in MB (0 = unlimited). */
+  cacheLimitMb: number;
+  /** Fetch Open Graph previews for links whose message has no embedded preview. */
+  linkPreviews: boolean;
 }
 
 const DEFAULT_PREFS: Prefs = {
@@ -35,6 +39,8 @@ const DEFAULT_PREFS: Prefs = {
   autoLoadStickers: true,
   autoLoadVideos: false,
   autoLoadAudio: true,
+  cacheLimitMb: 1024,
+  linkPreviews: true,
 };
 
 interface SettingsState extends Prefs {

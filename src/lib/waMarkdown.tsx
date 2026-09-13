@@ -6,18 +6,21 @@ import { openUrl } from "@tauri-apps/plugin-opener";
  * *bold* _italic_ ~strike~ `inline` ```mono block``` , "- " / "* " bullets,
  * "1. " numbered lists, "> " quotes and clickable URLs.
  */
-export function WaMarkdown({ text }: { text: string }) {
-  return <>{renderBlocks(text)}</>;
+/** Resolves a mention id (digits, `@lid` or `@c.us`) to a display name; return undefined to leave as-is. */
+export type MentionResolver = (id: string) => string | undefined;
+
+export function WaMarkdown({ text, mentions }: { text: string; mentions?: MentionResolver }) {
+  return <>{renderBlocks(text, mentions)}</>;
 }
 
 const CODE_BLOCK = /```([\s\S]*?)```/g;
 
-function renderBlocks(text: string): ReactNode[] {
+function renderBlocks(text: string, mentions?: MentionResolver): ReactNode[] {
   const out: ReactNode[] = [];
   let last = 0;
   let key = 0;
   for (const m of text.matchAll(CODE_BLOCK)) {
-    if (m.index! > last) out.push(...renderLines(text.slice(last, m.index), key++));
+    if (m.index! > last) out.push(...renderLines(text.slice(last, m.index), key++, mentions));
     out.push(
       <pre
         key={`c${key++}`}
@@ -28,7 +31,7 @@ function renderBlocks(text: string): ReactNode[] {
     );
     last = m.index! + m[0].length;
   }
-  if (last < text.length) out.push(...renderLines(text.slice(last), key++));
+  if (last < text.length) out.push(...renderLines(text.slice(last), key++, mentions));
   return out;
 }
 
@@ -46,7 +49,7 @@ function classify(line: string): Line {
   return { t: "p", s: line };
 }
 
-function renderLines(text: string, seed: number): ReactNode[] {
+function renderLines(text: string, seed: number, mentions?: MentionResolver): ReactNode[] {
   const lines = text.split("\n").map(classify);
   const out: ReactNode[] = [];
   let i = 0;
@@ -62,13 +65,13 @@ function renderLines(text: string, seed: number): ReactNode[] {
         type === "ul" ? (
           <ul key={key()} className="my-0.5 list-disc pl-5">
             {items.map((l) => (
-              <li key={key()}>{renderInline(l.s)}</li>
+              <li key={key()}>{renderInline(l.s, 0, mentions)}</li>
             ))}
           </ul>
         ) : (
           <ol key={key()} className="my-0.5 list-decimal pl-5" start={Number((items[0] as { n: string }).n) || 1}>
             {items.map((l) => (
-              <li key={key()}>{renderInline(l.s)}</li>
+              <li key={key()}>{renderInline(l.s, 0, mentions)}</li>
             ))}
           </ol>
         ),
@@ -82,7 +85,7 @@ function renderLines(text: string, seed: number): ReactNode[] {
         <blockquote key={key()} className="my-0.5 border-l-2 border-neutral-400/60 pl-2 opacity-80">
           {qs.map((s, j) => (
             <span key={j}>
-              {renderInline(s)}
+              {renderInline(s, 0, mentions)}
               {j < qs.length - 1 && <br />}
             </span>
           ))}
@@ -91,7 +94,7 @@ function renderLines(text: string, seed: number): ReactNode[] {
       continue;
     }
     // Paragraph line: keep as text + <br> so whitespace-pre-wrap layout stays natural.
-    out.push(<span key={key()}>{renderInline(cur.s)}</span>);
+    out.push(<span key={key()}>{renderInline(cur.s, 0, mentions)}</span>);
     if (i < lines.length - 1) out.push(<br key={key()} />);
     i++;
   }
@@ -105,22 +108,31 @@ const INLINE = new RegExp(
     "(_(?=\\S)(?:[^_\\n]*?\\S)_)", // 3 italic
     "(~(?=\\S)(?:[^~\\n]*?\\S)~)", // 4 strike
     "(https?:\\/\\/[^\\s<>]+|www\\.[^\\s<>]+)", // 5 url
+    "(?:^|(?<=[\\s(]))(@\\d{5,20})(?![\\w@])", // 6 mention (@phone or @lid digits)
   ].join("|"),
   "g",
 );
 
-export function renderInline(text: string, depth = 0): ReactNode[] {
+export function renderInline(text: string, depth = 0, mentions?: MentionResolver): ReactNode[] {
   if (depth > 3) return [text];
   const out: ReactNode[] = [];
   let last = 0;
   let k = 0;
   for (const m of text.matchAll(INLINE)) {
     if (m.index! > last) out.push(text.slice(last, m.index));
-    const [full, code, bold, italic, strike, url] = m;
+    const [full, code, bold, italic, strike, url, mention] = m;
     if (code) out.push(<code key={k++} className="rounded bg-black/10 dark:bg-white/10 px-1 font-mono text-[12px]">{code.slice(1, -1)}</code>);
-    else if (bold) out.push(<strong key={k++}>{renderInline(bold.slice(1, -1), depth + 1)}</strong>);
-    else if (italic) out.push(<em key={k++}>{renderInline(italic.slice(1, -1), depth + 1)}</em>);
-    else if (strike) out.push(<s key={k++}>{renderInline(strike.slice(1, -1), depth + 1)}</s>);
+    else if (bold) out.push(<strong key={k++}>{renderInline(bold.slice(1, -1), depth + 1, mentions)}</strong>);
+    else if (italic) out.push(<em key={k++}>{renderInline(italic.slice(1, -1), depth + 1, mentions)}</em>);
+    else if (strike) out.push(<s key={k++}>{renderInline(strike.slice(1, -1), depth + 1, mentions)}</s>);
+    else if (mention) {
+      const name = mentions?.(mention.slice(1));
+      out.push(
+        <span key={k++} className="text-sky-600 dark:text-sky-400 font-medium" title={mention}>
+          @{name ?? mention.slice(1)}
+        </span>,
+      );
+    }
     else if (url) {
       // Trailing punctuation is rarely part of the link.
       const trimmed = url.replace(/[.,;:!?)\]]+$/, "");

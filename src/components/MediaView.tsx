@@ -7,6 +7,7 @@ import { qk } from "@/api/queries";
 import type { WAMessage } from "@/api/types";
 import { cn } from "@/lib/utils";
 import { Lightbox } from "@/components/Lightbox";
+import { cacheGet, cachePut, mediaCacheKey } from "@/lib/mediaCache";
 
 interface RawMedia {
   JPEGThumbnail?: string;
@@ -60,8 +61,36 @@ export function MediaView({ message: m, session, chatId }: { message: WAMessage;
     if (auto) setWanted(true);
   }, [auto]);
 
+  const cacheKey = mediaCacheKey(m.id, mime);
+  const [checkedCache, setCheckedCache] = useState(false);
+
+  // 1) On mount, serve from the on-disk cache regardless of auto-load prefs.
   useEffect(() => {
-    if (!client || !wanted) return;
+    if (kind === "document") {
+      setCheckedCache(true);
+      return;
+    }
+    let cancelled = false;
+    let obj: string | null = null;
+    cacheGet(cacheKey)
+      .then((hit) => {
+        if (cancelled) return;
+        if (hit) {
+          obj = URL.createObjectURL(hit);
+          setBlobUrl(obj);
+        }
+      })
+      .finally(() => !cancelled && setCheckedCache(true));
+    return () => {
+      cancelled = true;
+      if (obj) URL.revokeObjectURL(obj);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cacheKey]);
+
+  // 2) Download when wanted (auto or clicked) and not already served from cache.
+  useEffect(() => {
+    if (!client || !wanted || !checkedCache || blobUrl) return;
     let cancelled = false;
     let obj: string | null = null;
     (async () => {
@@ -84,6 +113,7 @@ export function MediaView({ message: m, session, chatId }: { message: WAMessage;
         if (cancelled) return;
         obj = URL.createObjectURL(blob);
         setBlobUrl(obj);
+        void cachePut(cacheKey, blob);
       } catch (e) {
         if (!cancelled) setErr(e instanceof Error ? e.message : String(e));
       } finally {
@@ -95,7 +125,7 @@ export function MediaView({ message: m, session, chatId }: { message: WAMessage;
       if (obj) URL.revokeObjectURL(obj);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [client, wanted, m.id]);
+  }, [client, wanted, checkedCache, m.id]);
 
   // ── Documents ────────────────────────────────────────────────────────
   if (kind === "document") {
@@ -152,8 +182,8 @@ export function MediaView({ message: m, session, chatId }: { message: WAMessage;
           <img src={thumb} alt="" className="absolute inset-0 w-full h-full object-cover blur-md scale-110 opacity-80" />
         )}
         <span className="relative flex items-center gap-1.5 rounded-full bg-black/60 text-white px-3 py-1.5 text-xs font-medium">
-          {loading ? <Loader2 size={14} className="animate-spin" /> : err ? <Download size={14} /> : <Icon size={14} />}
-          {loading ? "Loading…" : err ? "Retry" : formatBytes(raw.fileLength) || "Load"}
+          {loading || !checkedCache ? <Loader2 size={14} className="animate-spin" /> : err ? <Download size={14} /> : <Icon size={14} />}
+          {loading || !checkedCache ? "Loading…" : err ? "Retry" : formatBytes(raw.fileLength) || "Load"}
           {!loading && !err && raw.seconds ? ` · ${Math.floor(raw.seconds / 60)}:${String(raw.seconds % 60).padStart(2, "0")}` : ""}
         </span>
       </button>

@@ -57,18 +57,26 @@ export function Lightbox({ item, onClose }: { item: LightboxItem; onClose: () =>
         </button>
       </div>
       <div
-        className={cn("flex-1 min-h-0 grid place-items-center overflow-auto p-4", zoom && "cursor-zoom-out")}
+        className={cn(
+          "flex-1 min-h-0 flex items-center justify-center p-4",
+          zoom ? "overflow-auto" : "overflow-hidden",
+        )}
         onMouseDown={(e) => e.target === e.currentTarget && onClose()}
       >
         {item.kind === "image" ? (
           <img
             src={item.blobUrl}
             alt=""
-            onClick={() => setZoom((z) => !z)}
-            className={cn("select-none", zoom ? "max-w-none cursor-zoom-out" : "max-w-full max-h-full object-contain cursor-zoom-in")}
+            draggable={false}
+            onDoubleClick={() => setZoom((z) => !z)}
+            title="Double-click to zoom"
+            className={cn(
+              "select-none",
+              zoom ? "max-w-none max-h-none m-auto cursor-zoom-out" : "max-w-full max-h-full object-contain cursor-zoom-in",
+            )}
           />
         ) : (
-          <video src={item.blobUrl} controls autoPlay className="max-w-full max-h-full" />
+          <video src={item.blobUrl} controls autoPlay className="max-w-full max-h-full object-contain" />
         )}
       </div>
       {item.caption && <div className="p-3 text-center text-sm text-white/80 selectable">{item.caption}</div>}

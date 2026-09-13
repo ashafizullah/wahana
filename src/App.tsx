@@ -9,6 +9,8 @@ import { EventsScreen } from "@/screens/EventsScreen";
 import { cn } from "@/lib/utils";
 import { totalUnread, useUnread } from "@/store/unread";
 import { useBadge } from "@/realtime/useBadge";
+import { usePushNames } from "@/store/pushNames";
+import { useReactions } from "@/store/reactions";
 import { useUpdater } from "@/realtime/useUpdater";
 import { Button } from "@/components/ui";
 
@@ -20,6 +22,8 @@ export default function App() {
   const socket = useWahaSocket();
   const unreadCounts = useUnread((s) => s.counts);
   const hydrateUnread = useUnread((s) => s.hydrate);
+  const hydratePushNames = usePushNames((s) => s.hydrate);
+  const hydrateReactions = useReactions((s) => s.hydrate);
   const unread = totalUnread(unreadCounts);
   useBadge(unread);
   const updater = useUpdater();
@@ -27,7 +31,9 @@ export default function App() {
   useEffect(() => {
     void hydrate();
     void hydrateUnread();
-  }, [hydrate, hydrateUnread]);
+    void hydratePushNames();
+    void hydrateReactions();
+  }, [hydrate, hydrateUnread, hydratePushNames, hydrateReactions]);
 
   useEffect(() => {
     if (hydrated && !client) setTab("settings");

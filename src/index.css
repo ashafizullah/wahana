@@ -15,6 +15,7 @@
 html, body, #root { height: 100%; margin: 0; }
 body { @apply bg-neutral-50 text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100; overflow: hidden; }
 * { user-select: none; -webkit-user-select: none; }
-input, textarea, .selectable { user-select: text; -webkit-user-select: text; }
+input, textarea, .selectable, .selectable * { user-select: text; -webkit-user-select: text; }
+.selectable img, .selectable button, .selectable video, .selectable audio { user-select: none; -webkit-user-select: none; }
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-thumb { @apply bg-neutral-300 dark:bg-neutral-700 rounded-full; }

@@ -6,6 +6,7 @@ import { qk, useChats } from "@/api/queries";
 import type { WAMessage } from "@/api/types";
 import { cn, displayId } from "@/lib/utils";
 import { Button, Input, Avatar } from "@/components/ui";
+import { useReactions } from "@/store/reactions";
 
 const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
 
@@ -100,7 +101,12 @@ export function MessageMenu({
           <button
             key={r}
             className="text-lg hover:scale-125 transition"
-            onClick={() => run("react", () => requireClient().react(session, m.id, r))}
+            onClick={() =>
+              run("react", async () => {
+                await requireClient().react(session, m.id, r);
+                useReactions.getState().set(m.id, "me", r);
+              })
+            }
           >
             {r}
           </button>
@@ -110,7 +116,12 @@ export function MessageMenu({
       <Item
         icon={SmilePlus}
         label="Remove reaction"
-        onClick={() => run("unreact", () => requireClient().react(session, m.id, ""))}
+        onClick={() =>
+          run("unreact", async () => {
+            await requireClient().react(session, m.id, "");
+            useReactions.getState().set(m.id, "me", "");
+          })
+        }
       />
       {m.body && (
         <Item

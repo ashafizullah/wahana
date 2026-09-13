@@ -35,6 +35,8 @@ export const useUnread = create<UnreadState>((set, get) => ({
   },
 
   incoming(session, chatId) {
+    // Status updates and other non-chat ids never appear in the chat list, so don't count them.
+    if (chatId === "status@broadcast" || !chatId.includes("@")) return;
     const key = chatKey(session, chatId);
     if (get().open === key) {
       get().markSeen(session, chatId);

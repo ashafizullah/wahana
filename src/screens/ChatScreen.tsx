@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { Loader2, Search, Send, Check, CheckCheck, Clock, X, Users, Megaphone, SquarePen, Info } from "lucide-react";
+import { Loader2, Search, Send, Check, CheckCheck, Clock, X, Users, Megaphone, SquarePen, Info, CalendarDays, ArrowDown } from "lucide-react";
 import { useChats, useMessages, useSendText, useSessions, useMediaPrefixes, qk } from "@/api/queries";
 import { mediaKind, requireClient, useSettings } from "@/store/settings";
 import { Avatar, Button } from "@/components/ui";
@@ -10,17 +10,25 @@ import { AttachMenu, VoiceRecorder, LocationDialog, ContactDialog, PollDialog, t
 import { NewChatDialog } from "@/components/NewChatDialog";
 import { InfoPanel } from "@/components/InfoPanel";
 import { usePresence, presenceLabel } from "@/realtime/usePresence";
+import { useNameResolver } from "@/realtime/useNames";
+import { QuoteView, type ReplyTo } from "@/components/QuoteView";
+import { ResizeHandle, usePaneWidth } from "@/components/ResizeHandle";
+import { LinkPreviewCard } from "@/components/LinkPreview";
+import { bareId, summarize, useReactions } from "@/store/reactions";
+import type { MentionResolver } from "@/lib/waMarkdown";
 import { WaMarkdown, stripWaMarkdown } from "@/lib/waMarkdown";
 import type { ChatOverview, WAMessage } from "@/api/types";
 import { cn, displayId, fileToBase64, formatDateDivider, formatTime, isChannel, isGroup } from "@/lib/utils";
 import { useQueryClient } from "@tanstack/react-query";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { chatKey, unreadFor, useUnread } from "@/store/unread";
+import { usePushNames } from "@/store/pushNames";
 
 export function ChatScreen({ onNeedSetup }: { onNeedSetup: () => void }) {
   const { client, session } = useSettings();
   const { data: sessions } = useSessions();
   const [selected, setSelected] = useState<string | null>(null);
+  const [listWidth, setListWidth] = usePaneWidth("chatList", 320, 240, 560);
 
   const sessionInfo = sessions?.find((s) => s.name === session);
 
@@ -41,7 +49,8 @@ export function ChatScreen({ onNeedSetup }: { onNeedSetup: () => void }) {
 
   return (
     <>
-      <ChatList session={session} selected={selected} onSelect={setSelected} />
+      <ChatList session={session} selected={selected} onSelect={setSelected} width={listWidth} />
+      <ResizeHandle onDrag={(dx) => setListWidth((w) => w + dx)} onReset={() => setListWidth(320)} />
       {selected ? (
         <Conversation key={selected} session={session} chatId={selected} />
       ) : (
@@ -65,10 +74,12 @@ function ChatList({
   session,
   selected,
   onSelect,
+  width,
 }: {
   session: string;
   selected: string | null;
   onSelect: (id: string) => void;
+  width: number;
 }) {
   const { data, isLoading, error } = useChats(session);
   const { data: sessions } = useSessions();
@@ -106,7 +117,7 @@ function ChatList({
   });
 
   return (
-    <div className="w-80 shrink-0 flex flex-col border-r border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900">
+    <div style={{ width }} className="shrink-0 flex flex-col border-r border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900">
       <div className="p-3 border-b border-neutral-200 dark:border-neutral-800 space-y-2">
         <ProfilePicker />
         <SessionPicker
@@ -313,29 +324,89 @@ function Conversation({ session, chatId }: { session: string; chatId: string }) 
   const [highlight, setHighlight] = useState<string | null>(null);
   const prefixes = useMediaPrefixes();
   const presence = usePresence(session, chatId);
-  const presenceText = presenceLabel(presence, chatId, isGroup(chatId), (id) => displayId(id));
+  const resolveName = useNameResolver(session, chatId);
+  const { data: sessionsForMe } = useSessions();
+  const me = sessionsForMe?.find((x) => x.name === session)?.me;
+  const myIds = useMemo(() => [me?.id, me?.lid, me?.jid].filter((x): x is string => !!x), [me]);
+  const presenceText = presenceLabel(presence, chatId, isGroup(chatId), (id) => resolveName(id) ?? displayId(id));
 
   // Messages arrive newest-first from the API; render oldest-first.
   const ordered = useMemo(() => [...(messages ?? [])].sort((a, b) => a.timestamp - b.timestamp), [messages]);
 
   const [hasMore, setHasMore] = useState(true);
   const [loadingOlder, setLoadingOlder] = useState(false);
+  /** After a jump-to-date the newest messages are not loaded; page forward until caught up. */
+  const [hasNewer, setHasNewer] = useState(false);
+  const [loadingNewer, setLoadingNewer] = useState(false);
+  const [datePick, setDatePick] = useState(false);
   const pendingPrepend = useRef<number | null>(null);
   const topRef = useRef<HTMLDivElement>(null);
 
-  // Stick to the bottom for new messages unless the user scrolled up; keep position after prepending older ones.
+  // Scroll management:
+  // - first batch for a chat → jump to the newest message (bottom)
+  // - new messages while the user is at the bottom (or sent by me) → stay at bottom
+  // - prepending older messages → keep the viewport where it was
+  // - content growing (media loading) while at the bottom → stay at bottom
+  const atBottomRef = useRef(true);
+  const skipAutoScroll = useRef(false);
+  const initialScrolled = useRef(false);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const prevLen = useRef(0);
+
+  useEffect(() => {
+    initialScrolled.current = false;
+    atBottomRef.current = true;
+    prevLen.current = 0;
+  }, [chatId]);
+
   useLayoutEffect(() => {
     const el = listRef.current;
     if (!el) return;
     if (pendingPrepend.current !== null) {
       el.scrollTop += el.scrollHeight - pendingPrepend.current;
       pendingPrepend.current = null;
+      prevLen.current = ordered.length;
       return;
     }
-    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 200;
+    if (skipAutoScroll.current) {
+      // Newer page appended below: keep the viewport where it is.
+      skipAutoScroll.current = false;
+      prevLen.current = ordered.length;
+      return;
+    }
+    if (!initialScrolled.current && ordered.length > 0) {
+      el.scrollTop = el.scrollHeight;
+      initialScrolled.current = true;
+      prevLen.current = ordered.length;
+      return;
+    }
+    const grew = ordered.length > prevLen.current;
+    prevLen.current = ordered.length;
     const last = ordered[ordered.length - 1];
-    if (nearBottom || last?.fromMe) el.scrollTop = el.scrollHeight;
+    if (grew && (atBottomRef.current || last?.fromMe)) el.scrollTop = el.scrollHeight;
   }, [ordered]);
+
+  const loadOlderRef = useRef<() => Promise<void>>(async () => {});
+  useEffect(() => {
+    const el = listRef.current;
+    const content = contentRef.current;
+    if (!el || !content) return;
+    const onScroll = () => {
+      atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+      if (el.scrollTop < 150) void loadOlderRef.current();
+      if (el.scrollHeight - el.scrollTop - el.clientHeight < 150) void loadNewerRef.current();
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    // Media/bubbles growing after render: keep pinned to the bottom if we were there.
+    const ro = new ResizeObserver(() => {
+      if (atBottomRef.current && pendingPrepend.current === null) el.scrollTop = el.scrollHeight;
+    });
+    ro.observe(content);
+    return () => {
+      el.removeEventListener("scroll", onScroll);
+      ro.disconnect();
+    };
+  }, [chatId]);
 
   useEffect(() => {
     setHasMore(true);
@@ -353,7 +424,7 @@ function Conversation({ session, chatId }: { session: string; chatId: string }) 
   }, [session, chatId, ordered.length, markSeen]);
 
   const loadOlder = async () => {
-    if (!ordered.length || loadingOlder || !hasMore) return;
+    if (!ordered.length || loadingOlder || !hasMore || !initialScrolled.current) return;
     setLoadingOlder(true);
     try {
       const oldest = ordered[0]!.timestamp;
@@ -363,6 +434,7 @@ function Conversation({ session, chatId }: { session: string; chatId: string }) 
         downloadMedia: prefixes.length > 0,
         downloadMediaMimetypes: prefixes,
       });
+      usePushNames.getState().learn(more);
       const fresh = more.filter((m) => !ordered.some((o) => o.id === m.id));
       if (fresh.length === 0) {
         setHasMore(false);
@@ -374,6 +446,69 @@ function Conversation({ session, chatId }: { session: string; chatId: string }) 
     } finally {
       setLoadingOlder(false);
     }
+  };
+
+  loadOlderRef.current = loadOlder;
+
+  const loadNewer = async () => {
+    if (!ordered.length || loadingNewer || !hasNewer) return;
+    setLoadingNewer(true);
+    try {
+      const newest = ordered[ordered.length - 1]!.timestamp;
+      const more = await requireClient().messages(session, chatId, {
+        limit: 60,
+        after: newest + 1,
+        sortOrder: "asc",
+        downloadMedia: prefixes.length > 0,
+        downloadMediaMimetypes: prefixes,
+      });
+      usePushNames.getState().learn(more);
+      const fresh = more.filter((m) => !ordered.some((o) => o.id === m.id));
+      if (fresh.length) {
+        skipAutoScroll.current = true;
+        atBottomRef.current = false;
+        qc.setQueryData(qk.messages(session, chatId), (old?: WAMessage[]) => [...fresh.reverse(), ...(old ?? [])]);
+      }
+      if (more.length < 60) setHasNewer(false);
+    } finally {
+      setLoadingNewer(false);
+    }
+  };
+  const loadNewerRef = useRef(loadNewer);
+  loadNewerRef.current = loadNewer;
+
+  /** Replace the view with the 60 messages up to the end of `day` (local time). */
+  const jumpToDate = async (day: string) => {
+    const end = Math.floor(new Date(`${day}T23:59:59`).getTime() / 1000);
+    const start = Math.floor(new Date(`${day}T00:00:00`).getTime() / 1000);
+    setDatePick(false);
+    setLoadingOlder(true);
+    try {
+      const list = await requireClient().messages(session, chatId, {
+        limit: 60,
+        before: end,
+        downloadMedia: prefixes.length > 0,
+        downloadMediaMimetypes: prefixes,
+      });
+      usePushNames.getState().learn(list);
+      qc.setQueryData(qk.messages(session, chatId), list);
+      setHasMore(list.length >= 60);
+      setHasNewer(true);
+      atBottomRef.current = false;
+      initialScrolled.current = false; // scroll to the bottom of the jumped page (≈ the chosen day)
+      const first = [...list].reverse().find((m) => m.timestamp >= start);
+      if (first) setTimeout(() => jumpTo(first.id), 50);
+    } finally {
+      setLoadingOlder(false);
+    }
+  };
+
+  const backToLatest = () => {
+    setHasNewer(false);
+    setHasMore(true);
+    initialScrolled.current = false;
+    atBottomRef.current = true;
+    void qc.resetQueries({ queryKey: qk.messages(session, chatId) });
   };
 
   // Trigger loadOlder when the top sentinel scrolls into view.
@@ -394,9 +529,11 @@ function Conversation({ session, chatId }: { session: string; chatId: string }) 
   }, [ordered, search]);
 
   const jumpTo = (id: string) => {
-    setHighlight(id);
-    document.getElementById(`msg-${id}`)?.scrollIntoView({ block: "center", behavior: "smooth" });
-    setTimeout(() => setHighlight((h) => (h === id ? null : h)), 2000);
+    // Quoted ids are the bare WhatsApp id; full ids look like "true_<chat>_<id>[_<participant>]".
+    const full = ordered.find((m) => m.id === id || m.id.split("_")[2] === id)?.id ?? id;
+    setHighlight(full);
+    document.getElementById(`msg-${full}`)?.scrollIntoView({ block: "center", behavior: "smooth" });
+    setTimeout(() => setHighlight((h) => (h === full ? null : h)), 2000);
   };
 
   // ⌘/Ctrl+F opens in-chat search.
@@ -425,6 +562,24 @@ function Conversation({ session, chatId }: { session: string; chatId: string }) 
             </div>
           </div>
         </button>
+        <div className="relative">
+          <Button variant="ghost" size="sm" onClick={() => setDatePick((v) => !v)} title="Jump to date">
+            <CalendarDays size={16} />
+          </Button>
+          {datePick && (
+            <div className="absolute right-0 top-full mt-1 z-30 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-xl p-3 space-y-2 w-56">
+              <div className="text-xs font-medium">Jump to date</div>
+              <input
+                type="date"
+                autoFocus
+                max={new Date().toISOString().slice(0, 10)}
+                onChange={(e) => e.target.value && void jumpToDate(e.target.value)}
+                className="w-full rounded-lg border border-neutral-300 dark:border-neutral-700 bg-transparent px-2 py-1 text-sm outline-none"
+              />
+              <div className="text-[11px] text-neutral-500">Shows messages up to the end of that day.</div>
+            </div>
+          )}
+        </div>
         <Button variant="ghost" size="sm" onClick={() => { setSearch((v) => (v === null ? "" : null)); setTimeout(() => document.getElementById("msg-search")?.focus(), 0); }} title="Search in chat (⌘F)">
           <Search size={16} />
         </Button>
@@ -460,7 +615,7 @@ function Conversation({ session, chatId }: { session: string; chatId: string }) 
               {matches.map((m) => (
                 <button key={m.id} onClick={() => jumpTo(m.id)} className="w-full text-left px-1 py-1 text-xs hover:bg-neutral-100 dark:hover:bg-neutral-800">
                   <span className="text-neutral-400 mr-2">{formatTime(m.timestamp)}</span>
-                  <span className="font-medium mr-1">{m.fromMe ? "You" : senderName(m)}:</span>
+                  <span className="font-medium mr-1">{m.fromMe ? "You" : (resolveName(m.participant || m.from) ?? senderName(m))}:</span>
                   <span className="opacity-80">{m.body.slice(0, 120)}</span>
                 </button>
               ))}
@@ -469,7 +624,8 @@ function Conversation({ session, chatId }: { session: string; chatId: string }) 
         </div>
       )}
 
-      <div ref={listRef} className="flex-1 overflow-y-auto px-6 py-4 space-y-1">
+      <div ref={listRef} className="flex-1 overflow-y-auto px-6 py-4">
+        <div ref={contentRef} className="space-y-1">
         {isLoading && <Loader2 className="animate-spin text-neutral-400" />}
         {error && <div className="text-sm text-red-600 selectable">{(error as Error).message}</div>}
         <div ref={topRef} className="h-6 grid place-items-center text-neutral-400">
@@ -495,11 +651,28 @@ function Conversation({ session, chatId }: { session: string; chatId: string }) 
                 chatId={chatId}
                 onReply={() => setReplyTo(m)}
                 onMenu={(pos) => setMenu({ m, pos })}
+                resolveName={resolveName}
+                myIds={myIds}
+                onJump={jumpTo}
               />
             </div>
           );
         })}
+        {hasNewer && (
+          <div className="h-6 grid place-items-center text-neutral-400">{loadingNewer && <Loader2 size={16} className="animate-spin" />}</div>
+        )}
+        </div>
       </div>
+      {hasNewer && (
+        <div className="relative">
+          <button
+            onClick={backToLatest}
+            className="absolute bottom-3 right-4 z-20 flex items-center gap-1.5 rounded-full bg-wa-dark text-white px-3 py-1.5 text-xs shadow-lg hover:bg-wa-teal"
+          >
+            <ArrowDown size={14} /> Jump to latest
+          </button>
+        </div>
+      )}
 
       <Composer
         session={session}
@@ -508,6 +681,8 @@ function Conversation({ session, chatId }: { session: string; chatId: string }) 
         onClearReply={() => setReplyTo(null)}
         editing={editing}
         onClearEdit={() => setEditing(null)}
+        resolveName={resolveName}
+        myIds={myIds}
       />
       {menu && (
         <MessageMenu
@@ -521,7 +696,7 @@ function Conversation({ session, chatId }: { session: string; chatId: string }) 
         />
       )}
     </div>
-    {info && <InfoPanel session={session} chatId={chatId} chat={chat} onClose={() => setInfo(false)} />}
+    {info && <InfoPanel session={session} chatId={chatId} chat={chat} myIds={myIds} onClose={() => setInfo(false)} />}
     </>
   );
 }
@@ -538,6 +713,9 @@ function Bubble({
   chatId,
   onReply,
   onMenu,
+  resolveName,
+  myIds,
+  onJump,
 }: {
   message: WAMessage;
   group: boolean;
@@ -545,11 +723,17 @@ function Bubble({
   chatId: string;
   onReply: () => void;
   onMenu: (pos: MenuPos) => void;
+  resolveName: MentionResolver;
+  myIds: string[];
+  onJump: (id: string) => void;
 }) {
   const mine = m.fromMe;
   const sticker = m.hasMedia && !m.body && mediaKind(m) === "sticker";
+  const reactionMap = useReactions((s) => s.byMsg[bareId(m.id)]);
+  const reactions = summarize(reactionMap, myIds.map((x) => x.split("@")[0]!.split(":")[0]!));
   return (
     <div className={cn("flex", mine ? "justify-end" : "justify-start")}>
+      <div className={cn("flex flex-col max-w-[70%]", mine ? "items-end" : "items-start")}>
       <div
         onDoubleClick={onReply}
         onContextMenu={(e) => {
@@ -558,7 +742,7 @@ function Bubble({
         }}
         title="Double-click to reply · right-click for more"
         className={cn(
-          "max-w-[70%] rounded-lg px-3 py-1.5 text-sm selectable",
+          "rounded-lg px-3 py-1.5 text-sm selectable",
           sticker
             ? "bg-transparent"
             : mine
@@ -566,11 +750,19 @@ function Bubble({
               : "bg-white dark:bg-neutral-800 shadow-sm",
         )}
       >
-        {group && !mine && <div className="text-[11px] font-semibold text-wa-dark dark:text-wa mb-0.5">{senderName(m)}</div>}
-        {m.replyTo && (
-          <div className="mb-1 rounded border-l-2 border-wa-dark bg-black/5 dark:bg-white/10 px-2 py-1 text-xs opacity-80 truncate">
-            {(m.replyTo as { body?: string }).body ?? "…"}
+        {group && !mine && (
+          <div className="text-[11px] font-semibold text-wa-dark dark:text-wa mb-0.5">
+            {resolveName(m.participant || m.from) ?? senderName(m)}
           </div>
+        )}
+        {m.replyTo && (
+          <QuoteView
+            quote={m.replyTo as ReplyTo}
+            resolveName={resolveName}
+            myIds={myIds}
+            onClick={() => onJump((m.replyTo as ReplyTo).id)}
+            className="mb-1"
+          />
         )}
         {m.hasMedia && (
           <div className="mb-1">
@@ -593,13 +785,32 @@ function Bubble({
         <PollView message={m} />
         {m.body && (
           <div className="break-words">
-            <WaMarkdown text={m.body} />
+            <WaMarkdown text={m.body} mentions={resolveName} />
           </div>
         )}
+        {m.body && !m.hasMedia && <LinkPreviewCard message={m} />}
         <div className="flex items-center justify-end gap-1 mt-0.5 text-[10px] text-neutral-500 dark:text-neutral-300/70">
           {formatTime(m.timestamp)}
           {mine && <AckIcon ack={m.ack} />}
         </div>
+      </div>
+      {reactions.length > 0 && (
+        <div className="-mt-2 mx-2 flex gap-1 z-10">
+          {reactions.map((r) => (
+            <span
+              key={r.emoji}
+              title={r.me ? "You reacted" : undefined}
+              className={cn(
+                "rounded-full bg-white dark:bg-neutral-800 border px-1.5 py-px text-[12px] leading-4 shadow-sm",
+                r.me ? "border-wa-dark" : "border-neutral-200 dark:border-neutral-700",
+              )}
+            >
+              {r.emoji}
+              {r.count > 1 && <span className="ml-0.5 text-[10px] text-neutral-500">{r.count}</span>}
+            </span>
+          ))}
+        </div>
+      )}
       </div>
     </div>
   );
@@ -652,6 +863,8 @@ function Composer({
   onClearReply,
   editing,
   onClearEdit,
+  resolveName,
+  myIds,
 }: {
   session: string;
   chatId: string;
@@ -659,6 +872,8 @@ function Composer({
   onClearReply: () => void;
   editing: WAMessage | null;
   onClearEdit: () => void;
+  resolveName: MentionResolver;
+  myIds: string[];
 }) {
   const [text, setText] = useState("");
   const [uploading, setUploading] = useState(false);
@@ -785,10 +1000,9 @@ function Composer({
         </div>
       )}
       {replyTo && !editing && (
-        <div className="flex items-center gap-2 rounded-lg bg-neutral-100 dark:bg-neutral-800 px-3 py-1.5 text-xs">
-          <span className="font-semibold text-wa-dark">Replying to</span>
-          <span className="truncate flex-1 opacity-80">{replyTo.body || "media"}</span>
-          <button onClick={onClearReply}>
+        <div className="flex items-center gap-2">
+          <QuoteView quote={replyTo} resolveName={resolveName} myIds={myIds} className="flex-1" />
+          <button onClick={onClearReply} title="Cancel reply">
             <X size={14} />
           </button>
         </div>

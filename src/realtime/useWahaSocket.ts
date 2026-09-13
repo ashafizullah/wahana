@@ -6,6 +6,8 @@ import { notifyIncoming } from "@/realtime/notify";
 import { qk } from "@/api/queries";
 import { useUnread } from "@/store/unread";
 import { useEventLog } from "@/store/eventLog";
+import { usePushNames } from "@/store/pushNames";
+import { useReactions, type ReactionEvent } from "@/store/reactions";
 import { messageChatId } from "@/lib/utils";
 import { pushPresence } from "@/realtime/usePresence";
 import type { PresenceInfo } from "@/api/types";
@@ -80,7 +82,18 @@ export function useWahaSocket() {
         }
         case "message.any": {
           const m = e.payload as WAMessage;
-          const chatId = messageChatId(m);
+          let chatId = messageChatId(m);
+          usePushNames.getState().learn([m]);
+          // Prefer the id the chat list uses (LID vs phone) so badges line up with rows.
+          const known = qc.getQueryData<{ id: string }[]>(qk.chats(e.session));
+          if (known && !known.some((c) => c.id === chatId)) {
+            const digits = chatId.split("@")[0];
+            const alt = [m.from, m.to, (m._data as { Info?: { SenderAlt?: string; Chat?: string } } | undefined)?.Info?.SenderAlt]
+              .filter((x): x is string => !!x)
+              .map((x) => x.replace(/@s\.whatsapp\.net$/, "@c.us"));
+            const match = known.find((c) => c.id === alt.find((a) => a === c.id) || c.id.split("@")[0] === digits);
+            if (match) chatId = match.id;
+          }
           if (!m.fromMe) useUnread.getState().incoming(e.session, chatId);
           for (const id of new Set([chatId, m.from, m.to].filter(Boolean))) {
             qc.setQueryData(qk.messages(e.session, id), (old?: WAMessage[]) => {
@@ -106,9 +119,12 @@ export function useWahaSocket() {
           pushPresence(e.payload as PresenceInfo);
           break;
         }
-        case "message.revoked":
-        case "message.edited":
         case "message.reaction": {
+          useReactions.getState().apply(e.payload as ReactionEvent);
+          break;
+        }
+        case "message.revoked":
+        case "message.edited": {
           qc.invalidateQueries({ queryKey: ["messages", e.session] });
           qc.invalidateQueries({ queryKey: qk.chats(e.session) });
           break;
