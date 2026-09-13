@@ -27,7 +27,15 @@ Grab the latest `.dmg` (macOS, Apple Silicon or Intel) or `.msi` (Windows x64) f
 
 > macOS: the build is not notarized yet — on first launch, right-click the app → **Open**, or run `xattr -dr com.apple.quarantine /Applications/Wahana.app`.
 
-You need a running WAHA server (the free **CORE** build works) and its **plain-text API key** — if your server config says `WAHA_API_KEY=sha512:…`, that is the hash; clients still send the original key.
+## How it works
+
+Wahana is **only a client**. There is no Wahana backend, account, or cloud — the app talks directly to **your own WAHA server**, the one you deploy and run yourself (Docker, VPS, home server, anything). Your WhatsApp session, messages and media stay between your machine and your server; the project never sees them.
+
+You need:
+
+- A running [WAHA](https://waha.devlike.pro) server (the free **CORE** build works; WAHA 2026.8+ recommended). Several servers can be configured and switched at any time.
+- Its **plain-text API key** — if your server config says `WAHA_API_KEY=sha512:…`, that is the hash; clients still send the original key.
+- Optionally, for the AI features, your own API key for Anthropic or any OpenAI-compatible endpoint. Requests go straight from the app to that provider.
 
 ## Features
 
@@ -56,8 +64,11 @@ You need a running WAHA server (the free **CORE** build works) and its **plain-t
 - Webhook manager per session, live event log for debugging integrations
 
 **AI (bring your own key)**
-- Anthropic (official SDK) or any OpenAI-compatible endpoint (routers, Ollama…)
-- Translate incoming messages (auto-detected source, target of your choice) and translate drafts before sending
+- Anthropic (official SDK) or any OpenAI-compatible endpoint (routers, Ollama…); optional cheaper "fast model" for short tasks; a persona/system prompt used by every feature
+- Translate incoming messages and drafts; per-chat auto-translate (incoming shown in your language, outgoing sent in theirs)
+- Summarize a chat or group (since last read / today / last N) or ask a question about it
+- Writing assistant in the composer (fix grammar, formal / casual / friendlier, shorter / longer, bullets) and reply suggestions
+- Describe an image or extract its text (OCR)
 
 **App**
 - System tray, desktop notifications, incoming-call banner, keyboard shortcuts, light / dark theme
