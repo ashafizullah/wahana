@@ -241,3 +241,70 @@ export function analyzeImage(image: { data: string; mediaType: string }, kind: "
   const user = caption ? `The sender's caption: "${caption}"` : kind === "ocr" ? "Extract the text." : "Describe the image.";
   return completeWithImage(system, user, image, { maxTokens: 2048 });
 }
+
+/** Pull the first JSON array out of a model reply (tolerates code fences / prose around it). */
+function parseJsonArray<T>(raw: string): T[] {
+  const m = raw.match(/\[[\s\S]*\]/);
+  try {
+    const v = JSON.parse(m ? m[0] : raw) as unknown;
+    return Array.isArray(v) ? (v as T[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+export interface ExtractedTask {
+  /** Short imperative title, e.g. "Send invoice to Budi". */
+  title: string;
+  /** Who is responsible ("You" or a name), if stated. */
+  who?: string;
+  /** ISO 8601 local datetime (no timezone) when a date/time was mentioned, else null. */
+  due?: string | null;
+  /** Amount / place / other key detail, if any. */
+  detail?: string;
+}
+
+/** Find commitments, deadlines, appointments and bills in a transcript. */
+export async function extractTasks(text: string, opts: { chatName: string; language: string; now?: Date }): Promise<ExtractedTask[]> {
+  const now = opts.now ?? new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const nowIso = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  const weekday = now.toLocaleDateString("en-US", { weekday: "long" });
+  const system = `You extract action items from a WhatsApp conversation ("You" = the user) in chat "${opts.chatName}".
+Current local date/time: ${nowIso} (${weekday}). Resolve relative dates ("besok", "Jumat", "next week", "jam 3") to absolute local datetimes; when only a date is known use 09:00; when unknown use null. Never invent dates.
+Return a JSON array only, no prose. Items: {"title": string (imperative, ≤ 10 words, in ${langName(opts.language)}), "who": string|undefined, "due": "YYYY-MM-DDTHH:mm"|null, "detail": string|undefined}.
+Include: tasks, promises, deadlines, meetings/appointments, payments due, things to send or bring. Skip small talk and things already done. Max 12 items, most important first. Return [] if none.`;
+  const raw = await complete(system, `Transcript (oldest first):\n${text}`, { maxTokens: 1500 });
+  return parseJsonArray<ExtractedTask>(raw)
+    .filter((t) => t && typeof t.title === "string" && t.title.trim())
+    .map((t) => ({ title: t.title.trim(), who: t.who || undefined, due: t.due && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(t.due) ? t.due.slice(0, 16) : null, detail: t.detail || undefined }));
+}
+
+export interface LabelSuggestion {
+  /** Names of existing labels that fit. */
+  labels: string[];
+  /** One new label to create when nothing existing fits well, else undefined. */
+  suggestNew?: string;
+  /** One sentence in the user's language. */
+  reason: string;
+}
+
+/** Pick which of the existing labels fit a chat (and optionally propose a new one). */
+export async function suggestLabels(text: string, opts: { chatName: string; existing: string[]; language: string }): Promise<LabelSuggestion> {
+  const system = `You classify a WhatsApp chat named "${opts.chatName}" for the user ("You") using their own label set.
+Existing labels: ${opts.existing.length ? opts.existing.map((l) => JSON.stringify(l)).join(", ") : "(none)"}.
+Return a JSON object only: {"labels": string[] (subset of existing labels that clearly apply, may be empty), "suggestNew": string|undefined (a short new label name only when no existing one fits and a category is obvious, e.g. "Lead", "Complaint", "Supplier", "Spam", "Family"), "reason": string (one sentence in ${langName(opts.language)})}.`;
+  const raw = await complete(system, `Recent messages (oldest first):\n${text}`, { maxTokens: 300, fast: true });
+  const m = raw.match(/\{[\s\S]*\}/);
+  try {
+    const v = JSON.parse(m ? m[0] : raw) as Partial<LabelSuggestion>;
+    const lower = new Map(opts.existing.map((l) => [l.toLowerCase(), l]));
+    return {
+      labels: (Array.isArray(v.labels) ? v.labels : []).map((l) => lower.get(String(l).toLowerCase())).filter((x): x is string => !!x),
+      suggestNew: typeof v.suggestNew === "string" && v.suggestNew.trim() && !lower.has(v.suggestNew.trim().toLowerCase()) ? v.suggestNew.trim() : undefined,
+      reason: typeof v.reason === "string" ? v.reason : "",
+    };
+  } catch {
+    throw new Error("The model returned an unexpected answer.");
+  }
+}

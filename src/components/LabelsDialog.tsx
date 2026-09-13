@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Tag, X, Plus, Trash2, Loader2, Check } from "lucide-react";
-import { requireClient } from "@/store/settings";
+import { Tag, X, Plus, Trash2, Loader2, Check, Sparkles } from "lucide-react";
+import { requireClient, useSettings } from "@/store/settings";
+import { aiConfigured, suggestLabels, type LabelSuggestion } from "@/lib/ai";
+import { transcript } from "@/lib/exportChat";
+import { useNameResolver } from "@/realtime/useNames";
 import { Button, Input } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { confirm } from "@/components/Confirm";
@@ -47,6 +50,29 @@ export function LabelsDialog({ session, chatId, chatName, onClose }: { session: 
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const sel = selected ?? new Set((current.data ?? []).map((l) => l.id));
+  const resolveName = useNameResolver(session, chatId);
+  const [ai, setAi] = useState<LabelSuggestion | null>(null);
+  const [aiBusy, setAiBusy] = useState(false);
+  const suggest = async () => {
+    setAiBusy(true);
+    setErr(null);
+    setAi(null);
+    try {
+      const msgs = await requireClient().messages(session, chatId, { limit: 30, downloadMedia: false });
+      const usable = msgs.filter((m) => m.body || m.hasMedia);
+      if (!usable.length) throw new Error("No recent messages to classify.");
+      setAi(await suggestLabels(transcript(usable, resolveName), { chatName, existing: (labels ?? []).map((l) => l.name), language: useSettings.getState().aiTranslateTo }));
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setAiBusy(false);
+    }
+  };
+  const applySuggested = (names: string[]) => {
+    const n = new Set(sel);
+    for (const l of labels ?? []) if (names.includes(l.name)) n.add(l.id);
+    setSelected(n);
+  };
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -91,6 +117,47 @@ export function LabelsDialog({ session, chatId, chatName, onClose }: { session: 
             </div>
             <Button size="sm" variant="secondary" disabled={!newName.trim()} onClick={async () => { try { await requireClient().createLabel(session, newName.trim(), newColor); setNewName(""); invalidate(); } catch (e) { setErr(e instanceof Error ? e.message : String(e)); } }}><Plus size={12} /></Button>
           </div>
+          {aiConfigured() && (
+            <div className="rounded-lg bg-neutral-50 dark:bg-neutral-800/60 px-3 py-2 text-xs space-y-1.5">
+              <div className="flex items-center gap-2">
+                <Sparkles size={12} className="text-wa-dark" />
+                <span className="flex-1 text-neutral-600 dark:text-neutral-300">Let AI read the last 30 messages and pick labels.</span>
+                <Button size="sm" variant="secondary" disabled={aiBusy} onClick={() => void suggest()}>
+                  {aiBusy ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />} {ai ? "Again" : "Suggest"}
+                </Button>
+              </div>
+              {ai && (
+                <div className="space-y-1">
+                  {ai.labels.length > 0 ? (
+                    <div className="flex flex-wrap items-center gap-1">
+                      <span className="text-neutral-500">Fits:</span>
+                      {ai.labels.map((name) => {
+                        const l = labels?.find((x) => x.name === name);
+                        const on = !!l && sel.has(l.id);
+                        return (
+                          <button key={name} onClick={() => applySuggested([name])} disabled={on} className={cn("inline-flex items-center gap-1 rounded-full border px-2 py-0.5", on ? "border-wa-dark text-wa-dark" : "border-neutral-300 dark:border-neutral-600 hover:bg-white dark:hover:bg-neutral-700")}>
+                            <span className="w-2 h-2 rounded-full" style={{ background: l?.colorHex || "#999" }} />{name}{on && <Check size={10} />}
+                          </button>
+                        );
+                      })}
+                      {ai.labels.some((name) => { const l = labels?.find((x) => x.name === name); return l && !sel.has(l.id); }) && (
+                        <button className="underline text-wa-dark" onClick={() => applySuggested(ai.labels)}>apply all</button>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="text-neutral-500">None of the existing labels fit.</div>
+                  )}
+                  {ai.suggestNew && (
+                    <div className="flex items-center gap-1">
+                      <span className="text-neutral-500">New label idea:</span>
+                      <button className="rounded-full border border-dashed border-neutral-400 px-2 py-0.5 hover:bg-white dark:hover:bg-neutral-700" onClick={() => { setNewName(ai.suggestNew!); }}>+ {ai.suggestNew}</button>
+                    </div>
+                  )}
+                  {ai.reason && <div className="text-neutral-500 italic">{ai.reason}</div>}
+                </div>
+              )}
+            </div>
+          )}
           {err && <div className="text-xs text-red-600 selectable">{err}</div>}
           <div className="flex justify-end gap-2">
             <Button variant="secondary" onClick={onClose}>Cancel</Button>
