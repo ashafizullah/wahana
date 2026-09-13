@@ -31,7 +31,9 @@ import { usePolls } from "@/store/polls";
 import { Pin, BellOff } from "lucide-react";
 import { LabelsDialog, useLabelMap, useLabels } from "@/components/LabelsDialog";
 import { exportChat, type ExportFormat } from "@/lib/exportChat";
-import { MoreVertical, Download } from "lucide-react";
+import { MoreVertical, Download, Languages, Loader2 as Spinner } from "lucide-react";
+import { useTranslations } from "@/store/translations";
+import { aiConfigured, translate, langName } from "@/lib/ai";
 import type { MentionResolver } from "@/lib/waMarkdown";
 import { WaMarkdown, stripWaMarkdown } from "@/lib/waMarkdown";
 import type { ChatOverview, WAMessage } from "@/api/types";
@@ -175,25 +177,30 @@ function ChatList({
             <SquarePen size={16} />
           </Button>
         </div>
-        <div className="flex gap-1.5 items-center">
-          {labels && labels.length > 0 && (
-            <select value={labelFilter} onChange={(e) => setLabelFilter(e.target.value)} className="rounded-full bg-neutral-100 dark:bg-neutral-800 px-2 py-0.5 text-[11px] outline-none max-w-[110px]" title="Filter by label">
-              <option value="">All labels</option>
-              {labels.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-            </select>
-          )}
+        <div className="flex gap-1 items-center flex-wrap">
           {(["all", "unread", "groups", "archived"] as const).map((f) => (
             <button
               key={f}
               onClick={() => setFilter(f)}
               className={cn(
-                "rounded-full px-2.5 py-0.5 text-[11px] font-medium capitalize",
+                "rounded-full px-2 py-0.5 text-[11px] font-medium capitalize whitespace-nowrap",
                 filter === f ? "bg-wa-dark text-white" : "bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300",
               )}
             >
               {f}
             </button>
           ))}
+          {labels && labels.length > 0 && (
+            <select
+              value={labelFilter}
+              onChange={(e) => setLabelFilter(e.target.value)}
+              className={cn("rounded-full px-2 py-0.5 text-[11px] font-medium outline-none max-w-[96px] truncate", labelFilter ? "bg-wa-dark text-white" : "bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300")}
+              title="Filter by label"
+            >
+              <option value="">Label</option>
+              {labels.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+            </select>
+          )}
         </div>
       </div>
       {newChat && <NewChatDialog session={session} onPick={onSelect} onClose={() => setNewChat(false)} />}
@@ -1077,6 +1084,7 @@ function Bubble({
             <WaMarkdown text={m.body} mentions={resolveName} />
           </div>
         )}
+        <TranslationView id={m.id} />
         {m.body && !m.hasMedia && <LinkPreviewCard message={m} />}
         <div className="flex items-center justify-end gap-1 mt-0.5 text-[10px] text-neutral-500 dark:text-neutral-300/70">
           {isEdited(m) && <span className="italic">edited</span>}
@@ -1102,6 +1110,23 @@ function Bubble({
         </div>
       )}
       </div>
+    </div>
+  );
+}
+
+function TranslationView({ id }: { id: string }) {
+  const t = useTranslations((s) => s.byMsg[id]);
+  const clear = useTranslations((s) => s.clear);
+  if (!t) return null;
+  return (
+    <div className="mt-1 rounded-md border-l-2 border-sky-400 bg-sky-50/70 dark:bg-sky-900/20 px-2 py-1 text-xs">
+      <div className="flex items-center gap-1 text-[10px] text-sky-700 dark:text-sky-300 mb-0.5">
+        <Languages size={10} /> {langName(t.target)}
+        <button className="ml-auto opacity-60 hover:opacity-100" onClick={() => clear(id)} title="Hide translation"><X size={10} /></button>
+      </div>
+      {t.loading && <span className="flex items-center gap-1 opacity-70"><Spinner size={10} className="animate-spin" /> translating…</span>}
+      {t.error && <span className="text-red-600 selectable">{t.error}</span>}
+      {t.text && <div className="whitespace-pre-wrap break-words selectable">{t.text}</div>}
     </div>
   );
 }
@@ -1184,6 +1209,37 @@ function isEdited(m: WAMessage & { edited?: boolean }) {
   if (m.edited) return true;
   const d = m._data as { Info?: { Edit?: string }; Message?: Record<string, unknown> } | undefined;
   return d?.Info?.Edit === "1" || !!d?.Message?.editedMessage;
+}
+
+function TranslateDraftButton({ text, onResult }: { text: string; onResult: (t: string) => void }) {
+  const target = useSettings((s) => s.aiComposeTo);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const ready = aiConfigured();
+  return (
+    <div className="relative">
+      <Button
+        variant="ghost"
+        disabled={!text.trim() || busy || !ready}
+        title={ready ? `Translate draft to ${langName(target)} (⌘⇧T)` : "Set up AI in Settings to translate"}
+        onClick={async () => {
+          setBusy(true);
+          setErr(null);
+          try {
+            onResult(await translate(text, target));
+          } catch (e) {
+            setErr(e instanceof Error ? e.message : String(e));
+            setTimeout(() => setErr(null), 4000);
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        {busy ? <Spinner size={18} className="animate-spin" /> : <Languages size={18} />}
+      </Button>
+      {err && <div className="absolute bottom-full left-0 mb-1 w-64 rounded-lg bg-red-600 text-white text-xs px-2 py-1 shadow z-30 selectable">{err}</div>}
+    </div>
+  );
 }
 
 function AckIcon({ ack, className }: { ack: number; className?: string }) {
@@ -1474,6 +1530,7 @@ function Composer({
           }}
         />
         <AttachMenu disabled={uploading} onPick={pick} />
+        <TranslateDraftButton text={text} onResult={(t) => setText(t)} />
         <EmojiButton
           onPick={(emoji) => {
             const ta = taRef.current;

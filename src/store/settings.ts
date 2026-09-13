@@ -1,7 +1,7 @@
 import { create } from "zustand";
-import { invoke } from "@tauri-apps/api/core";
 import { load, type Store } from "@tauri-apps/plugin-store";
 import { WahaClient } from "@/api/client";
+import { deleteSecret, getSecret, setSecret } from "@/lib/secrets";
 
 const STORE_FILE = "settings.json";
 
@@ -35,6 +35,14 @@ export interface Prefs {
   sendTyping: boolean;
   /** When to send read receipts (blue ticks): on opening a chat, only when you reply, or never. */
   readReceipts: "always" | "on-reply" | "manual" | "never";
+  // ── AI ──
+  aiProvider: "anthropic" | "openai-compatible";
+  aiBaseUrl: string;
+  aiModel: string;
+  /** Language incoming messages are translated into. */
+  aiTranslateTo: string;
+  /** Language your drafts are translated into with the composer 🌐 button. */
+  aiComposeTo: string;
 }
 
 const DEFAULT_PREFS: Prefs = {
@@ -47,10 +55,17 @@ const DEFAULT_PREFS: Prefs = {
   linkPreviews: true,
   sendTyping: true,
   readReceipts: "always",
+  aiProvider: "anthropic",
+  aiBaseUrl: "",
+  aiModel: "claude-opus-5",
+  aiTranslateTo: "id",
+  aiComposeTo: "en",
 };
 
 interface SettingsState extends Prefs {
   hydrated: boolean;
+  /** AI provider key (keychain entry "ai"). */
+  aiApiKey: string;
   profiles: Profile[];
   activeProfile: string;
   /** Derived from the active profile (kept flat for convenience). */
@@ -61,7 +76,7 @@ interface SettingsState extends Prefs {
 
   hydrate: () => Promise<void>;
   /** Update prefs and/or the active profile's connection (baseUrl, session, apiKey). */
-  save: (patch: Partial<Prefs & { baseUrl: string; session: string; apiKey: string; name: string }>) => Promise<void>;
+  save: (patch: Partial<Prefs & { baseUrl: string; session: string; apiKey: string; name: string; aiApiKey: string }>) => Promise<void>;
   addProfile: (p: { name: string; baseUrl: string; apiKey: string; session?: string }) => Promise<void>;
   switchProfile: (id: string) => Promise<void>;
   removeProfile: (id: string) => Promise<void>;
@@ -72,20 +87,14 @@ function makeClient(baseUrl: string, apiKey: string) {
   return baseUrl && apiKey ? new WahaClient({ baseUrl, apiKey }) : null;
 }
 
-async function readKey(profileId: string) {
-  try {
-    return (await invoke<string | null>("get_api_key", { profile: profileId })) ?? "";
-  } catch (e) {
-    console.warn("keychain read failed", e);
-    return "";
-  }
-}
+const readKey = (profileId: string) => getSecret(profileId);
 
 const newId = () => Math.random().toString(36).slice(2, 10);
 
 export const useSettings = create<SettingsState>((set, get) => ({
   ...DEFAULT_PREFS,
   hydrated: false,
+  aiApiKey: "",
   profiles: [],
   activeProfile: "",
   baseUrl: "",
@@ -132,9 +141,11 @@ export const useSettings = create<SettingsState>((set, get) => ({
       apiKey = import.meta.env.VITE_WAHA_API_KEY;
     }
 
+    const aiApiKey = await getSecret("ai");
     set({
       hydrated: true,
       ...prefs,
+      aiApiKey,
       profiles,
       activeProfile: active,
       baseUrl: prof?.baseUrl ?? "",
@@ -146,8 +157,12 @@ export const useSettings = create<SettingsState>((set, get) => ({
 
   async save(patch) {
     const s = await store();
-    const { apiKey: newKey, baseUrl, session, name, ...prefPatch } = patch;
+    const { apiKey: newKey, baseUrl, session, name, aiApiKey, ...prefPatch } = patch;
     for (const [k, v] of Object.entries(prefPatch)) await s.set(k, v);
+    if (aiApiKey !== undefined) {
+      await setSecret("ai", aiApiKey.trim());
+      set({ aiApiKey: aiApiKey.trim() });
+    }
 
     const st = get();
     let profiles = st.profiles;
@@ -174,7 +189,7 @@ export const useSettings = create<SettingsState>((set, get) => ({
       await s.set("activeProfile", active);
       if (newKey !== undefined) {
         apiKey = newKey.trim();
-        await invoke("save_api_key", { profile: active, apiKey });
+        await setSecret(active, apiKey);
       }
     }
     const prof = profiles.find((p) => p.id === active);
@@ -195,7 +210,7 @@ export const useSettings = create<SettingsState>((set, get) => ({
     const id = newId();
     const profiles = [...get().profiles, { id, name: name.trim() || baseUrl, baseUrl: baseUrl.trim(), session }];
     await s.set("profiles", profiles);
-    await invoke("save_api_key", { profile: id, apiKey: apiKey.trim() });
+    await setSecret(id, apiKey.trim());
     set({ profiles });
     await get().switchProfile(id);
   },
@@ -213,7 +228,7 @@ export const useSettings = create<SettingsState>((set, get) => ({
     const s = await store();
     const profiles = get().profiles.filter((p) => p.id !== id);
     await s.set("profiles", profiles);
-    await invoke("delete_api_key", { profile: id }).catch(() => {});
+    await deleteSecret(id);
     set({ profiles });
     if (get().activeProfile === id) {
       if (profiles[0]) await get().switchProfile(profiles[0].id);
@@ -223,7 +238,8 @@ export const useSettings = create<SettingsState>((set, get) => ({
 
   async clear() {
     const s = await store();
-    for (const p of get().profiles) await invoke("delete_api_key", { profile: p.id }).catch(() => {});
+    for (const p of get().profiles) await deleteSecret(p.id);
+    await deleteSecret("ai");
     await s.clear();
     set({ ...DEFAULT_PREFS, profiles: [], activeProfile: "", baseUrl: "", session: "default", apiKey: "", client: null });
   },

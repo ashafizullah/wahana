@@ -1,6 +1,8 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { confirm } from "@/components/Confirm";
-import { CheckCircle2, XCircle, Loader2, Plug, Image as ImageIcon, Bell, Info, Plus, Trash2, Server, HardDrive, RefreshCw, SlidersHorizontal, Zap, Pencil } from "lucide-react";
+import { CheckCircle2, XCircle, Loader2, Plug, Image as ImageIcon, Bell, Info, Plus, Trash2, Server, HardDrive, RefreshCw, SlidersHorizontal, Zap, Pencil, Sparkles } from "lucide-react";
+import { DEFAULT_MODELS, LANGUAGES, testAi } from "@/lib/ai";
+import { usingFallback } from "@/lib/secrets";
 import { useQuery } from "@tanstack/react-query";
 import { deleteQuickReply, listQuickReplies, saveQuickReply, type QuickReply } from "@/store/quickReplies";
 import { cacheClear, cacheStats, formatBytes, type CacheStats } from "@/lib/mediaCache";
@@ -16,7 +18,12 @@ export function SettingsScreen({ onSaved }: { onSaved: () => void }) {
     <div className="flex-1 overflow-auto p-8">
       <div className="max-w-xl mx-auto space-y-6">
         <h1 className="text-xl font-semibold">Settings</h1>
-        <Section icon={Server} title="Servers" description="You can keep several WAHA servers and switch between them. Each server's API key is stored in the OS keychain.">
+        {usingFallback() && (
+          <div className="rounded-lg bg-amber-50 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200 px-3 py-2 text-xs">
+            The OS keychain is unavailable on this machine, so API keys are kept in a local file (unencrypted). They still never leave your computer.
+          </div>
+        )}
+        <Section icon={Server} title="Servers" description="You can keep several WAHA servers and switch between them. Each server's API key is stored in the OS keychain (macOS Keychain / Windows Credential Manager).">
           <ProfilesSection />
         </Section>
         <Section icon={Plug} title="Connection" description="Settings for the selected server.">
@@ -30,6 +37,9 @@ export function SettingsScreen({ onSaved }: { onSaved: () => void }) {
         </Section>
         <Section icon={SlidersHorizontal} title="Tweaks" description="Behaviour switches. They apply to what Wahana does — your phone follows its own WhatsApp settings.">
           <TweaksSection />
+        </Section>
+        <Section icon={Sparkles} title="AI" description="Bring your own model. Anthropic uses the official SDK; OpenAI-compatible works with routers (TokenRouter, OpenRouter, Groq), Ollama, etc. The key is stored in the OS keychain.">
+          <AiSection />
         </Section>
         <Section icon={Zap} title="Quick replies" description="Type / in the composer to insert one. Variables: {name} {phone} {time} {date}.">
           <QuickRepliesSection />
@@ -431,6 +441,69 @@ function TweaksSection() {
           qc.invalidateQueries({ queryKey: ["messages"] });
         }}
       />
+    </>
+  );
+}
+
+// ── AI ───────────────────────────────────────────────────────────────────
+
+function AiSection() {
+  const s = useSettings();
+  const [provider, setProvider] = useState(s.aiProvider);
+  const [baseUrl, setBaseUrl] = useState(s.aiBaseUrl);
+  const [model, setModel] = useState(s.aiModel);
+  const [key, setKey] = useState(s.aiApiKey);
+  const [busy, setBusy] = useState<"test" | "save" | null>(null);
+  const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
+  useEffect(() => { setProvider(s.aiProvider); setBaseUrl(s.aiBaseUrl); setModel(s.aiModel); setKey(s.aiApiKey); }, [s.aiProvider, s.aiBaseUrl, s.aiModel, s.aiApiKey]);
+  const dirty = provider !== s.aiProvider || baseUrl.trim() !== s.aiBaseUrl || model.trim() !== s.aiModel || key.trim() !== s.aiApiKey;
+  const cfg = { provider, baseUrl: baseUrl.trim(), model: model.trim() || DEFAULT_MODELS[provider], apiKey: key.trim() };
+
+  return (
+    <>
+      <div>
+        <Label>Provider</Label>
+        <div className="flex gap-1">
+          {([["anthropic", "Anthropic (Claude)"], ["openai-compatible", "OpenAI-compatible"]] as const).map(([id, label]) => (
+            <Button key={id} size="sm" variant={provider === id ? "primary" : "secondary"} onClick={() => { setProvider(id); if (!model || model === DEFAULT_MODELS[provider]) setModel(DEFAULT_MODELS[id]); }}>{label}</Button>
+          ))}
+        </div>
+      </div>
+      <div>
+        <Label>{provider === "anthropic" ? "Base URL (optional — leave empty for api.anthropic.com)" : "Base URL (e.g. https://api.tokenrouter.com/v1)"}</Label>
+        <Input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder={provider === "anthropic" ? "https://api.anthropic.com" : "https://…/v1"} spellCheck={false} />
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div><Label>Model</Label><Input value={model} onChange={(e) => setModel(e.target.value)} placeholder={provider === "anthropic" ? "claude-opus-5" : "e.g. gpt-4.1-mini, llama3"} spellCheck={false} /></div>
+        <div><Label>API key</Label><Input type="password" value={key} onChange={(e) => setKey(e.target.value)} placeholder="sk-…" /></div>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <Label>Translate incoming messages to</Label>
+          <select value={s.aiTranslateTo} onChange={(e) => s.save({ aiTranslateTo: e.target.value })} className="w-full rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-2 text-sm outline-none">
+            {LANGUAGES.map(([c, n]) => <option key={c} value={c}>{n}</option>)}
+          </select>
+        </div>
+        <div>
+          <Label>Translate my drafts to (🌐 in composer)</Label>
+          <select value={s.aiComposeTo} onChange={(e) => s.save({ aiComposeTo: e.target.value })} className="w-full rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-2 text-sm outline-none">
+            {LANGUAGES.map(([c, n]) => <option key={c} value={c}>{n}</option>)}
+          </select>
+        </div>
+      </div>
+      {result && (
+        <div className={"flex items-center gap-2 rounded-lg px-3 py-2 text-sm " + (result.ok ? "bg-emerald-50 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300" : "bg-red-50 text-red-800 dark:bg-red-900/30 dark:text-red-300")}>
+          {result.ok ? <CheckCircle2 size={16} /> : <XCircle size={16} />}<span className="selectable break-all">{result.text}</span>
+        </div>
+      )}
+      <div className="flex gap-2">
+        <Button variant="secondary" disabled={busy !== null || !cfg.apiKey || !cfg.model || (provider !== "anthropic" && !cfg.baseUrl)} onClick={async () => { setBusy("test"); setResult(null); try { const out = await testAi(cfg); setResult({ ok: true, text: `Model replied: ${out.slice(0, 80)}` }); } catch (e) { setResult({ ok: false, text: e instanceof Error ? e.message : String(e) }); } finally { setBusy(null); } }}>
+          {busy === "test" && <Loader2 size={14} className="animate-spin" />} Test
+        </Button>
+        <Button disabled={busy !== null || !dirty} onClick={async () => { setBusy("save"); try { await s.save({ aiProvider: provider, aiBaseUrl: cfg.baseUrl, aiModel: cfg.model, aiApiKey: cfg.apiKey }); setResult({ ok: true, text: "Saved." }); } finally { setBusy(null); } }}>
+          {busy === "save" && <Loader2 size={14} className="animate-spin" />} Save
+        </Button>
+      </div>
     </>
   );
 }

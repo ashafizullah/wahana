@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { Reply, SmilePlus, Pencil, Trash2, Copy, Forward, Pin, Loader2, X, Search, Info } from "lucide-react";
+import { Reply, SmilePlus, Pencil, Trash2, Copy, Forward, Pin, Loader2, X, Search, Info, Languages } from "lucide-react";
+import { aiConfigured, translate, langName } from "@/lib/ai";
+import { useTranslations } from "@/store/translations";
+import { useSettings } from "@/store/settings";
 import { useQueryClient } from "@tanstack/react-query";
 import { requireClient } from "@/store/settings";
 import { qk, useChats } from "@/api/queries";
@@ -133,6 +136,22 @@ export function MessageMenu({
       </div>
       <Item icon={Reply} label="Reply" onClick={() => { onReply(); onClose(); }} />
       <Item icon={Info} label="Info" onClick={() => { onInfo(); onClose(); }} />
+      {m.body && (
+        <Item
+          icon={Languages}
+          label={aiConfigured() ? `Translate to ${langName(useSettings.getState().aiTranslateTo)}` : "Translate (set up AI in Settings)"}
+          onClick={() => {
+            onClose();
+            if (!aiConfigured()) return;
+            const target = useSettings.getState().aiTranslateTo;
+            const t = useTranslations.getState();
+            t.set(m.id, { target, loading: true });
+            translate(m.body, target, m.id)
+              .then((text) => t.set(m.id, { target, text }))
+              .catch((e) => t.set(m.id, { target, error: e instanceof Error ? e.message : String(e) }));
+          }}
+        />
+      )}
       <Item
         icon={SmilePlus}
         label="Remove reaction"
