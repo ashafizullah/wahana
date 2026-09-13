@@ -1,43 +1,79 @@
-# Wahana
+<p align="center">
+  <img src="assets/app-icon.png" width="128" alt="Wahana icon">
+</p>
 
-**Wahana** (Indonesian for "vehicle / platform") is a cross-platform (macOS + Windows) desktop client for [WAHA](https://waha.devlike.pro) — WhatsApp HTTP API. Point it at your WAHA server, pick a session, and chat.
+<h1 align="center">Wahana</h1>
 
-> Not affiliated with WAHA/devlike.pro or WhatsApp/Meta.
+<p align="center">
+  A cross-platform desktop client for <a href="https://waha.devlike.pro">WAHA</a> (WhatsApp HTTP API).<br>
+  Point it at your WAHA server, pick a session, and chat — with scheduling, broadcasts, stories, and built-in AI.
+</p>
 
-Built with **Tauri 2 + React + TypeScript**. ~10 MB bundle, native webview, API key stored in the OS keychain.
+<p align="center">
+  <a href="https://github.com/ashafizullah/wahana/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/ashafizullah/wahana?display_name=tag&sort=semver"></a>
+  <a href="https://github.com/ashafizullah/wahana/actions/workflows/build.yml"><img alt="Build" src="https://img.shields.io/github/actions/workflow/status/ashafizullah/wahana/build.yml?label=build"></a>
+  <a href="https://github.com/ashafizullah/wahana/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/ashafizullah/wahana/total"></a>
+  <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-green.svg"></a>
+  <img alt="Platforms" src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey">
+  <img alt="Tauri" src="https://img.shields.io/badge/Tauri-2-24C8D8?logo=tauri&logoColor=white">
+  <img alt="WAHA" src="https://img.shields.io/badge/WAHA-2026.8%2B-25D366?logo=whatsapp&logoColor=white">
+</p>
+
+> **Wahana** means "vehicle / platform" in Indonesian. Not affiliated with WAHA/devlike.pro or WhatsApp/Meta.
+
+## Download
+
+Grab the latest `.dmg` (macOS, Apple Silicon or Intel) or `.msi` (Windows x64) from the [Releases page](https://github.com/ashafizullah/wahana/releases/latest). The app checks for signed updates automatically.
+
+> macOS: the build is not notarized yet — on first launch, right-click the app → **Open**, or run `xattr -dr com.apple.quarantine /Applications/Wahana.app`.
+
+You need a running WAHA server (the free **CORE** build works) and its **plain-text API key** — if your server config says `WAHA_API_KEY=sha512:…`, that is the hash; clients still send the original key.
 
 ## Features
 
-- Connection settings with "Test connection" (`GET /api/server/version`)
-- Sessions: list, create, start/stop/restart/logout/delete, QR-code login (auto-refresh) and phone pairing code
-- Chats: overview list with search, message history with "Load older", inline images/audio/video/files
-- Send text (with reply), photos, videos, documents, voice messages, location, contacts, polls
-- Message menu (right-click): quick reactions, reply, copy, forward, pin, edit, delete
-- WhatsApp formatting rendered (*bold*, _italic_, ~strike~, `mono`, lists, quotes, links)
-- Media auto-load per kind (images / stickers / videos / audio) or click-to-load blurred previews
-- Lightbox for images & videos with zoom and save-to-disk
-- Unread badges per chat, on the Chats tab, on the dock icon and tray
-- System tray: closing the window hides it; realtime keeps running
-- Realtime via WAHA WebSocket (`/ws`): new messages, acks, session status; desktop notifications
-- Multi-session: every session on the server is listed; switch from the dropdown above the chat list
-- Multiple servers (profiles) with per-server keychain entries; switch from Settings or the chat list
-- New chat by phone number (checks the number is on WhatsApp) or from contacts; group info with participants
-- Presence: online / last seen / typing in the chat header; sends typing indicators while you write
-- In-chat message search (⌘F), chat list filters (All / Unread / Groups), infinite scroll, virtualized list
-- Events tab: live log of everything arriving on the WebSocket (great for debugging webhooks)
-- Auto-updater: signed releases from GitHub, one-click "Install & restart"
-- Keyboard: ⌘K search chats · ⌘F search in chat · ⌘1–4 tabs · ⌘, settings · Esc close
-- Light/dark theme follows the OS
+**Chats**
+- Session list with QR / pairing-code login, multiple sessions and multiple servers (per-server keys in the OS keychain)
+- Realtime via WAHA WebSocket: messages, acks, presence (online / typing), reactions, edits, deletions
+- WhatsApp formatting, @mentions with autocomplete, link previews, quoted replies with media thumbnails
+- Send text, photos, videos, documents, voice notes, location, contacts, polls; drag-and-drop and paste
+- Message menu: reactions, reply, forward, pin, edit, delete (for everyone / for me), info (delivery & read times), translate
+- Media auto-load per kind with blurred click-to-load previews, on-disk cache, lightbox with zoom and save
+- Unread badges (list, tab, dock/tray), pin / mute / archive, labels, drafts, quick replies (`/shortcut` with variables)
+- In-chat search, jump to date, infinite history, export to `.txt` / `.html` / `.json`
+- Deleted-message tombstones and "waiting for this message" placeholders; live messages survive server history gaps
+
+**Groups & contacts**
+- Group info with description, searchable participants (photos, names, numbers), add / remove / promote / demote
+- Join requests (approve / reject), invite link, rename, description, photo, admin-only settings, leave, participants CSV
+- New chat by number, create group, join by link, browse / follow channels; contact card with block and save
+
+**Status (stories)**
+- View contacts' updates (auto-play, start from unseen, next contact), post text / photo / video, delete your own
+
+**Automation**
+- **Scheduler** — one-off or daily / weekly / monthly messages to chats, groups, channels or your status (SQLite-backed, with history)
+- **Broadcast** — one message to many recipients with random pauses, progress, retry and per-recipient log
+- Webhook manager per session, live event log for debugging integrations
+
+**AI (bring your own key)**
+- Anthropic (official SDK) or any OpenAI-compatible endpoint (routers, Ollama…)
+- Translate incoming messages (auto-detected source, target of your choice) and translate drafts before sending
+
+**App**
+- System tray, desktop notifications, incoming-call banner, keyboard shortcuts, light / dark theme
+- Privacy tweaks: typing indicator on/off, read receipts always / on reply / manual / never
+- Settings backup & restore, auto-updater
 
 ## Development
 
+Prerequisites: Node 22+, Rust (via [rustup](https://rustup.rs)), Xcode Command Line Tools (macOS) or Visual Studio Build Tools + WebView2 (Windows).
+
 ```bash
-# prerequisites: Node 22+, Rust (https://rustup.rs), Xcode CLT (mac) / VS Build Tools + WebView2 (win)
 npm install
 npm run tauri dev
 ```
 
-Optional: create `.env.development.local` to prefill the connection in dev builds only:
+Optional `.env.development.local` prefills the connection in dev builds only:
 
 ```
 VITE_WAHA_BASE_URL=https://your-waha.example.com
@@ -45,35 +81,19 @@ VITE_WAHA_API_KEY=your-plain-api-key
 VITE_WAHA_SESSION=default
 ```
 
-> The API key must be the **plaintext** key. If your server config has `WAHA_API_KEY=sha512:...`, that is the hash — clients still send the original key.
-
-## Build
+### Build
 
 ```bash
-npm run tauri build            # .dmg / .app on macOS, .msi / .exe on Windows
+npm run tauri build     # .dmg / .app on macOS, .msi / .exe on Windows
 ```
 
-Tag a release (`git tag v0.1.0 && git push --tags`) to have GitHub Actions build all three targets (macOS arm64, macOS x64, Windows x64) into a draft release, including the signed updater artifacts and `latest.json`.
+### Releasing
 
-### Release signing (auto-updater)
+Push a tag (`git tag v0.2.0 && git push --tags`). GitHub Actions builds macOS (arm64, x64) and Windows (x64), signs the updater artifacts, and publishes the release with `latest.json` for the auto-updater.
 
-Updates are verified with a minisign keypair. Generate one once:
+Signing uses a minisign keypair: `npx tauri signer generate -w ~/.tauri/wahana.key`, put the public key in `src-tauri/tauri.conf.json → plugins.updater.pubkey`, and add the repository secrets `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`.
 
-```bash
-npx tauri signer generate -w ~/.tauri/wahana.key
-```
-
-Put the public key in `src-tauri/tauri.conf.json` → `plugins.updater.pubkey`, and add two repository secrets for CI: `TAURI_SIGNING_PRIVATE_KEY` (contents of `wahana.key`) and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. The updater endpoint points at `releases/latest/download/latest.json` of this repo.
-
-## Icons
-
-`assets/logo-source.png` is the raw mark; `assets/app-icon.png` (macOS, with margin) and `assets/app-icon-fullbleed.png` (Windows/tray) are composed from it. Regenerate the platform icons with:
-
-```bash
-npx tauri icon assets/app-icon.png -o src-tauri/icons
-```
-
-## Regenerate API types
+### Regenerate API types
 
 ```bash
 curl -sL https://waha.devlike.pro/swagger/openapi.json -o spec/waha-openapi.json
@@ -81,12 +101,24 @@ node scripts/fix-spec.mjs
 npx openapi-typescript@7 spec/waha-openapi.fixed.json -o src/api/schema.d.ts
 ```
 
-## Project layout
+### Project layout
 
 ```
-src/api/        typed WAHA client (client.ts), query hooks, generated schema
-src/realtime/   WebSocket hook + notifications
-src/store/      settings (tauri-plugin-store + OS keychain via Rust command)
-src/screens/    Settings, Sessions (QR login), Chat
-src-tauri/      Rust shell: keychain commands, plugins (store, notification, http, opener)
+src/api/         typed WAHA client, query hooks, generated OpenAPI types
+src/realtime/    WebSocket, presence, scheduler & broadcast runners, updater
+src/store/       zustand stores (settings, unread, reactions, receipts, …) and SQLite data layers
+src/screens/     Chats, Status, Scheduler, Broadcast, Sessions, Events, Settings
+src/components/  dialogs, menus, media, group tools
+src/lib/         WhatsApp markdown, AI client, media cache, secrets, backup, export
+src-tauri/       Rust shell: keychain, media cache, tray, SQLite migrations
 ```
+
+## Known WAHA quirks handled by the app
+
+- History pages can be shorter than `limit` (the server filters after limiting) — only an empty page ends pagination.
+- Messages delivered live are sometimes missing from history (e.g. sent by another session on the same server) — the app keeps them locally.
+- Undecryptable messages (`UndecryptableMessage`) are shown as "waiting" placeholders until the sender's retry arrives.
+
+## License
+
+[MIT](LICENSE) © Adam Suchi Hafizullah

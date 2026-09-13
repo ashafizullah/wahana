@@ -41,5 +41,7 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "Wahana ${{ github.ref_name }}"
-          releaseDraft: true
+          releaseBody: "See the assets below to download and install this version. macOS builds are not notarized: right-click → Open on first launch."
+          releaseDraft: false
+          prerelease: false
           args: ${{ matrix.args }}
