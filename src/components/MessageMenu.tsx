@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Reply, SmilePlus, Pencil, Trash2, Copy, Forward, Pin, Loader2, X, Search, Info, Languages } from "lucide-react";
-import { aiConfigured, translate, langName } from "@/lib/ai";
+import { aiConfigured, translate, langName, LANGUAGES } from "@/lib/ai";
 import { useTranslations } from "@/store/translations";
 import { useSettings } from "@/store/settings";
 import { useQueryClient } from "@tanstack/react-query";
@@ -46,6 +46,16 @@ export function MessageMenu({
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [forward, setForward] = useState(false);
+  const [langMenu, setLangMenu] = useState(false);
+
+  const runTranslate = (target: string) => {
+    onClose();
+    const t = useTranslations.getState();
+    t.set(m.id, { target, loading: true });
+    translate(m.body, target, m.id)
+      .then((text) => t.set(m.id, { target, text }))
+      .catch((e) => t.set(m.id, { target, error: e instanceof Error ? e.message : String(e) }));
+  };
 
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
@@ -137,20 +147,23 @@ export function MessageMenu({
       <Item icon={Reply} label="Reply" onClick={() => { onReply(); onClose(); }} />
       <Item icon={Info} label="Info" onClick={() => { onInfo(); onClose(); }} />
       {m.body && (
-        <Item
-          icon={Languages}
-          label={aiConfigured() ? `Translate to ${langName(useSettings.getState().aiTranslateTo)}` : "Translate (set up AI in Settings)"}
-          onClick={() => {
-            onClose();
-            if (!aiConfigured()) return;
-            const target = useSettings.getState().aiTranslateTo;
-            const t = useTranslations.getState();
-            t.set(m.id, { target, loading: true });
-            translate(m.body, target, m.id)
-              .then((text) => t.set(m.id, { target, text }))
-              .catch((e) => t.set(m.id, { target, error: e instanceof Error ? e.message : String(e) }));
-          }}
-        />
+        <div className="relative" onMouseEnter={() => setLangMenu(true)} onMouseLeave={() => setLangMenu(false)}>
+          <Item
+            icon={Languages}
+            label={aiConfigured() ? `Translate to ${langName(useSettings.getState().aiTranslateTo)} ›` : "Translate (set up AI in Settings)"}
+            onClick={() => aiConfigured() && runTranslate(useSettings.getState().aiTranslateTo)}
+          />
+          {langMenu && aiConfigured() && (
+            <div className="absolute left-full top-0 ml-0.5 w-48 max-h-72 overflow-y-auto rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-xl py-1 z-50">
+              <div className="px-3 py-1 text-[10px] text-neutral-500">Source language is detected automatically</div>
+              {LANGUAGES.map(([code, name]) => (
+                <button key={code} onClick={() => runTranslate(code)} className={cn("w-full px-3 py-1 text-left text-xs hover:bg-neutral-100 dark:hover:bg-neutral-800", code === useSettings.getState().aiTranslateTo && "font-semibold text-wa-dark")}>
+                  {name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       )}
       <Item
         icon={SmilePlus}
