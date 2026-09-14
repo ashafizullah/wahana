@@ -48,7 +48,9 @@ export function useNameResolver(session: string, chatId = "") {
   const { data: sessions } = useSessions();
   const pushNames = usePushNames((s) => s.names);
   const { data: lids } = useLidTable(session);
-  const me = sessions?.find((s) => s.name === session)?.me;
+  const meRaw = sessions?.find((s) => s.name === session)?.me;
+  // The session list is polled; key on the ids so a fresh-but-equal object doesn't rebuild the map (and every bubble).
+  const me = useMemo(() => meRaw, [meRaw?.id, meRaw?.lid, meRaw?.jid]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const map = useMemo(() => {
     const m = new Map<string, string>();

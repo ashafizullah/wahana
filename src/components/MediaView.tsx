@@ -7,7 +7,7 @@ import { qk } from "@/api/queries";
 import type { WAMessage } from "@/api/types";
 import { cn } from "@/lib/utils";
 import { Lightbox } from "@/components/Lightbox";
-import { cacheGet, cachePut, mediaCacheKey } from "@/lib/mediaCache";
+import { formatBytes as formatBytesExact, cacheGet, cachePut, mediaCacheKey } from "@/lib/mediaCache";
 
 interface RawMedia {
   JPEGThumbnail?: string;
@@ -25,13 +25,7 @@ function rawMedia(m: WAMessage): RawMedia {
   return key ? (msg[key] ?? {}) : {};
 }
 
-function formatBytes(n?: number | string) {
-  const b = Number(n);
-  if (!b) return "";
-  if (b < 1024) return `${b} B`;
-  if (b < 1024 ** 2) return `${(b / 1024).toFixed(0)} KB`;
-  return `${(b / 1024 ** 2).toFixed(1)} MB`;
-}
+const formatBytes = (n?: number | string) => (Number(n) ? formatBytesExact(Number(n)) : "");
 
 /**
  * Renders message media. Respects the auto-load prefs: when disabled for a

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Loader2, Search, Send, Check, CheckCheck, Clock, X, Users, Megaphone, SquarePen, Info, CalendarDays, ArrowDown } from "lucide-react";
 import { useChats, useMessages, useSendText, useSessions, useMediaPrefixes, qk } from "@/api/queries";
@@ -447,9 +447,11 @@ function ChatRow({
 }) {
   const name = chat.name || displayId(chat.id);
   const lm = chat.lastMessage;
-  const counts = useUnread((s) => s.counts);
-  const lastSeen = useUnread((s) => s.lastSeen);
-  const unread = unreadFor({ counts, lastSeen }, session, chat.id, lm);
+  // Scalar selectors: one incoming message must not re-render every visible row.
+  const rowKey = chatKey(session, chat.id);
+  const count = useUnread((s) => s.counts[rowKey] ?? 0);
+  const seen = useUnread((s) => s.lastSeen[rowKey]);
+  const unread = unreadFor({ counts: { [rowKey]: count }, lastSeen: seen === undefined ? {} : { [rowKey]: seen } }, session, chat.id, lm);
   const isPinned = useChatPrefs((s) => !!s.pinned[`${session}:${chat.id}`]);
   const isMuted = useChatPrefs((s) => !!s.muted[`${session}:${chat.id}`]);
   const { data: allLabels } = useLabels(session);
@@ -533,7 +535,8 @@ function Conversation({ session, chatId, onOpenChat }: { session: string; chatId
   const resolveName = useNameResolver(session, chatId);
   const { data: sessionsForMe } = useSessions();
   const me = sessionsForMe?.find((x) => x.name === session)?.me;
-  const myIds = useMemo(() => [me?.id, me?.lid, me?.jid].filter((x): x is string => !!x), [me]);
+  const meId = me?.id, meLid = me?.lid, meJid = me?.jid;
+  const myIds = useMemo(() => [meId, meLid, meJid].filter((x): x is string => !!x), [meId, meLid, meJid]);
   const presenceText = presenceLabel(presence, chatId, isGroup(chatId), (id) => resolveName(id) ?? displayId(id));
 
   // Messages arrive newest-first from the API; render oldest-first, minus the ones deleted "for me".
@@ -794,15 +797,15 @@ function Conversation({ session, chatId, onOpenChat }: { session: string; chatId
   };
 
   // Trigger loadOlder when the top sentinel scrolls into view.
+  // Observe once per chat; `loadOlderRef` always points at the latest closure (with current hasMore/loading state).
   useEffect(() => {
     const el = topRef.current;
     const root = listRef.current;
     if (!el || !root) return;
-    const io = new IntersectionObserver((entries) => entries[0]?.isIntersecting && void loadOlder(), { root, rootMargin: "200px 0px 0px 0px" });
+    const io = new IntersectionObserver((entries) => entries[0]?.isIntersecting && void loadOlderRef.current(), { root, rootMargin: "200px 0px 0px 0px" });
     io.observe(el);
     return () => io.disconnect();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ordered, hasMore, loadingOlder]);
+  }, [chatId]);
 
   const matches = useMemo(() => {
     const term = search?.trim().toLowerCase();
@@ -817,6 +820,14 @@ function Conversation({ session, chatId, onOpenChat }: { session: string; chatId
     document.getElementById(`msg-${full}`)?.scrollIntoView({ block: "center", behavior: "smooth" });
     setTimeout(() => setHighlight((h) => (h === full ? null : h)), 2000);
   };
+  // Stable identities so memoised bubbles don't re-render on every parent tick.
+  const jumpToRef = useRef(jumpTo);
+  jumpToRef.current = jumpTo;
+  const onJumpStable = useCallback((id: string) => jumpToRef.current(id), []);
+  const onReplyStable = useCallback((m: WAMessage) => setReplyTo(m), []);
+  const onMenuStable = useCallback((m: WAMessage, pos: MenuPos) => setMenu({ m, pos }), []);
+  const onSenderStable = useCallback((id: string) => setContactId(id), []);
+  const group = isGroup(chatId);
 
   // ⌘/Ctrl+F opens in-chat search.
   useEffect(() => {
@@ -1021,15 +1032,15 @@ function Conversation({ session, chatId, onOpenChat }: { session: string; chatId
               <ErrorBoundary inline label="message">
                 <Bubble
                   message={m}
-                  group={isGroup(chatId)}
+                  group={group}
                   session={session}
                   chatId={chatId}
-                  onReply={() => setReplyTo(m)}
-                  onMenu={(pos) => setMenu({ m, pos })}
+                  onReply={onReplyStable}
+                  onMenu={onMenuStable}
                   resolveName={resolveName}
                   myIds={myIds}
-                  onJump={jumpTo}
-                  onSender={(id) => setContactId(id)}
+                  onJump={onJumpStable}
+                  onSender={onSenderStable}
                 />
               </ErrorBoundary>
             </div>
@@ -1112,13 +1123,14 @@ function senderName(m: WAMessage) {
   return d.Info?.PushName || displayId(m.participant || m.from) || "Unknown";
 }
 
-function Bubble({
+/** One message. Memoised: a chat with hundreds of loaded bubbles must not re-render them all on every presence/typing tick. */
+const Bubble = memo(function Bubble({
   message: m,
   group,
   session,
   chatId,
-  onReply,
-  onMenu,
+  onReply: onReplyMsg,
+  onMenu: onMenuMsg,
   resolveName,
   myIds,
   onJump,
@@ -1128,13 +1140,15 @@ function Bubble({
   group: boolean;
   session: string;
   chatId: string;
-  onReply: () => void;
-  onMenu: (pos: MenuPos) => void;
+  onReply: (m: WAMessage) => void;
+  onMenu: (m: WAMessage, pos: MenuPos) => void;
   resolveName: MentionResolver;
   myIds: string[];
   onJump: (id: string) => void;
   onSender: (id: string) => void;
 }) {
+  const onReply = () => onReplyMsg(m);
+  const onMenu = (pos: MenuPos) => onMenuMsg(m, pos);
   const mine = m.fromMe;
   const { revoked, waiting } = m as WAMessage & { revoked?: boolean; waiting?: boolean };
   if (waiting) {
@@ -1256,7 +1270,7 @@ function Bubble({
       </div>
     </div>
   );
-}
+});
 
 function TranslationView({ id }: { id: string }) {
   const t = useTranslations((s) => s.byMsg[id]);

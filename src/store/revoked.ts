@@ -67,6 +67,5 @@ export const useRevoked = create<State>((set, get) => ({
 
 /** Tombstones for one chat. */
 export function tombstonesFor(items: Record<string, Tombstone>, chat: string) {
-  const prefix = `${chat}:`;
-  return Object.values(items).filter((t) => `${t.chat}:`.startsWith(prefix) && t.chat === chat);
+  return Object.values(items).filter((t) => t.chat === chat);
 }

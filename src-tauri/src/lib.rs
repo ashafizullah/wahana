@@ -5,7 +5,10 @@ use std::{
     collections::HashMap,
     fs,
     path::PathBuf,
-    sync::{LazyLock, Mutex},
+    sync::{
+        atomic::{AtomicBool, AtomicU64, Ordering},
+        LazyLock, Mutex,
+    },
     time::{Duration, SystemTime},
 };
 use tauri::{
@@ -98,14 +101,18 @@ fn scan(dir: &PathBuf) -> Vec<(PathBuf, u64, SystemTime)> {
         .unwrap_or_default()
 }
 
+// Media cache commands are `async` so their file IO runs on the async runtime's thread
+// pool, not on the main thread inside the webview's IPC callback (a multi-MB video read
+// there stalls the UI, and on Windows blocks WebView2 message pumping).
+
 #[tauri::command]
-fn media_cache_has(app: AppHandle, key: String) -> Result<bool, String> {
+async fn media_cache_has(app: AppHandle, key: String) -> Result<bool, String> {
     Ok(cache_dir(&app)?.join(safe_key(&key)).is_file())
 }
 
 /// Returns the cached bytes as a raw ArrayBuffer (no JSON overhead).
 #[tauri::command]
-fn media_cache_get(app: AppHandle, key: String) -> Result<Response, String> {
+async fn media_cache_get(app: AppHandle, key: String) -> Result<Response, String> {
     let path = cache_dir(&app)?.join(safe_key(&key));
     let bytes = fs::read(&path).map_err(|e| e.to_string())?;
     // Touch mtime so eviction is LRU-ish.
@@ -134,15 +141,40 @@ fn media_cache_put(app: AppHandle, request: Request<'_>) -> Result<(), String> {
         InvokeBody::Json(_) => return Err("expected raw body".into()),
     };
     let dir = cache_dir(&app)?;
+    let written = bytes.len() as u64;
+    // `Request<'_>` borrows, so this command must stay sync: keep the fast write here and
+    // push the directory scan / eviction onto a background thread.
     fs::write(dir.join(safe_key(&key)), &bytes).map_err(|e| e.to_string())?;
-
     if limit > 0 {
+        maybe_evict(dir, limit, written);
+    }
+    Ok(())
+}
+
+/// Bytes written since the last full scan; eviction runs when this exceeds a slice of the
+/// limit (hysteresis), never on every put.
+static CACHE_UNSCANNED: AtomicU64 = AtomicU64::new(u64::MAX / 2);
+static CACHE_EVICTING: AtomicBool = AtomicBool::new(false);
+
+fn maybe_evict(dir: PathBuf, limit: u64, written: u64) {
+    let pending = CACHE_UNSCANNED.fetch_add(written, Ordering::Relaxed) + written;
+    // Scan at most once per (limit / 16, but ≥ 8 MB) written.
+    if pending < (limit / 16).max(8 * 1024 * 1024) {
+        return;
+    }
+    if CACHE_EVICTING.swap(true, Ordering::AcqRel) {
+        return; // one at a time
+    }
+    CACHE_UNSCANNED.store(0, Ordering::Relaxed);
+    std::thread::spawn(move || {
         let mut files = scan(&dir);
         let mut total: u64 = files.iter().map(|f| f.1).sum();
         if total > limit {
             files.sort_by_key(|f| f.2); // oldest first
+            // Evict down to 90% so the next few puts don't immediately trigger another scan.
+            let target = limit / 10 * 9;
             for (path, size, _) in files {
-                if total <= limit {
+                if total <= target {
                     break;
                 }
                 if fs::remove_file(&path).is_ok() {
@@ -150,12 +182,12 @@ fn media_cache_put(app: AppHandle, request: Request<'_>) -> Result<(), String> {
                 }
             }
         }
-    }
-    Ok(())
+        CACHE_EVICTING.store(false, Ordering::Release);
+    });
 }
 
 #[tauri::command]
-fn media_cache_stats(app: AppHandle) -> Result<CacheStats, String> {
+async fn media_cache_stats(app: AppHandle) -> Result<CacheStats, String> {
     let dir = cache_dir(&app)?;
     let files = scan(&dir);
     Ok(CacheStats {
@@ -166,7 +198,7 @@ fn media_cache_stats(app: AppHandle) -> Result<CacheStats, String> {
 }
 
 #[tauri::command]
-fn media_cache_clear(app: AppHandle) -> Result<(), String> {
+async fn media_cache_clear(app: AppHandle) -> Result<(), String> {
     let dir = cache_dir(&app)?;
     fs::remove_dir_all(&dir).map_err(|e| e.to_string())?;
     fs::create_dir_all(&dir).map_err(|e| e.to_string())
