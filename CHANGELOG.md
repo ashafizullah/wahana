@@ -26,6 +26,7 @@
 - Unit tests (`npm test`) and a CI workflow that type-checks, tests, builds, and runs clippy/rustfmt on pull requests.
 
 ### Changed
+- The message list is virtualised: only the bubbles near the viewport are in the DOM, so long scroll-backs no longer accumulate thousands of live bubbles and images.
 - `ChatScreen.tsx` split into list / bubble / composer modules; Rust shell split into keychain, media-cache and WhatsApp Web modules (no behaviour change).
 - Old schedule runs, auto-reply log rows and finished broadcasts are pruned after 90 days.
 - Linux (AppImage / .deb) is built by the release workflow.

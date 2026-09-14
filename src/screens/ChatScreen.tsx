@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { Loader2, Search, CheckCheck, X, Info, CalendarDays, ArrowDown } from "lucide-react";
 import { useChats, useMessages, useSessions, useMediaPrefixes, qk } from "@/api/queries";
 import { requireClient, useSettings } from "@/store/settings";
@@ -207,6 +208,20 @@ function Conversation({ session, chatId, onOpenChat }: { session: string; chatId
     prevLen.current = 0;
   }, [chatId]);
 
+  // Only the visible bubbles (plus a buffer) are in the DOM; a long scroll-back no longer
+  // keeps thousands of bubbles, images and blob URLs alive. Heights are measured per item
+  // (media loading later re-measures via the virtualizer's ResizeObserver), and the
+  // virtualizer compensates scrollTop when an item above the viewport changes size.
+  const virtualizer = useVirtualizer({
+    count: ordered.length,
+    getScrollElement: () => listRef.current,
+    estimateSize: () => 72,
+    overscan: 12,
+    getItemKey: (i) => ordered[i]!.id,
+    // The list container sits below the loader / top sentinel inside the scroll element.
+    scrollMargin: contentRef.current?.offsetTop ?? 0,
+  });
+
   useLayoutEffect(() => {
     const el = listRef.current;
     if (!el) return;
@@ -406,9 +421,16 @@ function Conversation({ session, chatId, onOpenChat }: { session: string; chatId
 
   const jumpTo = (id: string) => {
     // Quoted ids are the bare WhatsApp id; full ids look like "true_<chat>_<id>[_<participant>]".
-    const full = ordered.find((m) => m.id === id || m.id.split("_")[2] === id)?.id ?? id;
+    const idx = ordered.findIndex((m) => m.id === id || m.id.split("_")[2] === id);
+    const full = idx >= 0 ? ordered[idx]!.id : id;
     setHighlight(full);
-    document.getElementById(`msg-${full}`)?.scrollIntoView({ block: "center", behavior: "smooth" });
+    if (idx >= 0) {
+      // Positions above the viewport are estimates until measured: scroll, let the target
+      // render and measure, then correct once.
+      atBottomRef.current = false;
+      virtualizer.scrollToIndex(idx, { align: "center" });
+      setTimeout(() => virtualizer.scrollToIndex(idx, { align: "center" }), 60);
+    }
     setTimeout(() => setHighlight((h) => (h === full ? null : h)), 2000);
   };
   // Stable identities so memoised bubbles don't re-render on every parent tick.
@@ -600,19 +622,28 @@ function Conversation({ session, chatId, onOpenChat }: { session: string; chatId
         </div>
       )}
 
-      <div ref={listRef} className="flex-1 overflow-y-auto px-6 py-4">
-        <div ref={contentRef} className="space-y-1">
+      <div ref={listRef} className="flex-1 overflow-y-auto px-6 py-4 relative">
         {isLoading && <Loader2 className="animate-spin text-neutral-400" />}
         {error && <div className="text-sm text-red-600 selectable">{(error as Error).message}</div>}
         <div ref={topRef} className="h-6 grid place-items-center text-neutral-400">
           {loadingOlder && <Loader2 size={16} className="animate-spin" />}
           {!hasMore && ordered.length > 0 && <span className="text-[11px]">Beginning of conversation</span>}
         </div>
-        {ordered.map((m, i) => {
+        <div ref={contentRef} className="relative w-full" style={{ height: virtualizer.getTotalSize() }}>
+        {virtualizer.getVirtualItems().map((v) => {
+          const i = v.index;
+          const m = ordered[i]!;
           const prev = ordered[i - 1];
           const newDay = !prev || new Date(prev.timestamp * 1000).toDateString() !== new Date(m.timestamp * 1000).toDateString();
           return (
-            <div key={m.id} id={`msg-${m.id}`} className={cn("rounded-lg transition-colors", highlight === m.id && "bg-amber-200/60 dark:bg-amber-500/20")}>
+            <div
+              key={m.id}
+              ref={virtualizer.measureElement}
+              data-index={i}
+              className="pb-1"
+              style={{ position: "absolute", top: 0, left: 0, width: "100%", transform: `translateY(${v.start - virtualizer.options.scrollMargin}px)` }}
+            >
+            <div id={`msg-${m.id}`} className={cn("rounded-lg transition-colors", highlight === m.id && "bg-amber-200/60 dark:bg-amber-500/20")}>
               {newDay && (
                 <div className="flex justify-center my-3">
                   <span className="rounded-md bg-white/80 dark:bg-neutral-800 px-2 py-0.5 text-[11px] text-neutral-600 dark:text-neutral-300 shadow-sm">
@@ -635,12 +666,13 @@ function Conversation({ session, chatId, onOpenChat }: { session: string; chatId
                 />
               </ErrorBoundary>
             </div>
+            </div>
           );
         })}
+        </div>
         {hasNewer && (
           <div className="h-6 grid place-items-center text-neutral-400">{loadingNewer && <Loader2 size={16} className="animate-spin" />}</div>
         )}
-        </div>
       </div>
       {hasNewer && (
         <div className="relative">
