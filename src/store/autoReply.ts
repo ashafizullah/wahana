@@ -101,6 +101,17 @@ export async function repliesSince(session: string, chatId: string, since: numbe
   return rows[0]?.n ?? 0;
 }
 
+/** Replies sent today (local midnight →) by any rule of `profile` — the daily spend guard. */
+export async function repliesToday(profile: string): Promise<number> {
+  const midnight = new Date();
+  midnight.setHours(0, 0, 0, 0);
+  const rows = await (await db()).select<{ n: number }[]>(
+    "SELECT COUNT(*) AS n FROM auto_reply_log l JOIN auto_reply_rules r ON r.id = l.rule_id WHERE r.profile = $1 AND l.status = 'sent' AND l.at >= $2",
+    [profile, Math.floor(midnight.getTime() / 1000)],
+  );
+  return rows[0]?.n ?? 0;
+}
+
 export async function logReply(entry: Omit<AutoReplyLog, "id" | "at">) {
   const d = await db();
   const now = Math.floor(Date.now() / 1000);

@@ -20,7 +20,7 @@ const fmt = (s: number) => new Date(s * 1000).toLocaleString([], { day: "2-digit
 const SCOPE_LABEL: Record<Scope, string> = { dm: "All direct messages", groups: "All groups", all: "Everyone", chats: "Specific chats / groups" };
 
 export function AutoReplyScreen() {
-  const { client, activeProfile, session, autoReplyPaused, save } = useSettings();
+  const { client, activeProfile, session, autoReplyPaused, autoReplyDailyLimit, save } = useSettings();
   const qc = useQueryClient();
   const [editing, setEditing] = useState<AutoReplyRule | "new" | null>(null);
   const rules = useQuery({ queryKey: ["auto-reply", "rules", activeProfile], queryFn: () => listRules(activeProfile), enabled: !!activeProfile });
@@ -39,6 +39,17 @@ export function AutoReplyScreen() {
           <p className="text-[11px] text-neutral-500">Answers incoming messages while this app is running. First matching rule wins; one reply per chat per cooldown; stays quiet for 15 min in chats you answered yourself.</p>
         </div>
         <div className="ml-auto flex items-center gap-2">
+          <label className="flex items-center gap-1.5 text-[11px] text-neutral-500" title="Spend guard: replies sent per day across all rules of this server (0 = unlimited)">
+            Max / day
+            <input
+              type="number"
+              min={0}
+              step={50}
+              value={autoReplyDailyLimit}
+              onChange={(e) => save({ autoReplyDailyLimit: Math.max(0, Math.floor(Number(e.target.value) || 0)) })}
+              className="w-16 rounded-md border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-1.5 py-0.5 text-xs text-neutral-800 dark:text-neutral-100 outline-none focus:border-wa-dark"
+            />
+          </label>
           <Button size="sm" variant={autoReplyPaused ? "danger" : "secondary"} title="Kill switch for every rule" onClick={() => save({ autoReplyPaused: !autoReplyPaused })}>
             {autoReplyPaused ? <><Play size={12} /> Paused — resume</> : <><Pause size={12} /> Pause all</>}
           </Button>

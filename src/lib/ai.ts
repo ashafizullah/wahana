@@ -105,13 +105,19 @@ export async function complete(system: string, user: string, opts: { maxTokens?:
   return out.trim();
 }
 
+const TRANSLATE_CACHE_MAX = 500;
 const translateCache = new Map<string, Promise<string>>();
 
 /** Translate `text` into `target` (language name or code). Keeps WhatsApp formatting and emoji. */
 export function translate(text: string, target: string, key?: string) {
   const cacheKey = `${target}:${key ?? text}`;
   let p = translateCache.get(cacheKey);
-  if (!p) {
+  if (p) {
+    // Refresh recency (Map keeps insertion order → oldest first).
+    translateCache.delete(cacheKey);
+    translateCache.set(cacheKey, p);
+  } else {
+    if (translateCache.size >= TRANSLATE_CACHE_MAX) translateCache.delete(translateCache.keys().next().value!);
     const system = `You are a translator inside a chat app. Translate the user's message into ${langName(target)}.
 Rules: output only the translation, no explanations or quotes. Preserve line breaks, emoji, URLs, @mentions, phone numbers and WhatsApp formatting markers (*bold*, _italic_, ~strike~, \`\`\`code\`\`\`). Keep the tone and register (casual/formal). If the text is already in ${langName(target)}, return it unchanged.`;
     p = complete(system, text, { maxTokens: Math.min(8000, Math.max(512, text.length * 3)), persona: false, fast: true });
@@ -127,8 +133,16 @@ export async function testAi(cfg: AiConfig) {
   return out;
 }
 
+/** Longest transcript sent to the model (~100k tokens); "All loaded" can be thousands of messages after a long scroll. */
+export const MAX_TRANSCRIPT_CHARS = 400_000;
+
 /** Summarize a chat transcript (see `transcript()` in exportChat.ts). Output uses WhatsApp formatting so it renders with WaMarkdown. */
 export function summarizeChat(text: string, opts: { chatName: string; isGroup: boolean; language: string; question?: string }) {
+  if (text.length > MAX_TRANSCRIPT_CHARS) {
+    // Keep the most recent part; cut at a line boundary.
+    const tail = text.slice(-MAX_TRANSCRIPT_CHARS);
+    text = `[earlier messages omitted — transcript truncated to the most recent ${MAX_TRANSCRIPT_CHARS.toLocaleString()} characters]\n` + tail.slice(tail.indexOf("\n") + 1);
+  }
   const system = `You summarize WhatsApp conversations for the user, who appears in the transcript as "You". This is a ${opts.isGroup ? "group chat" : "private chat"} named "${opts.chatName}".
 Write in ${langName(opts.language)}. Format with WhatsApp markup only: *bold* for section titles, "- " bullets, no Markdown headings (#), no tables, no code blocks.
 ${opts.question ? `Answer the user's question using only the transcript. If the transcript does not contain the answer, say so briefly.` : `Sections (omit a section if empty):

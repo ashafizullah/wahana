@@ -41,8 +41,47 @@ export function firstUrl(text: string | undefined) {
   return m ? m[0].replace(/[.,;:!?)\]]+$/, "") : null;
 }
 
+/** Only web links may be fetched or opened: message data can carry any scheme (file:, javascript:, custom app URLs). */
+export function isWebUrl(url: string) {
+  try {
+    const u = new URL(url);
+    return u.protocol === "http:" || u.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+/** Hosts we never auto-fetch: a sender could otherwise probe this machine's LAN / localhost services through the app. */
+function isPrivateHost(url: string) {
+  let host: string;
+  try {
+    host = new URL(url).hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  } catch {
+    return true;
+  }
+  if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local") || host.endsWith(".internal") || !host.includes(".")) return true;
+  if (host === "::1" || host.startsWith("fe80:") || host.startsWith("fc") || host.startsWith("fd")) return true;
+  const m = host.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+  if (m) {
+    const [a, b] = [Number(m[1]), Number(m[2])];
+    return a === 10 || a === 127 || a === 0 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
+  }
+  return false;
+}
+
 // ── Fallback: fetch Open Graph tags ourselves ────────────────────────────
+const MAX_CACHE = 200;
 const cache = new Map<string, Promise<Preview | null>>();
+/** Insert as most-recent; evict the oldest entry (and its thumbnail object URL) past the cap. */
+function remember(url: string, p: Promise<Preview | null>) {
+  cache.delete(url);
+  cache.set(url, p);
+  if (cache.size > MAX_CACHE) {
+    const [oldest, old] = cache.entries().next().value as [string, Promise<Preview | null>];
+    cache.delete(oldest);
+    void old.then((v) => v?.image?.startsWith("blob:") && URL.revokeObjectURL(v.image));
+  }
+}
 
 function meta(html: string, name: string) {
   const re = new RegExp(`<meta[^>]+(?:property|name)=["']${name}["'][^>]*content=["']([^"']*)["']`, "i");
@@ -55,6 +94,7 @@ function decode(s: string) {
 }
 
 export function fetchPreview(url: string): Promise<Preview | null> {
+  if (!isWebUrl(url) || isPrivateHost(url)) return Promise.resolve(null);
   let p = cache.get(url);
   if (!p) {
     p = (async () => {
@@ -76,6 +116,7 @@ export function fetchPreview(url: string): Promise<Preview | null> {
         if (img) {
           try {
             const abs = new URL(img, url).toString();
+            if (!isWebUrl(abs) || isPrivateHost(abs)) throw new Error("skip");
             const ir = await tauriFetch(abs, { maxRedirections: 5 });
             if (ir.ok) image = URL.createObjectURL(await ir.blob());
           } catch {
@@ -88,7 +129,7 @@ export function fetchPreview(url: string): Promise<Preview | null> {
         return null;
       }
     })();
-    cache.set(url, p);
+    remember(url, p);
   }
   return p;
 }
@@ -108,7 +149,7 @@ export function LinkPreviewCard({ message: m }: { message: WAMessage }) {
     };
   }, [embedded, url, fetchEnabled]);
 
-  if (!preview || !url) return null;
+  if (!preview || !url || !isWebUrl(preview.url)) return null;
   let host = "";
   try {
     host = new URL(preview.url).hostname.replace(/^www\./, "");

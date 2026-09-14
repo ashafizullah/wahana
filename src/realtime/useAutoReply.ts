@@ -1,8 +1,9 @@
 import { useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { sendNotification } from "@tauri-apps/plugin-notification";
 import { useSettings } from "@/store/settings";
 import { useChatPrefs } from "@/store/chatPrefs";
-import { activeRules, lastReplyAt, logReply, repliesSince, ruleMatches, type AutoReplyRule } from "@/store/autoReply";
+import { activeRules, lastReplyAt, logReply, repliesSince, repliesToday, ruleMatches, type AutoReplyRule } from "@/store/autoReply";
 import { expandTemplate } from "@/store/quickReplies";
 import { aiAutoReply } from "@/lib/autoReplyAi";
 import { qk } from "@/api/queries";
@@ -29,6 +30,7 @@ export function useAutoReply() {
   const client = useSettings((s) => s.client);
   const qc = useQueryClient();
   const inflight = useRef(new Set<string>()); // chat ids currently being answered
+  const dailyLimitWarned = useRef(false);
 
   useEffect(() => {
     if (!client) return;
@@ -56,6 +58,13 @@ export function useAutoReply() {
           if (last && now - last < rule.cooldown_min * 60) return;
         }
         if ((await repliesSince(session, chatId, now - MAX_REPLIES_WINDOW_S)) >= MAX_REPLIES) return;
+        if (st.autoReplyDailyLimit > 0 && (await repliesToday(st.activeProfile)) >= st.autoReplyDailyLimit) {
+          if (!dailyLimitWarned.current) {
+            dailyLimitWarned.current = true;
+            if (st.notifications) sendNotification({ title: "Auto-reply daily limit reached", body: `${st.autoReplyDailyLimit} replies sent today; no more until midnight. Raise the limit in Auto-reply.` });
+          }
+          return;
+        }
         // Recent context: the cache when the chat is open, else a light fetch (the manual-quiet
         // guard and the AI context both need it; chats never opened here have no cache).
         const recent = await recentMessages(session, chatId, Math.max(20, rule.ai_context));

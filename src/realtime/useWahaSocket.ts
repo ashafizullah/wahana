@@ -49,6 +49,7 @@ export function useWahaSocket() {
     let ws: WebSocket | null = null;
     let closed = false;
     let attempt = 0;
+    let everOpened = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
 
     const connect = () => {
@@ -63,6 +64,13 @@ export function useWahaSocket() {
       ws.onopen = () => {
         attempt = 0;
         setState("open");
+        if (everOpened) {
+          // Events sent while we were disconnected are gone: refetch what is on screen.
+          qc.invalidateQueries({ queryKey: qk.sessions });
+          qc.invalidateQueries({ queryKey: ["chats"] });
+          qc.invalidateQueries({ queryKey: ["messages"] });
+        }
+        everOpened = true;
       };
       ws.onmessage = (ev) => {
         let data: WahaEvent;
@@ -81,6 +89,22 @@ export function useWahaSocket() {
       };
       ws.onerror = () => ws?.close();
     };
+
+    // A socket left half-open by sleep/wake or a NAT timeout never fires onclose: force a
+    // reconnect when the network comes back or the window is used again after a long idle.
+    let hiddenAt = 0;
+    const kick = () => {
+      if (closed || !ws || ws.readyState !== WebSocket.OPEN) return;
+      attempt = 0;
+      ws.close();
+    };
+    const onOnline = () => kick();
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") hiddenAt = Date.now();
+      else if (hiddenAt && Date.now() - hiddenAt > 60_000) kick();
+    };
+    window.addEventListener("online", onOnline);
+    document.addEventListener("visibilitychange", onVisibility);
 
     const handle = (e: WahaEvent) => {
       // Raw engine events are only used to detect undecryptable messages; keep receipts out of the log.
@@ -127,7 +151,11 @@ export function useWahaSocket() {
             const match = known.find((c) => c.id === alt.find((a) => a === c.id) || c.id.split("@")[0] === digits);
             if (match) chatId = match.id;
           }
-          if (!m.fromMe) useUnread.getState().incoming(e.session, chatId);
+          // Replays / duplicate deliveries: the caches dedupe by id, so the counters and notifications must too.
+          const seenBefore =
+            !!qc.getQueryData<WAMessage[]>(qk.messages(e.session, chatId))?.some((x) => x.id === m.id) ||
+            !!useLiveMessages.getState().byChat[`${e.session}:${chatId}`]?.some((x) => x.id === m.id);
+          if (!m.fromMe && !seenBefore) useUnread.getState().incoming(e.session, chatId);
           useRevoked.getState().remove(`${e.session}:${chatId}`, m.id);
           useLiveMessages.getState().add(e.session, chatId, m);
           for (const id of new Set([chatId, m.from, m.to].filter(Boolean))) {
@@ -138,11 +166,11 @@ export function useWahaSocket() {
             });
           }
           qc.invalidateQueries({ queryKey: qk.chats(e.session) });
-          if (!m.fromMe && notifRef.current && !useChatPrefs.getState().muted[`${e.session}:${chatId}`]) {
+          if (!m.fromMe && !seenBefore && notifRef.current && !useChatPrefs.getState().muted[`${e.session}:${chatId}`]) {
             const multi = (qc.getQueryData<{ name: string }[]>(qk.sessions)?.length ?? 0) > 1;
             void notifyIncoming(m, multi ? e.session : undefined);
           }
-          if (!m.fromMe) window.dispatchEvent(new CustomEvent<IncomingMessage>("wahana:incoming", { detail: { session: e.session, chatId, message: m } }));
+          if (!m.fromMe && !seenBefore) window.dispatchEvent(new CustomEvent<IncomingMessage>("wahana:incoming", { detail: { session: e.session, chatId, message: m } }));
           break;
         }
         case "message.ack.group": {
@@ -214,6 +242,8 @@ export function useWahaSocket() {
     return () => {
       closed = true;
       clearTimeout(timer);
+      window.removeEventListener("online", onOnline);
+      document.removeEventListener("visibilitychange", onVisibility);
       ws?.close();
     };
   }, [client, qc]);

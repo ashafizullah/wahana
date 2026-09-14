@@ -49,6 +49,8 @@ export interface Prefs {
   aiSystemPrompt: string;
   /** Kill switch for all auto-reply rules. */
   autoReplyPaused: boolean;
+  /** Max auto-replies sent per calendar day across all rules of this server (0 = unlimited). Spend guard for AI replies. */
+  autoReplyDailyLimit: number;
   /** Persona overrides per WAHA session, keyed "profileId:session"; missing or empty = use aiSystemPrompt. */
   aiPersonaBySession: Record<string, string>;
 }
@@ -71,6 +73,7 @@ const DEFAULT_PREFS: Prefs = {
   aiComposeTo: "en",
   aiSystemPrompt: "",
   autoReplyPaused: false,
+  autoReplyDailyLimit: 300,
   aiPersonaBySession: {},
 };
 
