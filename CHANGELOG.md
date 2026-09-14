@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.2 — 2026-09-15
 
 ### Fixed
 - Broadcasts created under one server profile no longer run through another profile's connection after switching servers.

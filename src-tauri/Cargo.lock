@@ -5812,7 +5812,7 @@ dependencies = [
 
 [[package]]
 name = "wahana"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "keyring",
  "serde",
