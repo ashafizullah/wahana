@@ -11,6 +11,7 @@ import { WaMarkdown } from "@/lib/waMarkdown";
 import { Avatar, Button, Input } from "@/components/ui";
 import { cn, displayId, fileToBase64, formatTime } from "@/lib/utils";
 import type { WAMessage } from "@/api/types";
+import { NotConnected } from "@/components/NotConnected";
 
 const STATUS_CHAT = "status@broadcast";
 
@@ -85,7 +86,7 @@ export function StatusScreen() {
 
   const current = groups.find((g) => g.id === selected) ?? null;
 
-  if (!client) return <div className="flex-1 grid place-items-center text-neutral-500 text-sm">Not connected.</div>;
+  if (!client) return <NotConnected />;
 
   return (
     <>

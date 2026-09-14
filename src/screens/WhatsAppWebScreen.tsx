@@ -66,6 +66,7 @@ function WaWebPane({ session, isActive, index, count }: { session: WaWebSession;
   const movePane = useWaWeb((s) => s.movePane);
   const setActive = useWaWeb((s) => s.setActive);
   const [name, setName] = useState(session.name);
+  const [error, setError] = useState<string | null>(null);
   useEffect(() => setName(session.name), [session.name]);
 
   const ref = useRef<HTMLDivElement>(null);
@@ -85,7 +86,12 @@ function WaWebPane({ session, isActive, index, count }: { session: WaWebSession;
         width: r.width,
         height: r.height,
         viewportHeight: window.innerHeight,
-      }).catch(console.error);
+      })
+        .then(() => setError(null))
+        .catch((e) => {
+          console.error(e);
+          setError(String(e));
+        });
     };
     syncRef.current = sync;
     sync();
@@ -137,7 +143,15 @@ function WaWebPane({ session, isActive, index, count }: { session: WaWebSession;
         <Button variant="ghost" size="sm" title="Hide from view (stays logged in)" onClick={() => hidePane(session.id)}><X size={13} /></Button>
       </div>
       <div ref={ref} className="flex-1 min-h-0 grid place-items-center text-neutral-500">
-        <Loader2 className="animate-spin" />
+        {error ? (
+          <div className="max-w-md p-4 text-center text-sm space-y-2">
+            <p className="text-red-600 selectable">Couldn't open WhatsApp Web: {error}</p>
+            <p className="text-xs">Details are in <span className="selectable">waweb.log</span> in the app's data folder.</p>
+            <Button size="sm" variant="secondary" onClick={() => syncRef.current()}>Retry</Button>
+          </div>
+        ) : (
+          <Loader2 className="animate-spin" />
+        )}
       </div>
     </div>
   );

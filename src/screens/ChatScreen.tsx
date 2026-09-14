@@ -49,8 +49,9 @@ import { chatKey, unreadFor, useUnread } from "@/store/unread";
 import { usePushNames } from "@/store/pushNames";
 import { useWaWeb } from "@/store/waWeb";
 import { WhatsAppWebScreen } from "@/screens/WhatsAppWebScreen";
+import { NotConnected } from "@/components/NotConnected";
 
-export function ChatScreen({ onNeedSetup }: { onNeedSetup: () => void }) {
+export function ChatScreen() {
   const { client, session } = useSettings();
   const { data: sessions } = useSessions();
   const [selected, setSelected] = useState<string | null>(null);
@@ -67,11 +68,9 @@ export function ChatScreen({ onNeedSetup }: { onNeedSetup: () => void }) {
   }
   if (!client) {
     return (
-      <Empty>
-        <p>Not connected.</p>
-        <Button onClick={onNeedSetup}>Open settings</Button>
+      <NotConnected>
         <Button variant="secondary" onClick={() => addWaWeb()}>Use WhatsApp Web instead</Button>
-      </Empty>
+      </NotConnected>
     );
   }
   if (sessions && !sessionInfo) {

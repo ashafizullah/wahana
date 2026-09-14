@@ -97,8 +97,13 @@ export default function App() {
         setTab("settings");
       }
     };
+    const onOpenSettings = () => setTab("settings");
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("wahana:open-settings", onOpenSettings);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("wahana:open-settings", onOpenSettings);
+    };
   }, []);
 
   if (!hydrated) {
@@ -173,7 +178,7 @@ export default function App() {
         )}
         <div className="flex-1 min-h-0 flex">
           <ErrorBoundary key={tab} label={tab}>
-            {tab === "chats" && <ChatScreen onNeedSetup={() => setTab("settings")} />}
+            {tab === "chats" && <ChatScreen />}
             {tab === "status" && <StatusScreen />}
             {tab === "scheduler" && <SchedulerScreen />}
           {tab === "broadcast" && <BroadcastScreen />}

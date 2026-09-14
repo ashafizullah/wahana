@@ -9,6 +9,7 @@ import { Avatar, Badge, Button, Input, Label } from "@/components/ui";
 import { cn, displayId, isGroup } from "@/lib/utils";
 import { aiConfigured } from "@/lib/ai";
 import { aiAutoReply, sampleMessage } from "@/lib/autoReplyAi";
+import { NotConnected } from "@/components/NotConnected";
 import {
   clearLog, deleteRule, inWindow, listLog, listRules, setRuleEnabled, textMatches, upsertRule,
   type AutoReplyLog, type AutoReplyRule, type MatchKind, type ReplyKind, type Scope,
@@ -25,7 +26,7 @@ export function AutoReplyScreen() {
   const rules = useQuery({ queryKey: ["auto-reply", "rules", activeProfile], queryFn: () => listRules(activeProfile), enabled: !!activeProfile });
   const log = useQuery({ queryKey: ["auto-reply", "log", activeProfile], queryFn: () => listLog(activeProfile), enabled: !!activeProfile, refetchInterval: 15_000 });
 
-  if (!client) return <div className="flex-1 grid place-items-center text-neutral-500 text-sm">Not connected.</div>;
+  if (!client) return <NotConnected />;
   const list = rules.data ?? [];
   const invalidate = () => qc.invalidateQueries({ queryKey: ["auto-reply"] });
 

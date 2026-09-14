@@ -10,6 +10,7 @@ import { stripWaMarkdown } from "@/lib/waMarkdown";
 import { deleteSchedule, getSchedule, listRuns, listSchedules, nextOccurrence, setEnabled, upsertSchedule, type Kind, type Repeat, type Schedule, type TargetType } from "@/store/scheduler";
 import { GRACE_SECONDS } from "@/realtime/useScheduler";
 import { SessionSelect } from "@/components/SessionSelect";
+import { NotConnected } from "@/components/NotConnected";
 
 const fmt = (s: number) => new Date(s * 1000).toLocaleString([], { weekday: "short", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -21,7 +22,7 @@ export function SchedulerScreen() {
   const [history, setHistory] = useState<Schedule | null>(null);
   const q = useQuery({ queryKey: ["schedules", activeProfile], queryFn: () => listSchedules(activeProfile), enabled: !!activeProfile, refetchInterval: 30_000 });
 
-  if (!client) return <div className="flex-1 grid place-items-center text-neutral-500 text-sm">Not connected.</div>;
+  if (!client) return <NotConnected />;
   const list = q.data ?? [];
   const upcoming = list.filter((s) => s.enabled);
   const paused = list.filter((s) => !s.enabled);

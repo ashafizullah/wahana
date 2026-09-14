@@ -9,6 +9,7 @@ import { cn, displayId, fileToBase64, isChannel, isGroup } from "@/lib/utils";
 import { confirm } from "@/components/Confirm";
 import { createBroadcast, deleteBroadcast, listBroadcasts, listItems, retryFailed, setBroadcastStatus, type BroadcastSummary } from "@/store/broadcast";
 import type { Kind } from "@/store/scheduler";
+import { NotConnected } from "@/components/NotConnected";
 
 const fmt = (s: number) => new Date(s * 1000).toLocaleString([], { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
 
@@ -18,7 +19,7 @@ export function BroadcastScreen() {
   const [creating, setCreating] = useState(false);
   const [open, setOpen] = useState<BroadcastSummary | null>(null);
   const q = useQuery({ queryKey: ["broadcasts", activeProfile], queryFn: () => listBroadcasts(activeProfile), enabled: !!activeProfile, refetchInterval: 3000 });
-  if (!client) return <div className="flex-1 grid place-items-center text-neutral-500 text-sm">Not connected.</div>;
+  if (!client) return <NotConnected />;
   const refresh = () => qc.invalidateQueries({ queryKey: ["broadcasts"] });
 
   return (
