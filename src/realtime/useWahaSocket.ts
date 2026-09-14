@@ -26,6 +26,13 @@ const EVENTS = ["session.status", "message.any", "message.waiting", "message.ack
  * Keeps a single WebSocket to WAHA's /ws endpoint and pushes events into the
  * TanStack Query cache so UI updates in realtime. Reconnects with backoff.
  */
+/** Fired on `window` as "wahana:incoming" for every message someone else sent (auto-reply listens). */
+export interface IncomingMessage {
+  session: string;
+  chatId: string;
+  message: WAMessage;
+}
+
 export function useWahaSocket() {
   const client = useSettings((s) => s.client);
   const notifications = useSettings((s) => s.notifications);
@@ -132,6 +139,7 @@ export function useWahaSocket() {
           }
           qc.invalidateQueries({ queryKey: qk.chats(e.session) });
           if (!m.fromMe && notifRef.current && !useChatPrefs.getState().muted[`${e.session}:${chatId}`]) void notifyIncoming(m);
+          if (!m.fromMe) window.dispatchEvent(new CustomEvent<IncomingMessage>("wahana:incoming", { detail: { session: e.session, chatId, message: m } }));
           break;
         }
         case "message.ack.group": {

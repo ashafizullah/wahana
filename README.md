@@ -61,6 +61,7 @@ You need:
 **Automation**
 - **Scheduler** — one-off or daily / weekly / monthly messages to chats, groups, channels or your status (SQLite-backed, with history)
 - **Broadcast** — one message to many recipients with random pauses, progress, retry and per-recipient log
+- **Auto-reply** — per-session rules (direct messages / groups / specific chats, hours & weekdays, keyword or regex match) answering with a fixed text or an AI reply that follows your instructions; per-chat cooldown, reply log, one-click pause
 - Webhook manager per session, live event log for debugging integrations
 
 **AI (bring your own key)**

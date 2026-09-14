@@ -47,6 +47,8 @@ export interface Prefs {
   aiComposeTo: string;
   /** Persona / standing instructions prepended to every AI feature (who you are, your business, tone). */
   aiSystemPrompt: string;
+  /** Kill switch for all auto-reply rules. */
+  autoReplyPaused: boolean;
 }
 
 const DEFAULT_PREFS: Prefs = {
@@ -66,6 +68,7 @@ const DEFAULT_PREFS: Prefs = {
   aiTranslateTo: "id",
   aiComposeTo: "en",
   aiSystemPrompt: "",
+  autoReplyPaused: false,
 };
 
 interface SettingsState extends Prefs {

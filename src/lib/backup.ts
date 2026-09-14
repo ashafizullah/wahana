@@ -25,7 +25,7 @@ export interface Backup {
 
 const PREF_KEYS: (keyof Prefs)[] = [
   "notifications", "autoLoadImages", "autoLoadStickers", "autoLoadVideos", "autoLoadAudio", "cacheLimitMb", "linkPreviews",
-  "sendTyping", "readReceipts", "aiProvider", "aiBaseUrl", "aiModel", "aiFastModel", "aiTranslateTo", "aiComposeTo", "aiSystemPrompt",
+  "sendTyping", "readReceipts", "aiProvider", "aiBaseUrl", "aiModel", "aiFastModel", "aiTranslateTo", "aiComposeTo", "aiSystemPrompt", "autoReplyPaused",
 ];
 
 export async function exportBackup(includeSecrets: boolean): Promise<string | null> {

@@ -351,6 +351,12 @@ pub fn run() {
                             sql: include_str!("../migrations/002_quick_replies_broadcasts.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
+                        tauri_plugin_sql::Migration {
+                            version: 3,
+                            description: "auto-reply rules and log",
+                            sql: include_str!("../migrations/003_auto_reply.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
                     ],
                 )
                 .build(),
