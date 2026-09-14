@@ -63,7 +63,7 @@ export function ChatScreen({ onNeedSetup }: { onNeedSetup: () => void }) {
   const waWeb = waWebSessions.find((s) => s.id === waWebActive);
 
   if (waWeb) {
-    return <WhatsAppWebScreen key={waWeb.id} session={waWeb} header={<SessionPicker sessions={sessions ?? []} />} />;
+    return <WhatsAppWebScreen header={<SessionPicker sessions={sessions ?? []} />} />;
   }
   if (!client) {
     return (
