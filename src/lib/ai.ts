@@ -31,9 +31,16 @@ export function aiConfigured() {
   return !!c.apiKey && !!c.model && (c.provider === "anthropic" || !!c.baseUrl);
 }
 
-/** The user's persona from Settings → AI, as a system-prompt preamble (empty when unset). */
-export function personaPreamble() {
-  const p = useSettings.getState().aiSystemPrompt.trim();
+/** The persona text that applies to a session: its override from Settings → AI, else the default persona. */
+export function personaFor(session?: string) {
+  const st = useSettings.getState();
+  const sess = session ?? st.session;
+  return (st.aiPersonaBySession[sess] ?? "").trim() || st.aiSystemPrompt.trim();
+}
+
+/** The user's persona as a system-prompt preamble (empty when unset). Defaults to the active session's persona. */
+export function personaPreamble(session?: string) {
+  const p = personaFor(session);
   return p ? `About the user you are assisting (follow these standing instructions):\n${p}\n\n` : "";
 }
 
@@ -41,11 +48,11 @@ export function personaPreamble() {
  * One-shot completion: system + user → text. Routed to the configured provider.
  * `persona` (default true) prepends Settings → AI → Persona; `fast` picks the fast model when one is set.
  */
-export async function complete(system: string, user: string, opts: { maxTokens?: number; cfg?: AiConfig; persona?: boolean; fast?: boolean } = {}): Promise<string> {
+export async function complete(system: string, user: string, opts: { maxTokens?: number; cfg?: AiConfig; persona?: boolean; fast?: boolean; session?: string } = {}): Promise<string> {
   const c = opts.cfg ?? config(opts.fast);
   if (!c.apiKey) throw new Error("AI API key is not set (Settings → AI).");
   const maxTokens = opts.maxTokens ?? 4096;
-  if (opts.persona !== false) system = personaPreamble() + system;
+  if (opts.persona !== false) system = personaPreamble(opts.session) + system;
 
   if (c.provider === "anthropic") {
     const client = new Anthropic({

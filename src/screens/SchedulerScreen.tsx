@@ -9,6 +9,7 @@ import { cn, displayId, fileToBase64, isChannel, isGroup } from "@/lib/utils";
 import { stripWaMarkdown } from "@/lib/waMarkdown";
 import { deleteSchedule, getSchedule, listRuns, listSchedules, nextOccurrence, setEnabled, upsertSchedule, type Kind, type Repeat, type Schedule, type TargetType } from "@/store/scheduler";
 import { GRACE_SECONDS } from "@/realtime/useScheduler";
+import { SessionSelect } from "@/components/SessionSelect";
 
 const fmt = (s: number) => new Date(s * 1000).toLocaleString([], { weekday: "short", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -80,6 +81,7 @@ function Group({ title, items, onEdit, onHistory }: { title: string; items: Sche
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2 min-w-0">
                 <span className="font-medium truncate">{s.target_type === "status" ? "My status" : s.target_name || displayId(s.target_id ?? "")}</span>
+                <span className="text-[10px] rounded-full bg-wa/15 text-wa-dark dark:text-wa px-1.5 py-0.5 font-mono" title="Session">{s.session}</span>
                 <span className="text-[10px] rounded-full bg-neutral-100 dark:bg-neutral-800 px-1.5 py-0.5 text-neutral-600 dark:text-neutral-300 capitalize">{s.repeat}{s.repeat === "weekly" && s.weekdays ? ` · ${s.weekdays.split(",").map((d) => DAYS[Number(d)]).join(" ")}` : ""}</span>
                 {s.kind !== "text" && <span className="text-[10px] rounded-full bg-neutral-100 dark:bg-neutral-800 px-1.5 py-0.5 text-neutral-600 dark:text-neutral-300 flex items-center gap-1"><Paperclip size={10} />{s.kind}</span>}
               </div>
@@ -113,7 +115,8 @@ function toLocalInput(unix: number) {
 }
 
 function ScheduleForm({ session, profile, initial, onClose, onSaved }: { session: string; profile: string; initial: Schedule | null; onClose: () => void; onSaved: () => void }) {
-  const { data: chats } = useChats(session);
+  const [sess, setSess] = useState(initial?.session ?? session);
+  const { data: chats } = useChats(sess);
   const [targetType, setTargetType] = useState<TargetType>(initial?.target_type ?? "chat");
   const [targetId, setTargetId] = useState(initial?.target_id ?? "");
   const [targetName, setTargetName] = useState(initial?.target_name ?? "");
@@ -165,7 +168,7 @@ function ScheduleForm({ session, profile, initial, onClose, onSaved }: { session
       await upsertSchedule({
         id: initial?.id ?? Math.random().toString(36).slice(2, 12),
         profile,
-        session,
+        session: sess,
         target_type: targetType,
         target_id: targetType === "status" ? null : targetId,
         target_name: targetType === "status" ? null : targetName || null,
@@ -197,6 +200,10 @@ function ScheduleForm({ session, profile, initial, onClose, onSaved }: { session
           <button onClick={onClose}><X size={16} /></button>
         </div>
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          <div>
+            <Label>Send from (session)</Label>
+            <SessionSelect value={sess} onChange={(v) => { setSess(v); setTargetId(""); setTargetName(""); }} className="w-full" />
+          </div>
           <div>
             <Label>Send to</Label>
             <div className="flex gap-1 mb-2">

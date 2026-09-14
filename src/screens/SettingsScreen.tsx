@@ -10,6 +10,8 @@ import { deleteQuickReply, listQuickReplies, saveQuickReply, type QuickReply } f
 import { cacheClear, cacheStats, formatBytes, type CacheStats } from "@/lib/mediaCache";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSettings } from "@/store/settings";
+import { useSessions } from "@/api/queries";
+import { SessionSelect } from "@/components/SessionSelect";
 import { WahaClient } from "@/api/client";
 import { Button, Input, Label } from "@/components/ui";
 import { useServerVersion } from "@/api/queries";
@@ -549,6 +551,7 @@ function AiSection() {
           className="w-full rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-2 text-sm outline-none focus:border-wa-dark resize-y"
         />
       </div>
+      <PersonaPerSession />
       {result && (
         <div className={"flex items-center gap-2 rounded-lg px-3 py-2 text-sm " + (result.ok ? "bg-emerald-50 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300" : "bg-red-50 text-red-800 dark:bg-red-900/30 dark:text-red-300")}>
           {result.ok ? <CheckCircle2 size={16} /> : <XCircle size={16} />}<span className="selectable break-all">{result.text}</span>
@@ -582,7 +585,7 @@ function QuickRepliesSection() {
         {q.data?.map((r) => (
           <li key={r.id} className="flex items-start gap-2 rounded-lg bg-neutral-50 dark:bg-neutral-800/60 px-3 py-2">
             <span className="min-w-0 flex-1">
-              <span className="block text-sm font-medium">/{r.shortcut}</span>
+              <span className="block text-sm font-medium">/{r.shortcut} {r.session && <span className="ml-1 text-[10px] rounded-full bg-wa/15 text-wa-dark dark:text-wa px-1.5 py-0.5 font-mono font-normal" title="Only in this session">{r.session}</span>}</span>
               <span className="block text-xs text-neutral-500 whitespace-pre-wrap selectable">{r.text}</span>
             </span>
             <button className="text-neutral-400 hover:text-neutral-700" onClick={() => setEditing(r)} title="Edit"><Pencil size={14} /></button>
@@ -593,7 +596,10 @@ function QuickRepliesSection() {
       </ul>
       {editing ? (
         <div className="space-y-2 rounded-lg border border-dashed border-neutral-300 dark:border-neutral-700 p-3">
-          <div><Label>Shortcut</Label><Input value={editing.shortcut ?? ""} onChange={(e) => setEditing({ ...editing, shortcut: e.target.value })} placeholder="thanks" autoFocus /></div>
+          <div className="grid grid-cols-2 gap-3">
+            <div><Label>Shortcut</Label><Input value={editing.shortcut ?? ""} onChange={(e) => setEditing({ ...editing, shortcut: e.target.value })} placeholder="thanks" autoFocus /></div>
+            <div><Label>Available in</Label><SessionSelect value={editing.session ?? ""} onChange={(v) => setEditing({ ...editing, session: v || null })} allowAll="All sessions" className="w-full" /></div>
+          </div>
           <div>
             <Label>Text</Label>
             <textarea value={editing.text ?? ""} onChange={(e) => setEditing({ ...editing, text: e.target.value })} rows={3} placeholder="Terima kasih {name}, pesanan kamu sedang diproses." className="w-full rounded-lg border border-neutral-300 dark:border-neutral-700 bg-transparent px-3 py-2 text-sm outline-none" />
@@ -605,7 +611,7 @@ function QuickRepliesSection() {
                 const shortcut = (editing.shortcut ?? "").replace(/^\//, "").trim();
                 if (!shortcut || /\s/.test(shortcut)) return setErr("Shortcut must be one word.");
                 if (!(editing.text ?? "").trim()) return setErr("Text is required.");
-                await saveQuickReply({ id: editing.id ?? Math.random().toString(36).slice(2, 10), profile, shortcut, text: editing.text!.trim() });
+                await saveQuickReply({ id: editing.id ?? Math.random().toString(36).slice(2, 10), profile, session: editing.session ?? null, shortcut, text: editing.text!.trim() });
                 setEditing(null);
                 setErr(null);
                 refresh();
@@ -756,5 +762,57 @@ function AboutSection() {
       <dt className="text-neutral-500">Server</dt>
       <dd className="selectable">{server ? `WAHA ${server.version} · ${server.engine} · ${server.tier} · ${server.platform}` : "—"}</dd>
     </dl>
+  );
+}
+
+/** Persona overrides per WAHA session, for when one app serves several businesses / numbers. Saved on blur. */
+function PersonaPerSession() {
+  const { data: sessions } = useSessions();
+  const map = useSettings((s) => s.aiPersonaBySession);
+  const save = useSettings((s) => s.save);
+  const [open, setOpen] = useState(false);
+  const names = [...new Set([...(sessions ?? []).map((x) => x.name), ...Object.keys(map).filter((k) => map[k]?.trim())])];
+  if (names.length < 2 && !Object.keys(map).length) return null;
+  const set = (name: string, text: string) => {
+    const next = { ...map };
+    if (text.trim()) next[name] = text;
+    else delete next[name];
+    void save({ aiPersonaBySession: next });
+  };
+  const overridden = names.filter((n) => map[n]?.trim()).length;
+  return (
+    <div className="rounded-lg border border-neutral-200 dark:border-neutral-800">
+      <button className="w-full flex items-center gap-2 px-3 py-2 text-sm" onClick={() => setOpen((o) => !o)}>
+        <ChevronDown size={14} className={open ? "" : "-rotate-90"} />
+        <span className="font-medium">Persona per session</span>
+        <span className="text-xs text-neutral-500">{overridden ? `${overridden} override${overridden > 1 ? "s" : ""}` : "none — every session uses the persona above"}</span>
+      </button>
+      {open && (
+        <div className="px-3 pb-3 space-y-3">
+          <p className="text-[11px] text-neutral-500">Running several businesses from one app? Give each session its own "who I am". Empty = use the default persona. Applies to auto-reply, smart replies, the writing assistant and summaries for chats on that session.</p>
+          {names.map((n) => (
+            <PersonaField key={n} name={n} value={map[n] ?? ""} onSave={(t) => set(n, t)} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PersonaField({ name, value, onSave }: { name: string; value: string; onSave: (t: string) => void }) {
+  const [text, setText] = useState(value);
+  useEffect(() => setText(value), [value]);
+  return (
+    <div>
+      <Label>{name}</Label>
+      <textarea
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onBlur={() => text.trim() !== value.trim() && onSave(text)}
+        rows={2}
+        placeholder="(uses the default persona)"
+        className="w-full rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-2 text-sm outline-none focus:border-wa-dark resize-y"
+      />
+    </div>
   );
 }

@@ -25,7 +25,7 @@ export interface Backup {
 
 const PREF_KEYS: (keyof Prefs)[] = [
   "notifications", "autoLoadImages", "autoLoadStickers", "autoLoadVideos", "autoLoadAudio", "cacheLimitMb", "linkPreviews",
-  "sendTyping", "readReceipts", "aiProvider", "aiBaseUrl", "aiModel", "aiFastModel", "aiTranslateTo", "aiComposeTo", "aiSystemPrompt", "autoReplyPaused",
+  "sendTyping", "readReceipts", "aiProvider", "aiBaseUrl", "aiModel", "aiFastModel", "aiTranslateTo", "aiComposeTo", "aiSystemPrompt", "autoReplyPaused", "aiPersonaBySession",
 ];
 
 export async function exportBackup(includeSecrets: boolean): Promise<string | null> {
@@ -115,8 +115,8 @@ export async function restoreBackup(b: Backup, opts: RestoreOptions) {
   if (opts.quickReplies && b.quickReplies) {
     for (const r of b.quickReplies) {
       await d.execute(
-        "INSERT INTO quick_replies (id, profile, shortcut, text, created_at) VALUES ($1,$2,$3,$4,$5) ON CONFLICT(id) DO UPDATE SET shortcut=excluded.shortcut, text=excluded.text",
-        [r.id, r.profile, r.shortcut, r.text, r.created_at],
+        "INSERT INTO quick_replies (id, profile, session, shortcut, text, created_at) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT(id) DO UPDATE SET session=excluded.session, shortcut=excluded.shortcut, text=excluded.text",
+        [r.id, r.profile, r.session ?? null, r.shortcut, r.text, r.created_at],
       );
     }
   }

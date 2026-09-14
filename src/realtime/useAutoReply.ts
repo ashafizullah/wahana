@@ -90,7 +90,7 @@ export function useAutoReply() {
         `Rules: reply in ${lang ? `the language "${lang}"` : "the same language as the last message"}; keep it short (1–3 sentences) unless the instructions require more; never invent prices, dates or commitments not covered by the instructions — say the user will follow up instead; do not mention that you are an AI unless asked; output only the message text, no quotes or preamble.`,
       ].filter(Boolean).join("\n\n");
       const user = `Chat with ${chatName}${isGroup(chatId) ? " (group)" : ""}. Recent messages, oldest first:\n\n${transcript(ctx, () => undefined)}\n\nReply to the last message.`;
-      return (await complete(system, user, { maxTokens: 500, fast: true })).trim();
+      return (await complete(system, user, { maxTokens: 500, fast: true, session })).trim();
     };
 
     window.addEventListener("wahana:incoming", onIncoming);

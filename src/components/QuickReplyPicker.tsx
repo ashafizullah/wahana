@@ -8,7 +8,8 @@ import { cn } from "@/lib/utils";
 /** Popover shown while the composer starts with "/…"; Enter/Tab inserts the expanded template. */
 export function QuickReplyPicker({ query, ctx, onPick, onClose }: { query: string; ctx: { name?: string; phone?: string }; onPick: (text: string) => void; onClose: () => void }) {
   const profile = useSettings((s) => s.activeProfile);
-  const { data } = useQuery({ queryKey: ["quick-replies", profile], queryFn: () => listQuickReplies(profile), enabled: !!profile });
+  const session = useSettings((s) => s.session);
+  const { data } = useQuery({ queryKey: ["quick-replies", profile, session], queryFn: () => listQuickReplies(profile, session), enabled: !!profile });
   const [index, setIndex] = useState(0);
   const list = useMemo(() => {
     const t = query.toLowerCase();

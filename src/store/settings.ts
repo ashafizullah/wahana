@@ -49,6 +49,8 @@ export interface Prefs {
   aiSystemPrompt: string;
   /** Kill switch for all auto-reply rules. */
   autoReplyPaused: boolean;
+  /** Persona overrides per WAHA session (business / number); missing or empty = use aiSystemPrompt. */
+  aiPersonaBySession: Record<string, string>;
 }
 
 const DEFAULT_PREFS: Prefs = {
@@ -69,6 +71,7 @@ const DEFAULT_PREFS: Prefs = {
   aiComposeTo: "en",
   aiSystemPrompt: "",
   autoReplyPaused: false,
+  aiPersonaBySession: {},
 };
 
 interface SettingsState extends Prefs {

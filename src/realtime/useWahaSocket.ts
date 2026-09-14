@@ -138,7 +138,10 @@ export function useWahaSocket() {
             });
           }
           qc.invalidateQueries({ queryKey: qk.chats(e.session) });
-          if (!m.fromMe && notifRef.current && !useChatPrefs.getState().muted[`${e.session}:${chatId}`]) void notifyIncoming(m);
+          if (!m.fromMe && notifRef.current && !useChatPrefs.getState().muted[`${e.session}:${chatId}`]) {
+            const multi = (qc.getQueryData<{ name: string }[]>(qk.sessions)?.length ?? 0) > 1;
+            void notifyIncoming(m, multi ? e.session : undefined);
+          }
           if (!m.fromMe) window.dispatchEvent(new CustomEvent<IncomingMessage>("wahana:incoming", { detail: { session: e.session, chatId, message: m } }));
           break;
         }

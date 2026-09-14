@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Radio, Plus, Play, Pause, Square, Trash2, Loader2, X, Users, Megaphone, Paperclip, RotateCcw, CheckCircle2, AlertTriangle, Clock } from "lucide-react";
 import { useSettings } from "@/store/settings";
+import { SessionSelect } from "@/components/SessionSelect";
 import { useChats, useContacts } from "@/api/queries";
 import { Avatar, Button, Input, Label } from "@/components/ui";
 import { cn, displayId, fileToBase64, isChannel, isGroup } from "@/lib/utils";
@@ -41,6 +42,7 @@ export function BroadcastScreen() {
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <span className="font-medium truncate">{b.name || "Untitled broadcast"}</span>
+                    <span className="text-[10px] rounded-full bg-wa/15 text-wa-dark dark:text-wa px-1.5 py-0.5 font-mono" title="Session">{b.session}</span>
                     <span className={cn("text-[10px] rounded-full px-1.5 py-0.5 capitalize", b.status === "running" ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300" : b.status === "done" ? "bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-300" : "bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300")}>{b.status}</span>
                     {b.kind !== "text" && <span className="text-[10px] rounded-full bg-neutral-100 dark:bg-neutral-800 px-1.5 py-0.5 flex items-center gap-1"><Paperclip size={10} />{b.kind}</span>}
                   </div>
@@ -73,8 +75,9 @@ export function BroadcastScreen() {
 }
 
 function NewBroadcast({ session, profile, onClose, onCreated }: { session: string; profile: string; onClose: () => void; onCreated: () => void }) {
-  const { data: chats } = useChats(session);
-  const { data: contacts } = useContacts(session);
+  const [sess, setSess] = useState(session);
+  const { data: chats } = useChats(sess);
+  const { data: contacts } = useContacts(sess);
   const [name, setName] = useState("");
   const [q, setQ] = useState("");
   const [picked, setPicked] = useState<Map<string, string>>(new Map()); // id → name
@@ -118,7 +121,7 @@ function NewBroadcast({ session, profile, onClose, onCreated }: { session: strin
       const recipients = [...picked.entries()].map(([chatId, n]) => ({ chatId, name: n }));
       for (const n of pastedNumbers) if (!picked.has(`${n}@c.us`)) recipients.push({ chatId: `${n}@c.us`, name: `+${n}` });
       await createBroadcast(
-        { id, profile, session, name: name.trim() || null, kind, text: text.trim() || null, media_b64: file ? await fileToBase64(file) : null, media_mime: file?.type ?? null, media_name: file?.name ?? null, delay_min: delayMin, delay_max: delayMax },
+        { id, profile, session: sess, name: name.trim() || null, kind, text: text.trim() || null, media_b64: file ? await fileToBase64(file) : null, media_mime: file?.type ?? null, media_name: file?.name ?? null, delay_min: delayMin, delay_max: delayMax },
         recipients,
       );
       if (startNow) await setBroadcastStatus(id, "running");
@@ -140,7 +143,10 @@ function NewBroadcast({ session, profile, onClose, onCreated }: { session: strin
         </div>
         <div className="flex-1 overflow-y-auto p-4 grid grid-cols-2 gap-4">
           <div className="space-y-3">
-            <div><Label>Name (for your list)</Label><Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Promo September" /></div>
+            <div className="grid grid-cols-[1fr_auto] gap-3">
+              <div><Label>Name (for your list)</Label><Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Promo September" /></div>
+              <div><Label>Send from (session)</Label><SessionSelect value={sess} onChange={(v) => { setSess(v); setPicked(new Map()); }} className="min-w-[180px]" /></div>
+            </div>
             <div>
               <Label>Recipients · {total} selected</Label>
               <Input placeholder="Search chats & contacts" value={q} onChange={(e) => setQ(e.target.value)} />

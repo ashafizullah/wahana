@@ -3,7 +3,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Bot, Plus, Trash2, Pencil, Loader2, X, Play, Pause, AlertTriangle, CheckCircle2, Sparkles, MessageSquareText, Clock, Users, User, Globe, ListChecks } from "lucide-react";
 import { confirm } from "@/components/Confirm";
 import { useSettings } from "@/store/settings";
-import { useChats, useSessions } from "@/api/queries";
+import { useChats } from "@/api/queries";
+import { SessionSelect } from "@/components/SessionSelect";
 import { Avatar, Badge, Button, Input, Label } from "@/components/ui";
 import { cn, displayId, isGroup } from "@/lib/utils";
 import { aiConfigured } from "@/lib/ai";
@@ -138,7 +139,6 @@ function LogRow({ l, ruleName }: { l: AutoReplyLog; ruleName: string }) {
 // ── Form ─────────────────────────────────────────────────────────────────
 
 function RuleForm({ session, profile, initial, onClose, onSaved }: { session: string; profile: string; initial: AutoReplyRule | null; onClose: () => void; onSaved: () => void }) {
-  const { data: sessions } = useSessions();
   const [sess, setSess] = useState(initial?.session ?? session);
   const { data: chats } = useChats(sess);
   const [name, setName] = useState(initial?.name ?? "");
@@ -239,17 +239,7 @@ function RuleForm({ session, profile, initial, onClose, onSaved }: { session: st
             </div>
             <div>
               <Label>Session (business / number)</Label>
-              <select
-                value={sess}
-                onChange={(e) => { setSess(e.target.value); setChatIds([]); }}
-                className="rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-2 text-sm outline-none min-w-[180px]"
-                title="Rules only apply to messages arriving on this session"
-              >
-                {!sessions?.some((x) => x.name === sess) && <option value={sess}>{sess}</option>}
-                {sessions?.map((x) => (
-                  <option key={x.name} value={x.name}>{x.name}{x.me?.pushName ? ` · ${x.me.pushName}` : ""}</option>
-                ))}
-              </select>
+              <SessionSelect value={sess} onChange={(v) => { setSess(v); setChatIds([]); }} className="min-w-[180px]" />
             </div>
           </div>
 

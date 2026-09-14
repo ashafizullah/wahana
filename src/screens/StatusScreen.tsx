@@ -92,7 +92,7 @@ export function StatusScreen() {
       <div className="w-80 shrink-0 flex flex-col border-r border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900">
         <div className="shrink-0 border-b border-neutral-200 dark:border-neutral-800">
           <div className="h-14 flex items-center gap-2 px-4">
-            <span className="font-semibold flex-1">Status</span>
+            <span className="font-semibold flex-1 flex items-center gap-2">Status <span className="text-[10px] rounded-full bg-wa/15 text-wa-dark dark:text-wa px-1.5 py-0.5 font-mono font-normal" title="Session — switch it in Chats">{session}</span></span>
             <Button size="sm" variant="ghost" onClick={() => q.refetch()} title="Refresh"><RefreshCw size={14} className={cn(q.isFetching && "animate-spin")} /></Button>
             <Button size="sm" onClick={() => setCompose(true)} title="Post a status"><Plus size={14} /></Button>
           </div>
@@ -410,7 +410,7 @@ function ComposeStatus({ session, onClose, onPosted }: { session: string; onClos
     <div className="fixed inset-0 z-50 bg-black/40 grid place-items-center" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="w-[420px] rounded-xl bg-white dark:bg-neutral-900 shadow-2xl">
         <div className="flex items-center gap-2 p-3 border-b border-neutral-200 dark:border-neutral-800">
-          <span className="font-semibold flex-1">New status</span>
+          <span className="font-semibold flex-1">New status <span className="text-xs font-normal text-neutral-500">· posted from {session}</span></span>
           <button onClick={onClose}><X size={16} /></button>
         </div>
         <div className="p-4 space-y-3">
