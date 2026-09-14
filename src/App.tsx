@@ -11,6 +11,7 @@ import { SchedulerScreen } from "@/screens/SchedulerScreen";
 import { BroadcastScreen } from "@/screens/BroadcastScreen";
 import { AutoReplyScreen } from "@/screens/AutoReplyScreen";
 import { useBroadcastRunner } from "@/realtime/useBroadcastRunner";
+import { pruneLogs } from "@/store/scheduler";
 import { useScheduler } from "@/realtime/useScheduler";
 import { useWaWeb } from "@/store/waWeb";
 import { useAutoReply } from "@/realtime/useAutoReply";
@@ -58,6 +59,9 @@ export default function App() {
   useScheduler();
   useBroadcastRunner();
   useAutoReply();
+  useEffect(() => {
+    pruneLogs().catch((e) => console.warn("log pruning failed", e));
+  }, []);
 
   useEffect(() => {
     void hydrate();

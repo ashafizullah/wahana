@@ -103,6 +103,23 @@ export async function recordRun(s: Schedule, status: Run["status"], opts: { erro
   await d.execute("UPDATE schedules SET last_run = $1, last_status = $2, last_error = $3, runs = runs + 1 WHERE id = $4", [now, status, opts.error ?? null, s.id]);
 }
 
+/** Days of run history / auto-reply log / finished broadcasts kept before pruning. */
+export const LOG_RETENTION_DAYS = 90;
+
+/** Delete old log rows so the SQLite file does not grow forever (called once at startup). */
+export async function pruneLogs(days = LOG_RETENTION_DAYS) {
+  const d = await db();
+  const cutoff = Math.floor(Date.now() / 1000) - days * 86400;
+  await d.execute("DELETE FROM schedule_runs WHERE ran_at < $1", [cutoff]);
+  await d.execute("DELETE FROM auto_reply_log WHERE at < $1", [cutoff]);
+  // Finished / cancelled broadcasts keep their per-recipient log until they age out.
+  await d.execute(
+    "DELETE FROM broadcast_items WHERE broadcast_id IN (SELECT id FROM broadcasts WHERE status IN ('done','cancelled') AND COALESCE(finished_at, created_at) < $1)",
+    [cutoff],
+  );
+  await d.execute("DELETE FROM broadcasts WHERE status IN ('done','cancelled') AND COALESCE(finished_at, created_at) < $1", [cutoff]);
+}
+
 export async function listRuns(scheduleId: string, limit = 50): Promise<Run[]> {
   const d = await db();
   return d.select<Run[]>("SELECT * FROM schedule_runs WHERE schedule_id = $1 ORDER BY ran_at DESC LIMIT $2", [scheduleId, limit]);
