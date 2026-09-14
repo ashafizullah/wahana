@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { confirm } from "@/components/Confirm";
 import { CheckCircle2, XCircle, Loader2, Plug, Image as ImageIcon, Bell, Info, Plus, Trash2, Server, HardDrive, RefreshCw, SlidersHorizontal, Zap, Pencil, Sparkles, ChevronDown } from "lucide-react";
-import { DEFAULT_MODELS, LANGUAGES, testAi } from "@/lib/ai";
+import { DEFAULT_MODELS, LANGUAGES, personaKey, testAi } from "@/lib/ai";
 import { usingFallback } from "@/lib/secrets";
 import { exportBackup, pickBackup, restoreBackup, type Backup, type RestoreOptions } from "@/lib/backup";
 import { DatabaseBackup, Upload, Download } from "lucide-react";
@@ -768,18 +768,21 @@ function AboutSection() {
 /** Persona overrides per WAHA session, for when one app serves several businesses / numbers. Saved on blur. */
 function PersonaPerSession() {
   const { data: sessions } = useSessions();
+  const profile = useSettings((s) => s.activeProfile);
   const map = useSettings((s) => s.aiPersonaBySession);
   const save = useSettings((s) => s.save);
   const [open, setOpen] = useState(false);
-  const names = [...new Set([...(sessions ?? []).map((x) => x.name), ...Object.keys(map).filter((k) => map[k]?.trim())])];
-  if (names.length < 2 && !Object.keys(map).length) return null;
+  const prefix = `${profile}:`;
+  const stored = Object.keys(map).filter((k) => k.startsWith(prefix) && map[k]?.trim()).map((k) => k.slice(prefix.length));
+  const names = [...new Set([...(sessions ?? []).map((x) => x.name), ...stored])];
+  if (names.length < 2 && stored.length === 0) return null;
   const set = (name: string, text: string) => {
     const next = { ...map };
-    if (text.trim()) next[name] = text;
-    else delete next[name];
+    if (text.trim()) next[personaKey(profile, name)] = text;
+    else delete next[personaKey(profile, name)];
     void save({ aiPersonaBySession: next });
   };
-  const overridden = names.filter((n) => map[n]?.trim()).length;
+  const overridden = stored.length;
   return (
     <div className="rounded-lg border border-neutral-200 dark:border-neutral-800">
       <button className="w-full flex items-center gap-2 px-3 py-2 text-sm" onClick={() => setOpen((o) => !o)}>
@@ -791,7 +794,7 @@ function PersonaPerSession() {
         <div className="px-3 pb-3 space-y-3">
           <p className="text-[11px] text-neutral-500">Running several businesses from one app? Give each session its own "who I am". Empty = use the default persona. Applies to auto-reply, smart replies, the writing assistant and summaries for chats on that session.</p>
           {names.map((n) => (
-            <PersonaField key={n} name={n} value={map[n] ?? ""} onSave={(t) => set(n, t)} />
+            <PersonaField key={n} name={n} value={map[personaKey(profile, n)] ?? ""} onSave={(t) => set(n, t)} />
           ))}
         </div>
       )}

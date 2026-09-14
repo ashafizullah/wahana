@@ -53,6 +53,12 @@ export function WhatsAppWebScreen({ header }: { header: React.ReactNode }) {
   );
 }
 
+const SYNC_EVENT = "wahana:waweb-sync";
+const hideAllPanes = () => Promise.all(useWaWeb.getState().panes.map((id) => invoke("wa_web_hide", { id }).catch(console.error)));
+const syncAllPanes = () => window.dispatchEvent(new Event(SYNC_EVENT));
+/** After a removal the store has already dropped the pane, so a plain sync only reaches survivors. */
+const syncOtherPanes = () => setTimeout(syncAllPanes, 0);
+
 function WaWebPane({ session, isActive, index, count }: { session: WaWebSession; isActive: boolean; index: number; count: number }) {
   const rename = useWaWeb((s) => s.rename);
   const remove = useWaWeb((s) => s.remove);
@@ -64,6 +70,8 @@ function WaWebPane({ session, isActive, index, count }: { session: WaWebSession;
 
   const ref = useRef<HTMLDivElement>(null);
   const syncRef = useRef<() => void>(() => {});
+  const nameRef = useRef(session.name);
+  nameRef.current = session.name;
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -71,7 +79,7 @@ function WaWebPane({ session, isActive, index, count }: { session: WaWebSession;
       const r = el.getBoundingClientRect();
       invoke("wa_web_set_bounds", {
         id: session.id,
-        name: session.name,
+        name: nameRef.current,
         x: r.left,
         y: r.top,
         width: r.width,
@@ -84,23 +92,17 @@ function WaWebPane({ session, isActive, index, count }: { session: WaWebSession;
     const ro = new ResizeObserver(sync);
     ro.observe(el);
     window.addEventListener("resize", sync);
+    window.addEventListener(SYNC_EVENT, sync);
     return () => {
       ro.disconnect();
       window.removeEventListener("resize", sync);
+      window.removeEventListener(SYNC_EVENT, sync);
       invoke("wa_web_hide", { id: session.id }).catch(console.error);
     };
-    // name only matters at creation time (notification suffix); don't re-sync on rename
   }, [session.id]);
-
-  // Hide the native webview while a dialog is up — it sits above React.
-  const withHidden = async <T,>(fn: () => Promise<T>) => {
-    await invoke("wa_web_hide", { id: session.id }).catch(console.error);
-    try {
-      return await fn();
-    } finally {
-      syncRef.current();
-    }
-  };
+  // Reordering swaps equal-sized placeholders, which no ResizeObserver notices; a rename
+  // re-syncs so the webview learns its new notification suffix.
+  useEffect(() => { syncRef.current(); }, [index, count, session.name]);
 
   return (
     <div className="flex-1 min-w-0 flex flex-col" onMouseDown={() => !isActive && setActive(session.id)}>
@@ -119,13 +121,16 @@ function WaWebPane({ session, isActive, index, count }: { session: WaWebSession;
           variant="ghost"
           size="sm"
           title="Remove this WhatsApp Web session (logs out locally)"
-          onClick={() =>
-            withHidden(async () => {
-              if (await confirm({ title: `Remove “${session.name}”?`, message: "Its WhatsApp Web login and local data are deleted.", danger: true, confirmLabel: "Remove" })) {
-                await remove(session.id);
-              }
-            })
-          }
+          onClick={async () => {
+            // Native webviews sit above React: hide every pane while the dialog is up.
+            await hideAllPanes();
+            if (await confirm({ title: `Remove “${session.name}”?`, message: "Its WhatsApp Web login and local data are deleted.", danger: true, confirmLabel: "Remove" })) {
+              await remove(session.id); // this pane unmounts; don't re-sync it or the webview comes back
+              syncOtherPanes();
+            } else {
+              syncAllPanes();
+            }
+          }}
         >
           <Trash2 size={13} />
         </Button>

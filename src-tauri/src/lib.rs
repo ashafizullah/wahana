@@ -211,6 +211,10 @@ fn wa_web_set_bounds(
     if let Some(wv) = app.get_webview(&label) {
         wv.set_position(pos).map_err(|e| e.to_string())?;
         wv.set_size(size).map_err(|e| e.to_string())?;
+        // Keep the notification suffix in step with renames.
+        if let Ok(json) = serde_json::to_string(&name) {
+            let _ = wv.eval(&format!("window.__wahanaSessionName = {json};"));
+        }
         return wv.show().map_err(|e| e.to_string());
     }
     let url = tauri::Url::parse("https://web.whatsapp.com").map_err(|e| e.to_string())?;
@@ -294,11 +298,11 @@ fn wa_web_remove(app: AppHandle, id: String) -> Result<(), String> {
 /// global is touched; the page itself is left as is.
 const WA_WEB_NOTIFICATION_SHIM: &str = r#"
 (() => {
-  const session = __WA_SESSION_NAME__;
+  window.__wahanaSessionName = __WA_SESSION_NAME__;
   const send = (title, body) => {
     const t = window.__TAURI_INTERNALS__;
     if (!t) return;
-    t.invoke("plugin:notification|notify", { options: { title: `${title} · ${session}`, body } }).catch(() => {});
+    t.invoke("plugin:notification|notify", { options: { title: `${title} · ${window.__wahanaSessionName}`, body } }).catch(() => {});
   };
   class WahanaNotification extends EventTarget {
     static permission = "granted";

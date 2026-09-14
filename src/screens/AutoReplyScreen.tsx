@@ -8,6 +8,7 @@ import { SessionSelect } from "@/components/SessionSelect";
 import { Avatar, Badge, Button, Input, Label } from "@/components/ui";
 import { cn, displayId, isGroup } from "@/lib/utils";
 import { aiConfigured } from "@/lib/ai";
+import { aiAutoReply, sampleMessage } from "@/lib/autoReplyAi";
 import {
   clearLog, deleteRule, inWindow, listLog, listRules, setRuleEnabled, textMatches, upsertRule,
   type AutoReplyLog, type AutoReplyRule, type MatchKind, type ReplyKind, type Scope,
@@ -34,7 +35,7 @@ export function AutoReplyScreen() {
         <Bot size={18} className="text-wa-dark" />
         <div>
           <h1 className="font-semibold leading-tight">Auto-reply</h1>
-          <p className="text-[11px] text-neutral-500">Answers incoming messages while this app is running. First matching rule wins; one reply per chat per cooldown.</p>
+          <p className="text-[11px] text-neutral-500">Answers incoming messages while this app is running. First matching rule wins; one reply per chat per cooldown; stays quiet for 15 min in chats you answered yourself.</p>
         </div>
         <div className="ml-auto flex items-center gap-2">
           <Button size="sm" variant={autoReplyPaused ? "danger" : "secondary"} title="Kill switch for every rule" onClick={() => save({ autoReplyPaused: !autoReplyPaused })}>
@@ -160,6 +161,7 @@ function RuleForm({ session, profile, initial, onClose, onSaved }: { session: st
   const [quote, setQuote] = useState(initial ? !!initial.quote : true);
   const [markSeen, setMarkSeen] = useState(!!initial?.mark_seen);
   const [test, setTest] = useState("");
+  const [preview, setPreview] = useState<{ busy: boolean; text?: string; error?: string }>({ busy: false });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -222,6 +224,16 @@ function RuleForm({ session, profile, initial, onClose, onSaved }: { session: st
   };
 
   const seg = (active: boolean): "primary" | "secondary" => (active ? "primary" : "secondary");
+
+  const runPreview = async () => {
+    setPreview({ busy: true });
+    try {
+      const text = await aiAutoReply({ instructions, session: sess, chatName: "Customer", isGroup: false, messages: [sampleMessage(test.trim())] });
+      setPreview({ busy: false, text });
+    } catch (e) {
+      setPreview({ busy: false, error: e instanceof Error ? e.message : String(e) });
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 bg-black/40 grid place-items-center" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
@@ -334,6 +346,14 @@ function RuleForm({ session, profile, initial, onClose, onSaved }: { session: st
                 <textarea value={instructions} onChange={(e) => setInstructions(e.target.value)} rows={6} placeholder={"What the AI may say and how. E.g.\n- We sell handmade bags; open Mon–Sat 09:00–17:00\n- Prices: tote 150k, backpack 250k; shipping via JNE\n- Friendly, short, Bahasa Indonesia; if asked for custom orders say Adam will follow up"} className="w-full rounded-lg border border-neutral-300 dark:border-neutral-700 bg-transparent px-3 py-2 text-sm outline-none focus:border-wa-dark" />
                 <div className="text-[11px] text-neutral-500 flex items-center gap-2">Your persona from Settings → AI is included. Context: last
                   <input type="number" min={1} max={50} value={aiContext} onChange={(e) => setAiContext(Number(e.target.value))} className="w-14 rounded-md border border-neutral-300 dark:border-neutral-700 bg-transparent px-1.5 py-0.5 text-xs" /> messages.</div>
+                <div className="mt-2 rounded-lg bg-neutral-50 dark:bg-neutral-800/60 p-2 space-y-1.5">
+                  <div className="flex items-center gap-2">
+                    <input value={test} onChange={(e) => setTest(e.target.value)} placeholder="Try it: type what a customer might send…" className="flex-1 rounded-lg bg-white dark:bg-neutral-900 px-2.5 py-1 text-xs outline-none border border-neutral-200 dark:border-neutral-700" onKeyDown={(e) => e.key === "Enter" && test.trim() && runPreview()} />
+                    <Button size="sm" variant="secondary" disabled={!test.trim() || preview.busy || !aiConfigured()} onClick={runPreview}>{preview.busy ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />} Preview</Button>
+                  </div>
+                  {preview.text && <div className="text-xs whitespace-pre-wrap selectable">» {preview.text}</div>}
+                  {preview.error && <div className="text-xs text-red-600">{preview.error}</div>}
+                </div>
               </>
             )}
           </div>

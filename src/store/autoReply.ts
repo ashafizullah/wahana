@@ -92,6 +92,15 @@ export async function lastReplyAt(ruleId: string, chatId: string): Promise<numbe
   return rows[0]?.at ?? null;
 }
 
+/** Replies sent by any rule to this chat since `since` (unix) — the loop guard. */
+export async function repliesSince(session: string, chatId: string, since: number): Promise<number> {
+  const rows = await (await db()).select<{ n: number }[]>(
+    "SELECT COUNT(*) AS n FROM auto_reply_log WHERE session = $1 AND chat_id = $2 AND status = 'sent' AND at >= $3",
+    [session, chatId, since],
+  );
+  return rows[0]?.n ?? 0;
+}
+
 export async function logReply(entry: Omit<AutoReplyLog, "id" | "at">) {
   const d = await db();
   const now = Math.floor(Date.now() / 1000);
@@ -111,12 +120,16 @@ const toMin = (hhmm: string) => {
 
 /** Is `now` inside the rule's active window (hours may wrap past midnight, weekdays are local)? */
 export function inWindow(r: Pick<AutoReplyRule, "hours_from" | "hours_to" | "weekdays">, now = new Date()) {
-  if (r.weekdays && !r.weekdays.split(",").map(Number).includes(now.getDay())) return false;
-  if (!r.hours_from || !r.hours_to) return true;
   const cur = now.getHours() * 60 + now.getMinutes();
-  const from = toMin(r.hours_from), to = toMin(r.hours_to);
-  if (from === to) return true;
-  return from < to ? cur >= from && cur < to : cur >= from || cur < to;
+  const from = r.hours_from ? toMin(r.hours_from) : null;
+  const to = r.hours_to ? toMin(r.hours_to) : null;
+  const wraps = from !== null && to !== null && from > to;
+  // A window that wraps past midnight (18:00–08:00) belongs to the day it started on:
+  // Saturday 01:00 is still "Friday night" for the weekday filter.
+  const day = wraps && cur < to! ? (now.getDay() + 6) % 7 : now.getDay();
+  if (r.weekdays && !r.weekdays.split(",").map(Number).includes(day)) return false;
+  if (from === null || to === null || from === to) return true;
+  return wraps ? cur >= from || cur < to : cur >= from && cur < to;
 }
 
 export function scopeMatches(r: Pick<AutoReplyRule, "scope" | "chat_ids">, chatId: string) {

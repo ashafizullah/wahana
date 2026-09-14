@@ -34,9 +34,11 @@ export function aiConfigured() {
 /** The persona text that applies to a session: its override from Settings → AI, else the default persona. */
 export function personaFor(session?: string) {
   const st = useSettings.getState();
-  const sess = session ?? st.session;
-  return (st.aiPersonaBySession[sess] ?? "").trim() || st.aiSystemPrompt.trim();
+  return (st.aiPersonaBySession[personaKey(st.activeProfile, session ?? st.session)] ?? "").trim() || st.aiSystemPrompt.trim();
 }
+
+/** Session names repeat across servers ("default" everywhere), so overrides are keyed by server too. */
+export const personaKey = (profile: string, session: string) => `${profile}:${session}`;
 
 /** The user's persona as a system-prompt preamble (empty when unset). Defaults to the active session's persona. */
 export function personaPreamble(session?: string) {

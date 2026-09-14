@@ -49,7 +49,7 @@ export interface Prefs {
   aiSystemPrompt: string;
   /** Kill switch for all auto-reply rules. */
   autoReplyPaused: boolean;
-  /** Persona overrides per WAHA session (business / number); missing or empty = use aiSystemPrompt. */
+  /** Persona overrides per WAHA session, keyed "profileId:session"; missing or empty = use aiSystemPrompt. */
   aiPersonaBySession: Record<string, string>;
 }
 
