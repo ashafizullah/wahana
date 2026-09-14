@@ -30,3 +30,4 @@ src-tauri/gen/schemas
 
 # personal notes
 notes/
+.vitest/

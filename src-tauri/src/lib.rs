@@ -1,5 +1,4 @@
 use keyring::Entry;
-use tauri_plugin_notification::NotificationExt;
 use serde::Serialize;
 use std::{
     collections::HashMap,
@@ -18,6 +17,7 @@ use tauri::{
     webview::{DownloadEvent, NewWindowResponse},
     AppHandle, LogicalPosition, LogicalSize, Manager, WebviewBuilder, WebviewUrl,
 };
+use tauri_plugin_notification::NotificationExt;
 
 const SERVICE: &str = "com.ashafizullah.wahana";
 
@@ -28,7 +28,9 @@ fn entry(profile: &str) -> Result<Entry, String> {
 /// Store the WAHA API key in the OS keychain (macOS Keychain / Windows Credential Manager).
 #[tauri::command]
 fn save_api_key(profile: String, api_key: String) -> Result<(), String> {
-    entry(&profile)?.set_password(&api_key).map_err(|e| e.to_string())
+    entry(&profile)?
+        .set_password(&api_key)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -94,7 +96,11 @@ fn scan(dir: &PathBuf) -> Vec<(PathBuf, u64, SystemTime)> {
                     if !md.is_file() {
                         return None;
                     }
-                    Some((e.path(), md.len(), md.modified().unwrap_or(SystemTime::UNIX_EPOCH)))
+                    Some((
+                        e.path(),
+                        md.len(),
+                        md.modified().unwrap_or(SystemTime::UNIX_EPOCH),
+                    ))
                 })
                 .collect()
         })
@@ -171,7 +177,7 @@ fn maybe_evict(dir: PathBuf, limit: u64, written: u64) {
         let mut total: u64 = files.iter().map(|f| f.1).sum();
         if total > limit {
             files.sort_by_key(|f| f.2); // oldest first
-            // Evict down to 90% so the next few puts don't immediately trigger another scan.
+                                        // Evict down to 90% so the next few puts don't immediately trigger another scan.
             let target = limit / 10 * 9;
             for (path, size, _) in files {
                 if total <= target {
@@ -228,10 +234,19 @@ const WA_WEB_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/5
 /// WhatsApp Web (which has no devtools in release builds) can be reported.
 fn wa_web_log(app: &AppHandle, msg: impl AsRef<str>) {
     use std::io::Write;
-    let Ok(dir) = app.path().app_local_data_dir() else { return };
+    let Ok(dir) = app.path().app_local_data_dir() else {
+        return;
+    };
     let _ = fs::create_dir_all(&dir);
-    if let Ok(mut f) = fs::OpenOptions::new().create(true).append(true).open(dir.join("waweb.log")) {
-        let ts = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    if let Ok(mut f) = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(dir.join("waweb.log"))
+    {
+        let ts = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
         let _ = writeln!(f, "{ts} {}", msg.as_ref());
     }
 }
@@ -258,7 +273,8 @@ fn wa_web_label(id: &str) -> Result<String, String> {
 /// for them. `wa_web_set_bounds` is called several times in quick succession when a pane
 /// mounts (initial sync, ResizeObserver, layout effect); without this guard each call sees
 /// "no webview yet" and creates its own.
-static WA_WEB_CREATING: LazyLock<Mutex<HashMap<String, (LogicalPosition<f64>, LogicalSize<f64>)>>> =
+type Bounds = (LogicalPosition<f64>, LogicalSize<f64>);
+static WA_WEB_CREATING: LazyLock<Mutex<HashMap<String, Bounds>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
 /// Multi-account WhatsApp Web needs per-webview storage. On macOS that is
@@ -274,13 +290,14 @@ fn wa_web_isolation_supported() -> bool {
             .ok()
             .and_then(|o| String::from_utf8(o.stdout).ok())
             .and_then(|v| v.trim().split('.').next()?.parse::<u32>().ok());
-        return major.map_or(true, |m| m >= 14);
+        major.is_none_or(|m| m >= 14)
     }
     #[cfg(not(target_os = "macos"))]
     true
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 async fn wa_web_set_bounds(
     app: AppHandle,
     id: String,
@@ -300,7 +317,11 @@ async fn wa_web_set_bounds(
         .height;
     // Only macOS lays children out under the title bar; elsewhere the delta is scrollbar
     // or rounding noise that would push the child down.
-    let title_offset = if cfg!(target_os = "macos") { (inner_h - viewport_height).max(0.0) } else { 0.0 };
+    let title_offset = if cfg!(target_os = "macos") {
+        (inner_h - viewport_height).max(0.0)
+    } else {
+        0.0
+    };
     let pos = LogicalPosition::new(x, y + title_offset);
     let size = LogicalSize::new(width, height);
     if let Some(wv) = app.get_webview(&label) {
@@ -308,7 +329,7 @@ async fn wa_web_set_bounds(
         wv.set_size(size).map_err(|e| e.to_string())?;
         // Keep the notification suffix in step with renames.
         if let Ok(json) = serde_json::to_string(&name) {
-            let _ = wv.eval(&format!("window.__wahanaSessionName = {json};"));
+            let _ = wv.eval(format!("window.__wahanaSessionName = {json};"));
         }
         return wv.show().map_err(|e| e.to_string());
     }
@@ -321,8 +342,26 @@ async fn wa_web_set_bounds(
         }
         creating.insert(label.clone(), (pos, size));
     }
-    let result = wa_web_create(&app, &window, &label, &id, &name, pos, size, x, y, width, height, title_offset, inner_h, viewport_height);
-    let latest = WA_WEB_CREATING.lock().map_err(|e| e.to_string())?.remove(&label);
+    let result = wa_web_create(
+        &app,
+        &window,
+        &label,
+        &id,
+        &name,
+        pos,
+        size,
+        x,
+        y,
+        width,
+        height,
+        title_offset,
+        inner_h,
+        viewport_height,
+    );
+    let latest = WA_WEB_CREATING
+        .lock()
+        .map_err(|e| e.to_string())?
+        .remove(&label);
     if result.is_ok() {
         if let (Some((p, s)), Some(wv)) = (latest, app.get_webview(&label)) {
             if p.x != pos.x || p.y != pos.y || s.width != size.width || s.height != size.height {
@@ -368,8 +407,16 @@ fn wa_web_create(
         // wry already picks ~/Downloads/<suggested name> and de-duplicates; just allow it
         // and tell the user when it lands.
         .on_download(|webview, event| {
-            if let DownloadEvent::Finished { path: Some(path), success: true, .. } = event {
-                let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+            if let DownloadEvent::Finished {
+                path: Some(path),
+                success: true,
+                ..
+            } = event
+            {
+                let name = path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default();
                 let _ = webview
                     .notification()
                     .builder()
@@ -384,7 +431,8 @@ fn wa_web_create(
     {
         let mut ident = [0u8; 16];
         for (i, chunk) in id.as_bytes().chunks(2).enumerate() {
-            ident[i] = u8::from_str_radix(std::str::from_utf8(chunk).unwrap_or("0"), 16).unwrap_or(0);
+            ident[i] =
+                u8::from_str_radix(std::str::from_utf8(chunk).unwrap_or("0"), 16).unwrap_or(0);
         }
         builder = builder.data_store_identifier(ident);
     }
@@ -398,7 +446,10 @@ fn wa_web_create(
     wa_web_log(app, format!("create {label} at ({x},{y}) {width}x{height} title_offset={title_offset} inner_h={inner_h} viewport_h={viewport_height}"));
     match window.add_child(builder, pos, size) {
         Ok(wv) => {
-            wa_web_log(app, format!("created {label} url={:?}", wv.url().map(|u| u.to_string())));
+            wa_web_log(
+                app,
+                format!("created {label} url={:?}", wv.url().map(|u| u.to_string())),
+            );
             Ok(())
         }
         Err(e) => {
@@ -576,7 +627,9 @@ pub fn run() {
             let quit = MenuItem::with_id(app, "quit", "Quit Wahana", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show, &quit])?;
             TrayIconBuilder::with_id("main")
-                .icon(tauri::image::Image::from_bytes(include_bytes!("../icons/tray.png"))?)
+                .icon(tauri::image::Image::from_bytes(include_bytes!(
+                    "../icons/tray.png"
+                ))?)
                 .icon_as_template(false)
                 .tooltip("Wahana")
                 .menu(&menu)

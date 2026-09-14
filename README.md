@@ -98,6 +98,15 @@ VITE_WAHA_API_KEY=your-plain-api-key
 VITE_WAHA_SESSION=default
 ```
 
+### Check
+
+```bash
+npm run check           # tsc + unit tests (vitest)
+cd src-tauri && cargo clippy --all-targets -- -D warnings && cargo fmt --check
+```
+
+Pull requests run the same checks in CI (`.github/workflows/ci.yml`); tags trigger the release build.
+
 ### Build
 
 ```bash

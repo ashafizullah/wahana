@@ -124,7 +124,8 @@ export function nextOccurrence(s: Pick<Schedule, "next_run" | "repeat" | "weekda
     return Math.floor(candidate.getTime() / 1000);
   }
   if (s.repeat === "weekly") {
-    const parsed = (s.weekdays ?? "").split(",").map(Number).filter((n) => Number.isInteger(n) && n >= 0 && n <= 6);
+    // Note: Number("") is 0, so drop empty entries before parsing or "" would mean Sunday.
+    const parsed = (s.weekdays ?? "").split(",").map((x) => x.trim()).filter(Boolean).map(Number).filter((n) => Number.isInteger(n) && n >= 0 && n <= 6);
     const days = parsed.length ? parsed : [base.getDay()]; // empty/garbage → keep the original weekday rather than disabling the schedule
     for (let i = 0; i < 8; i++) {
       const c = new Date(candidate);

@@ -138,7 +138,8 @@ export function inWindow(r: Pick<AutoReplyRule, "hours_from" | "hours_to" | "wee
   // A window that wraps past midnight (18:00–08:00) belongs to the day it started on:
   // Saturday 01:00 is still "Friday night" for the weekday filter.
   const day = wraps && cur < to! ? (now.getDay() + 6) % 7 : now.getDay();
-  if (r.weekdays && !r.weekdays.split(",").map(Number).includes(day)) return false;
+  const days = r.weekdays ? r.weekdays.split(",").map((x) => x.trim()).filter(Boolean).map(Number) : [];
+  if (days.length && !days.includes(day)) return false;
   if (from === null || to === null || from === to) return true;
   return wraps ? cur >= from || cur < to : cur >= from && cur < to;
 }
