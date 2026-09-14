@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { MessageSquare, Radio, Settings as SettingsIcon, Loader2, Download, X, Activity, CircleDashed, CalendarClock, Megaphone } from "lucide-react";
+import { MessageSquare, Radio, Settings as SettingsIcon, Loader2, Download, X, Activity, CircleDashed, CalendarClock, Megaphone, Globe } from "lucide-react";
 import { useSettings } from "@/store/settings";
 import { useWahaSocket } from "@/realtime/useWahaSocket";
 import { SettingsScreen } from "@/screens/SettingsScreen";
@@ -8,6 +8,7 @@ import { ChatScreen } from "@/screens/ChatScreen";
 import { EventsScreen } from "@/screens/EventsScreen";
 import { StatusScreen } from "@/screens/StatusScreen";
 import { SchedulerScreen } from "@/screens/SchedulerScreen";
+import { WhatsAppWebScreen } from "@/screens/WhatsAppWebScreen";
 import { BroadcastScreen } from "@/screens/BroadcastScreen";
 import { useBroadcastRunner } from "@/realtime/useBroadcastRunner";
 import { useScheduler } from "@/realtime/useScheduler";
@@ -30,7 +31,7 @@ import { useReceipts } from "@/store/receipts";
 import { useUpdater } from "@/realtime/useUpdater";
 import { Button } from "@/components/ui";
 
-type Tab = "chats" | "status" | "scheduler" | "broadcast" | "sessions" | "events" | "settings";
+type Tab = "chats" | "status" | "scheduler" | "broadcast" | "sessions" | "events" | "settings" | "whatsapp";
 
 export default function App() {
   const { hydrated, hydrate, client } = useSettings();
@@ -78,7 +79,7 @@ export default function App() {
     const onKey = (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey;
       if (!mod) return;
-      const tabs: Record<string, Tab> = { "1": "chats", "2": "status", "3": "scheduler", "4": "broadcast", "5": "sessions", "6": "events", "7": "settings" };
+      const tabs: Record<string, Tab> = { "1": "chats", "2": "status", "3": "scheduler", "4": "broadcast", "5": "sessions", "6": "events", "7": "settings", "8": "whatsapp" };
       if (tabs[e.key]) {
         e.preventDefault();
         setTab(tabs[e.key]!);
@@ -111,6 +112,7 @@ export default function App() {
     { id: "sessions", icon: Radio, label: "Sessions (⌘5)" },
     { id: "events", icon: Activity, label: "Events (⌘6)" },
     { id: "settings", icon: SettingsIcon, label: "Settings (⌘7)" },
+    { id: "whatsapp", icon: Globe, label: "WhatsApp Web (⌘8)" },
   ];
 
   return (
@@ -173,6 +175,7 @@ export default function App() {
             {tab === "sessions" && <SessionsScreen />}
             {tab === "events" && <EventsScreen />}
             {tab === "settings" && <SettingsScreen onSaved={() => setTab("sessions")} />}
+            {tab === "whatsapp" && <WhatsAppWebScreen />}
           </ErrorBoundary>
         </div>
       </main>

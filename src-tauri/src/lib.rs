@@ -5,7 +5,7 @@ use tauri::{
     ipc::{InvokeBody, Request, Response},
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Manager,
+    AppHandle, LogicalPosition, LogicalSize, Manager, WebviewBuilder, WebviewUrl,
 };
 
 const SERVICE: &str = "com.ashafizullah.wahana";
@@ -159,6 +159,60 @@ fn show_main(app: &AppHandle) {
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+// ── WhatsApp Web (plain, un-modified web.whatsapp.com embedded as a child webview) ──
+
+const WA_WEB_LABEL: &str = "whatsapp-web";
+
+/// WhatsApp Web refuses unknown user agents, so present as a mainstream browser.
+#[cfg(target_os = "macos")]
+const WA_WEB_UA: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15";
+#[cfg(not(target_os = "macos"))]
+const WA_WEB_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+
+/// Show WhatsApp Web inside the main window at the given logical rect (the area the
+/// frontend reserves for it). Created lazily on first call; afterwards just moved/shown.
+/// Session cookies persist in the app's webview data dir, so QR login happens once.
+///
+/// `viewport_height` is the main webview's `window.innerHeight`. Child webviews are laid
+/// out relative to the window's content view, which on recent macOS extends under the
+/// title bar while the main webview does not — so shift by the difference.
+#[tauri::command]
+fn wa_web_set_bounds(
+    app: AppHandle,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+    viewport_height: f64,
+) -> Result<(), String> {
+    let window = app.get_window("main").ok_or("main window not found")?;
+    let inner_h = window
+        .inner_size()
+        .map_err(|e| e.to_string())?
+        .to_logical::<f64>(window.scale_factor().map_err(|e| e.to_string())?)
+        .height;
+    let title_offset = (inner_h - viewport_height).max(0.0);
+    let pos = LogicalPosition::new(x, y + title_offset);
+    let size = LogicalSize::new(width, height);
+    if let Some(wv) = app.get_webview(WA_WEB_LABEL) {
+        wv.set_position(pos).map_err(|e| e.to_string())?;
+        wv.set_size(size).map_err(|e| e.to_string())?;
+        return wv.show().map_err(|e| e.to_string());
+    }
+    let url = tauri::Url::parse("https://web.whatsapp.com").map_err(|e| e.to_string())?;
+    let builder = WebviewBuilder::new(WA_WEB_LABEL, WebviewUrl::External(url)).user_agent(WA_WEB_UA);
+    window.add_child(builder, pos, size).map(|_| ()).map_err(|e| e.to_string())
+}
+
+/// Hide (not destroy) the WhatsApp Web webview when its tab is not active.
+#[tauri::command]
+fn wa_web_hide(app: AppHandle) -> Result<(), String> {
+    match app.get_webview(WA_WEB_LABEL) {
+        Some(wv) => wv.hide().map_err(|e| e.to_string()),
+        None => Ok(()),
+    }
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -198,7 +252,9 @@ pub fn run() {
             media_cache_get,
             media_cache_put,
             media_cache_stats,
-            media_cache_clear
+            media_cache_clear,
+            wa_web_set_bounds,
+            wa_web_hide
         ])
         .setup(|app| {
             let show = MenuItem::with_id(app, "show", "Open Wahana", true, None::<&str>)?;
