@@ -70,6 +70,11 @@ You need:
 - Writing assistant in the composer (fix grammar, formal / casual / friendlier, shorter / longer, bullets) and reply suggestions
 - Describe an image or extract its text (OCR)
 
+**WhatsApp Web (no server needed)**
+- Plain, unmodified web.whatsapp.com embedded next to your WAHA sessions in the same picker — one place for everything
+- Several WhatsApp Web accounts side by side, each with its own isolated login; rename / remove at will
+- Notifications reach the OS notification center, downloads land in ~/Downloads, links open in your browser, calls work
+
 **App**
 - System tray, desktop notifications, incoming-call banner, keyboard shortcuts, light / dark theme
 - Privacy tweaks: typing indicator on/off, read receipts always / on reply / manual / never
