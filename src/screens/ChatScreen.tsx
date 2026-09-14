@@ -47,20 +47,30 @@ import { useQueryClient } from "@tanstack/react-query";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { chatKey, unreadFor, useUnread } from "@/store/unread";
 import { usePushNames } from "@/store/pushNames";
+import { useWaWeb } from "@/store/waWeb";
+import { WhatsAppWebScreen } from "@/screens/WhatsAppWebScreen";
 
 export function ChatScreen({ onNeedSetup }: { onNeedSetup: () => void }) {
   const { client, session } = useSettings();
   const { data: sessions } = useSessions();
   const [selected, setSelected] = useState<string | null>(null);
   const [listWidth, setListWidth] = usePaneWidth("chatList", 320, 240, 560);
+  const waWebActive = useWaWeb((s) => s.active);
+  const waWebSessions = useWaWeb((s) => s.sessions);
+  const addWaWeb = useWaWeb((s) => s.add);
 
   const sessionInfo = sessions?.find((s) => s.name === session);
+  const waWeb = waWebSessions.find((s) => s.id === waWebActive);
 
+  if (waWeb) {
+    return <WhatsAppWebScreen key={waWeb.id} session={waWeb} header={<SessionPicker sessions={sessions ?? []} />} />;
+  }
   if (!client) {
     return (
       <Empty>
         <p>Not connected.</p>
         <Button onClick={onNeedSetup}>Open settings</Button>
+        <Button variant="secondary" onClick={() => addWaWeb()}>Use WhatsApp Web instead</Button>
       </Empty>
     );
   }
@@ -107,7 +117,6 @@ function ChatList({
 }) {
   const { data, isLoading, error } = useChats(session);
   const { data: sessions } = useSessions();
-  const save = useSettings((s) => s.save);
   const resolveName = useNameResolver(session); // session-wide (contacts, LIDs, push names) for preview mentions
   const [q, setQ] = useState("");
   const [newChat, setNewChat] = useState(false);
@@ -159,11 +168,7 @@ function ChatList({
     <div style={{ width }} className="shrink-0 flex flex-col border-r border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900">
       <div className="p-3 border-b border-neutral-200 dark:border-neutral-800 space-y-2">
         <ProfilePicker />
-        <SessionPicker
-          sessions={sessions ?? []}
-          value={session}
-          onChange={(name) => save({ session: name })}
-        />
+        <SessionPicker sessions={sessions ?? []} />
         <div className="flex gap-1.5">
           <div className="relative flex-1">
             <Search size={14} className="absolute left-2.5 top-2.5 text-neutral-400" />
@@ -305,34 +310,54 @@ function ProfilePicker() {
   );
 }
 
-function SessionPicker({
-  sessions,
-  value,
-  onChange,
-}: {
-  sessions: { name: string; status: string; me?: { pushName?: string } | null }[];
-  value: string;
-  onChange: (name: string) => void;
-}) {
+const WAWEB_NEW = "waweb:new";
+
+/** WAHA sessions and WhatsApp Web sessions in one dropdown; picking a WhatsApp Web one swaps the screen. */
+function SessionPicker({ sessions }: { sessions: { name: string; status: string; me?: { pushName?: string } | null }[] }) {
+  const value = useSettings((s) => s.session);
+  const save = useSettings((s) => s.save);
+  const waWeb = useWaWeb((s) => s.sessions);
+  const active = useWaWeb((s) => s.active);
+  const setActive = useWaWeb((s) => s.setActive);
+  const add = useWaWeb((s) => s.add);
   const dot = (status: string) =>
     status === "WORKING" ? "bg-emerald-500" : status === "STOPPED" ? "bg-neutral-400" : "bg-amber-400";
   const current = sessions.find((s) => s.name === value);
+  const selected = active ? `waweb:${active}` : value;
   return (
     <label className="flex items-center gap-2 rounded-lg bg-neutral-100 dark:bg-neutral-800 px-2.5 py-1.5 text-sm">
-      <span className={cn("w-2 h-2 rounded-full shrink-0", dot(current?.status ?? ""))} />
+      <span className={cn("w-2 h-2 rounded-full shrink-0", active ? "bg-wa" : dot(current?.status ?? ""))} />
       <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
+        value={selected}
+        onChange={(e) => {
+          const v = e.target.value;
+          if (v === WAWEB_NEW) add();
+          else if (v.startsWith("waweb:")) setActive(v.slice(6));
+          else {
+            setActive(null);
+            void save({ session: v });
+          }
+        }}
         className="flex-1 bg-transparent outline-none cursor-pointer min-w-0 truncate"
         title="Active session"
       >
-        {!current && <option value={value}>{value} (not found)</option>}
-        {sessions.map((s) => (
-          <option key={s.name} value={s.name}>
-            {s.name}
-            {s.me?.pushName ? ` · ${s.me.pushName}` : ""} · {s.status}
-          </option>
-        ))}
+        <optgroup label="WAHA">
+          {!current && !active && <option value={value}>{value} (not found)</option>}
+          {sessions.map((s) => (
+            <option key={s.name} value={s.name}>
+              {s.name}
+              {s.me?.pushName ? ` · ${s.me.pushName}` : ""} · {s.status}
+            </option>
+          ))}
+        </optgroup>
+        <optgroup label="WhatsApp Web">
+          {waWeb.map((s) => (
+            <option key={s.id} value={`waweb:${s.id}`}>
+              {s.name}
+            </option>
+          ))}
+          <option value={WAWEB_NEW}>＋ Add WhatsApp Web…</option>
+        </optgroup>
       </select>
     </label>
   );
