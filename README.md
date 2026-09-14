@@ -46,7 +46,7 @@ You need:
 - Send text, photos, videos, documents, voice notes, location, contacts, polls; drag-and-drop and paste
 - Message menu: reactions, reply, forward, pin, edit, delete (for everyone / for me), info (delivery & read times), translate
 - Media auto-load per kind with blurred click-to-load previews, on-disk cache, lightbox with zoom and save
-- Unread badges (list, tab, dock/tray), pin / mute / archive, labels, drafts, quick replies (`/shortcut` with variables)
+- Unread badges (list, tab, dock/tray), pin / mute / archive, labels, drafts, quick replies (`/shortcut` with variables, optionally per session)
 - In-chat search, jump to date, infinite history, export to `.txt` / `.html` / `.json`
 - Deleted-message tombstones and "waiting for this message" placeholders; live messages survive server history gaps
 
@@ -59,13 +59,13 @@ You need:
 - View contacts' updates (auto-play, start from unseen, next contact), post text / photo / video, delete your own
 
 **Automation**
-- **Scheduler** — one-off or daily / weekly / monthly messages to chats, groups, channels or your status (SQLite-backed, with history)
-- **Broadcast** — one message to many recipients with random pauses, progress, retry and per-recipient log
+- **Scheduler** — one-off or daily / weekly / monthly messages to chats, groups, channels or your status, from any session (SQLite-backed, with history)
+- **Broadcast** — one message to many recipients from any session, with random pauses, progress, retry and per-recipient log
 - **Auto-reply** — per-session rules (direct messages / groups / specific chats, hours & weekdays, keyword or regex match) answering with a fixed text or an AI reply that follows your instructions; per-chat cooldown, reply log, one-click pause
 - Webhook manager per session, live event log for debugging integrations
 
 **AI (bring your own key)**
-- Anthropic (official SDK) or any OpenAI-compatible endpoint (routers, Ollama…); optional cheaper "fast model" for short tasks; a persona/system prompt used by every feature
+- Anthropic (official SDK) or any OpenAI-compatible endpoint (routers, Ollama…); optional cheaper "fast model" for short tasks; a persona/system prompt used by every feature, with per-session overrides when one app serves several businesses
 - Translate incoming messages and drafts; per-chat auto-translate (incoming shown in your language, outgoing sent in theirs)
 - Summarize a chat or group (since last read / today / last N) or ask a question about it
 - Writing assistant in the composer (fix grammar, formal / casual / friendlier, shorter / longer, bullets) and reply suggestions
