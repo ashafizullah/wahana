@@ -47,6 +47,8 @@ export interface Prefs {
   aiComposeTo: string;
   /** Persona / standing instructions prepended to every AI feature (who you are, your business, tone). */
   aiSystemPrompt: string;
+  /** Assign existing labels to new direct chats automatically (one AI call per new chat). */
+  aiAutoLabel: boolean;
   /** Kill switch for all auto-reply rules. */
   autoReplyPaused: boolean;
   /** Max auto-replies sent per calendar day across all rules of this server (0 = unlimited). Spend guard for AI replies. */
@@ -72,6 +74,7 @@ const DEFAULT_PREFS: Prefs = {
   aiTranslateTo: "id",
   aiComposeTo: "en",
   aiSystemPrompt: "",
+  aiAutoLabel: false,
   autoReplyPaused: false,
   autoReplyDailyLimit: 300,
   aiPersonaBySession: {},

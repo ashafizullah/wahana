@@ -10,6 +10,7 @@ import { confirm } from "@/components/Confirm";
 import { createBroadcast, deleteBroadcast, listBroadcasts, listItems, retryFailed, setBroadcastStatus, type BroadcastSummary } from "@/store/broadcast";
 import type { Kind } from "@/store/scheduler";
 import { NotConnected } from "@/components/NotConnected";
+import { GenerateButton } from "@/components/GenerateButton";
 
 const fmt = (s: number) => new Date(s * 1000).toLocaleString([], { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
 
@@ -175,6 +176,7 @@ function NewBroadcast({ session, profile, onClose, onCreated }: { session: strin
               <Label>{file ? "Caption" : "Message"} · variables {"{name} {phone} {time} {date}"}</Label>
               <textarea value={text} onChange={(e) => setText(e.target.value)} rows={7} placeholder="Halo {name}, …" className="w-full rounded-lg border border-neutral-300 dark:border-neutral-700 bg-transparent px-3 py-2 text-sm outline-none" />
               <div className="flex items-center gap-2 mt-1.5">
+                <GenerateButton kind="broadcast" text={text} onResult={setText} session={sess} />
                 <input ref={fileRef} type="file" hidden onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
                 <Button size="sm" variant="secondary" onClick={() => fileRef.current?.click()}><Paperclip size={12} /> {file ? "Change attachment" : "Attach"}</Button>
                 {file && <span className="text-xs text-neutral-500 flex items-center gap-1">{file.name} <button onClick={() => setFile(null)}><X size={12} /></button></span>}

@@ -9,6 +9,7 @@ import { usePushNames } from "@/store/pushNames";
 import { loadMessageMedia } from "@/lib/mediaCache";
 import { WaMarkdown } from "@/lib/waMarkdown";
 import { Avatar, Button, Input } from "@/components/ui";
+import { GenerateButton } from "@/components/GenerateButton";
 import { cn, displayId, fileToBase64, formatTime } from "@/lib/utils";
 import type { WAMessage } from "@/api/types";
 import { NotConnected } from "@/components/NotConnected";
@@ -431,7 +432,8 @@ function ComposeStatus({ session, onClose, onPosted }: { session: string; onClos
                   className="w-full bg-transparent text-center text-lg font-medium placeholder-white/60 outline-none resize-none"
                 />
               </div>
-              <div className="flex gap-1.5 flex-wrap">
+              <div className="flex gap-1.5 flex-wrap items-center">
+                <GenerateButton kind="status" text={text} onResult={setText} session={session} />
                 {COLORS.map((c) => (
                   <button key={c} onClick={() => setBg(c)} className={cn("w-6 h-6 rounded-full border-2", bg === c ? "border-neutral-900 dark:border-white" : "border-transparent")} style={{ background: c }} />
                 ))}

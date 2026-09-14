@@ -70,6 +70,8 @@ You need:
 - Summarize a chat or group (since last read / today / last N) or ask a question about it
 - Writing assistant in the composer (fix grammar, formal / casual / friendlier, shorter / longer, bullets) and reply suggestions
 - Describe an image or extract its text (OCR)
+- Draft a broadcast or status from a short brief ("Draft with AI" in the composer)
+- Optionally label new direct chats automatically with your existing labels (Settings → AI)
 
 **WhatsApp Web (no server needed)**
 - Plain, unmodified web.whatsapp.com embedded next to your WAHA sessions in the same picker — one place for everything

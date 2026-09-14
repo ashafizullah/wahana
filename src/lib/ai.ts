@@ -338,3 +338,23 @@ Return a JSON object only: {"labels": string[] (subset of existing labels that c
     throw new Error("The model returned an unexpected answer.");
   }
 }
+
+export type ContentKind = "broadcast" | "status" | "group";
+
+/**
+ * Draft a WhatsApp message from a short brief (promo, announcement, reminder…), in the
+ * persona's voice. `kind` sets the shape: broadcast (one-to-many, may use {name}),
+ * status (short, punchy), group (announcement to members).
+ */
+export function generateContent(brief: string, opts: { kind: ContentKind; language: string; session?: string; current?: string }) {
+  const shape = {
+    broadcast: "a broadcast sent one-to-one to many customers. Address the reader directly; you may use the placeholder {name} once for their name. 3–8 short lines.",
+    status: "a WhatsApp status update (story). Punchy, 1–4 lines, works without context.",
+    group: "an announcement to a group's members. Clear, 3–8 short lines.",
+  }[opts.kind];
+  const system = `You write WhatsApp messages for the user. Write ${shape}
+Write in ${langName(opts.language)} unless the brief is clearly in another language. Use WhatsApp formatting only (*bold* for the key phrase, "- " bullets, line breaks); a few fitting emoji are welcome, no hashtags, no Markdown headings.
+Never invent prices, dates, addresses or promises that are not in the brief or the persona — leave a clearly marked placeholder like [tanggal] instead. Output only the message text.`;
+  const user = opts.current?.trim() ? `Brief:\n${brief}\n\nThe user's current draft, to improve or replace as the brief asks:\n${opts.current}` : `Brief:\n${brief}`;
+  return complete(system, user, { maxTokens: 800, session: opts.session });
+}

@@ -18,12 +18,17 @@
 - The WebSocket refetches chats and messages after a reconnect, and reconnects when the network returns or the window is used again after a long idle.
 
 ### Added
+- "Draft with AI" in the broadcast and status composers: a short brief becomes a ready-to-send message in your persona's voice.
+- Optional automatic labelling of new direct chats with your existing labels (Settings → AI, off by default).
 - Daily cap on auto-replies (default 300, editable in the Auto-reply header) as a spend guard for AI replies.
 - Broadcasts pause automatically after 5 consecutive failures.
 - Content-Security-Policy for the app window.
 - Unit tests (`npm test`) and a CI workflow that type-checks, tests, builds, and runs clippy/rustfmt on pull requests.
 
 ### Changed
+- `ChatScreen.tsx` split into list / bubble / composer modules; Rust shell split into keychain, media-cache and WhatsApp Web modules (no behaviour change).
+- Old schedule runs, auto-reply log rows and finished broadcasts are pruned after 90 days.
+- Linux (AppImage / .deb) is built by the release workflow.
 - Auto-reply prompts mark the chat transcript as untrusted data (prompt-injection hardening).
 - Link previews are fetched only for public http(s) hosts and the preview cache is bounded.
 - Chat bubbles are memoised; the session poll no longer re-renders every message.

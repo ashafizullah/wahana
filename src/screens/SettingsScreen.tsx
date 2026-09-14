@@ -552,6 +552,12 @@ function AiSection() {
         />
       </div>
       <PersonaPerSession />
+      <Toggle
+        label="Label new chats automatically"
+        hint="When a direct chat that has no label yet receives a message, ask the AI which of your existing labels fit (lead, complaint, supplier…) and assign them. One request per new chat; never creates labels."
+        checked={s.aiAutoLabel}
+        onChange={(v) => s.save({ aiAutoLabel: v })}
+      />
       {result && (
         <div className={"flex items-center gap-2 rounded-lg px-3 py-2 text-sm " + (result.ok ? "bg-emerald-50 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300" : "bg-red-50 text-red-800 dark:bg-red-900/30 dark:text-red-300")}>
           {result.ok ? <CheckCircle2 size={16} /> : <XCircle size={16} />}<span className="selectable break-all">{result.text}</span>
