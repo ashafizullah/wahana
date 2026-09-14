@@ -56,9 +56,12 @@ export function useAutoReply() {
           if (last && now - last < rule.cooldown_min * 60) return;
         }
         if ((await repliesSince(session, chatId, now - MAX_REPLIES_WINDOW_S)) >= MAX_REPLIES) return;
-        if (userRepliedRecently(session, chatId, m)) return;
+        // Recent context: the cache when the chat is open, else a light fetch (the manual-quiet
+        // guard and the AI context both need it; chats never opened here have no cache).
+        const recent = await recentMessages(session, chatId, Math.max(20, rule.ai_context));
+        if (userRepliedRecently(recent, m)) return;
 
-        const reply = rule.reply_kind === "ai" ? await aiReply(rule, session, chatId, chatName, m) : templateReply(rule, chatId, chatName);
+        const reply = rule.reply_kind === "ai" ? await aiReply(rule, session, chatId, chatName, m, recent) : templateReply(rule, chatId, chatName);
         if (!reply) throw new Error("Empty reply");
         await new Promise((r) => setTimeout(r, DELAY_MS[0] + Math.random() * (DELAY_MS[1] - DELAY_MS[0])));
         const c = useSettings.getState().client;
@@ -75,10 +78,17 @@ export function useAutoReply() {
       }
     };
 
-    /** The user's own last message in this chat (from the cache) is newer than MANUAL_QUIET_S. */
-    const userRepliedRecently = (session: string, chatId: string, m: WAMessage) => {
-      const cached = qc.getQueryData<WAMessage[]>(qk.messages(session, chatId)) ?? [];
-      const mine = cached.filter((x) => x.fromMe && x.id !== m.id).reduce((t, x) => Math.max(t, x.timestamp), 0);
+    const recentMessages = async (session: string, chatId: string, limit: number): Promise<WAMessage[]> => {
+      const cached = qc.getQueryData<WAMessage[]>(qk.messages(session, chatId));
+      if (cached) return cached;
+      const c = useSettings.getState().client;
+      if (!c) return [];
+      return c.messages(session, chatId, { limit, downloadMedia: false }).catch(() => []);
+    };
+
+    /** The user's own last message in this chat is newer than MANUAL_QUIET_S. */
+    const userRepliedRecently = (recent: WAMessage[], m: WAMessage) => {
+      const mine = recent.filter((x) => x.fromMe && x.id !== m.id).reduce((t, x) => Math.max(t, x.timestamp), 0);
       return mine > 0 && m.timestamp - mine < MANUAL_QUIET_S;
     };
 
@@ -92,12 +102,9 @@ export function useAutoReply() {
     const templateReply = (rule: AutoReplyRule, chatId: string, chatName: string) =>
       expandTemplate(rule.text ?? "", { name: chatName, phone: chatId.endsWith("@c.us") ? `+${chatId.split("@")[0]}` : "" }).trim();
 
-    const aiReply = async (rule: AutoReplyRule, session: string, chatId: string, chatName: string, m: WAMessage) => {
-      const c = useSettings.getState().client!;
-      // Recent context: what the cache has, else a quick fetch; always include the trigger message.
-      let recent = qc.getQueryData<WAMessage[]>(qk.messages(session, chatId));
-      if (!recent) recent = await c.messages(session, chatId, { limit: rule.ai_context, downloadMedia: false }).catch(() => []);
-      const messages = [...(recent ?? []).filter((x) => x.id !== m.id), m].sort((a, b) => a.timestamp - b.timestamp).slice(-rule.ai_context);
+    const aiReply = async (rule: AutoReplyRule, session: string, chatId: string, chatName: string, m: WAMessage, recent: WAMessage[]) => {
+      // Always include the trigger message.
+      const messages = [...recent.filter((x) => x.id !== m.id), m].sort((a, b) => a.timestamp - b.timestamp).slice(-rule.ai_context);
       const language = useChatPrefs.getState().autoTranslate[`${session}:${chatId}`]?.out;
       return aiAutoReply({ instructions: rule.ai_instructions, session, chatName, isGroup: isGroup(chatId), messages, language });
     };

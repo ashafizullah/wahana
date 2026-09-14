@@ -55,6 +55,8 @@ export function ChatScreen() {
   const { client, session } = useSettings();
   const { data: sessions } = useSessions();
   const [selected, setSelected] = useState<string | null>(null);
+  // A chat id belongs to one session: switching servers/sessions must drop the selection.
+  useEffect(() => setSelected(null), [session]);
   const [listWidth, setListWidth] = usePaneWidth("chatList", 320, 240, 560);
   const waWebActive = useWaWeb((s) => s.active);
   const waWebSessions = useWaWeb((s) => s.sessions);
@@ -85,12 +87,20 @@ export function ChatScreen() {
       <ChatList session={session} selected={selected} onSelect={setSelected} width={listWidth} />
       <ResizeHandle onDrag={(dx) => setListWidth((w) => w + dx)} onReset={() => setListWidth(320)} />
       {selected ? (
-        <Conversation key={selected} session={session} chatId={selected} onOpenChat={setSelected} />
+        <Conversation key={`${session}:${selected}`} session={session} chatId={selected} onOpenChat={setSelected} />
       ) : (
         <Empty>Select a chat</Empty>
       )}
     </>
   );
+}
+
+/** Merge a page into the cached list, dropping ids already present (concurrent pages, live echoes). */
+function appendUnique(old: WAMessage[], fresh: WAMessage[], where: "start" | "end"): WAMessage[] {
+  const have = new Set(old.map((m) => m.id));
+  const add = fresh.filter((m) => !have.has(m.id));
+  if (!add.length) return old;
+  return where === "end" ? [...old, ...add] : [...add, ...old];
 }
 
 function Empty({ children }: { children: React.ReactNode }) {
@@ -319,6 +329,8 @@ function SessionPicker({ sessions }: { sessions: { name: string; status: string;
   const active = useWaWeb((s) => s.active);
   const setActive = useWaWeb((s) => s.setActive);
   const add = useWaWeb((s) => s.add);
+  const isolated = useWaWeb((s) => s.isolated);
+  const canAddWaWeb = isolated || waWeb.length === 0;
   const dot = (status: string) =>
     status === "WORKING" ? "bg-emerald-500" : status === "STOPPED" ? "bg-neutral-400" : "bg-amber-400";
   const current = sessions.find((s) => s.name === value);
@@ -355,7 +367,9 @@ function SessionPicker({ sessions }: { sessions: { name: string; status: string;
               {s.name}
             </option>
           ))}
-          <option value={WAWEB_NEW}>＋ Add WhatsApp Web…</option>
+          <option value={WAWEB_NEW} disabled={!canAddWaWeb}>
+            {canAddWaWeb ? "＋ Add WhatsApp Web…" : "＋ Add WhatsApp Web… (needs macOS 14 for a 2nd account)"}
+          </option>
         </optgroup>
       </select>
     </label>
@@ -541,7 +555,8 @@ function Conversation({ session, chatId, onOpenChat }: { session: string; chatId
       for (const t of stones) {
         const existing = have.get(t.id);
         if (existing) {
-          if ((t.kind ?? "revoked") === "revoked") existing.revoked = true;
+          // Never mutate the react-query cache object: replace it with a flagged copy.
+          if ((t.kind ?? "revoked") === "revoked" && !existing.revoked) list[list.indexOf(existing)] = { ...existing, revoked: true };
           continue; // the real message arrived → no "waiting" placeholder needed
         }
         if (t.timestamp >= oldest) {
@@ -576,6 +591,10 @@ function Conversation({ session, chatId, onOpenChat }: { session: string; chatId
   const [datePick, setDatePick] = useState(false);
   const pendingPrepend = useRef<number | null>(null);
   const topRef = useRef<HTMLDivElement>(null);
+  // Synchronous in-flight guards: the scroll handler and the IntersectionObserver can both
+  // fire before React commits `loadingOlder`, which would page the same range twice.
+  const olderInFlight = useRef(false);
+  const newerInFlight = useRef(false);
 
   // Scroll management:
   // - first batch for a chat → jump to the newest message (bottom)
@@ -670,13 +689,19 @@ function Conversation({ session, chatId, onOpenChat }: { session: string; chatId
     setOpen(chatKey(session, chatId));
     return () => setOpen(null);
   }, [session, chatId, setOpen]);
+  // Re-ack only when a new incoming message arrives — not when older history pages in.
+  const newestIncomingId = useMemo(() => {
+    for (let i = ordered.length - 1; i >= 0; i--) if (!ordered[i]!.fromMe) return ordered[i]!.id;
+    return null;
+  }, [ordered]);
   useEffect(() => {
     markSeen(session, chatId);
     if (useSettings.getState().readReceipts === "always") requireClient().sendSeen(session, chatId).catch(() => {});
-  }, [session, chatId, ordered.length, markSeen]);
+  }, [session, chatId, newestIncomingId, markSeen]);
 
   const loadOlder = async () => {
-    if (!ordered.length || loadingOlder || !hasMore || !initialScrolled.current) return;
+    if (!ordered.length || olderInFlight.current || loadingOlder || !hasMore || !initialScrolled.current) return;
+    olderInFlight.current = true;
     setLoadingOlder(true);
     try {
       const oldest = ordered[0]!.timestamp;
@@ -693,10 +718,11 @@ function Conversation({ session, chatId, onOpenChat }: { session: string; chatId
         return;
       }
       pendingPrepend.current = listRef.current?.scrollHeight ?? null;
-      qc.setQueryData(qk.messages(session, chatId), (old?: WAMessage[]) => [...(old ?? []), ...fresh]);
+      qc.setQueryData(qk.messages(session, chatId), (old?: WAMessage[]) => appendUnique(old ?? [], fresh, "end"));
       // WAHA applies `limit` before filtering out hidden message types, so a page can be
       // shorter than `limit` while older messages still exist — only an empty page means the end.
     } finally {
+      olderInFlight.current = false;
       setLoadingOlder(false);
     }
   };
@@ -704,7 +730,8 @@ function Conversation({ session, chatId, onOpenChat }: { session: string; chatId
   loadOlderRef.current = loadOlder;
 
   const loadNewer = async () => {
-    if (!ordered.length || loadingNewer || !hasNewer) return;
+    if (!ordered.length || newerInFlight.current || loadingNewer || !hasNewer) return;
+    newerInFlight.current = true;
     setLoadingNewer(true);
     try {
       const newest = ordered[ordered.length - 1]!.timestamp;
@@ -720,11 +747,12 @@ function Conversation({ session, chatId, onOpenChat }: { session: string; chatId
       if (fresh.length) {
         skipAutoScroll.current = true;
         atBottomRef.current = false;
-        qc.setQueryData(qk.messages(session, chatId), (old?: WAMessage[]) => [...fresh.reverse(), ...(old ?? [])]);
+        qc.setQueryData(qk.messages(session, chatId), (old?: WAMessage[]) => appendUnique(old ?? [], fresh.reverse(), "start"));
       } else {
         setHasNewer(false);
       }
     } finally {
+      newerInFlight.current = false;
       setLoadingNewer(false);
     }
   };

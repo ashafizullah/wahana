@@ -13,6 +13,9 @@ export interface AiConfig {
 
 export const DEFAULT_MODELS: Record<AiProvider, string> = { anthropic: "claude-opus-5", "openai-compatible": "" };
 
+/** Hard ceiling per request: a hung provider must not wedge callers (auto-reply keeps a per-chat in-flight lock). */
+export const AI_TIMEOUT_MS = 60_000;
+
 export const LANGUAGES = [
   ["id", "Indonesian"], ["en", "English"], ["ms", "Malay"], ["ar", "Arabic"], ["zh", "Chinese (Simplified)"], ["zh-TW", "Chinese (Traditional)"],
   ["ja", "Japanese"], ["ko", "Korean"], ["hi", "Hindi"], ["es", "Spanish"], ["fr", "French"], ["de", "German"], ["pt", "Portuguese"],
@@ -63,6 +66,7 @@ export async function complete(system: string, user: string, opts: { maxTokens?:
       fetch: tauriFetch as unknown as typeof fetch, // bypass webview CORS
       dangerouslyAllowBrowser: true,
       maxRetries: 1,
+      timeout: AI_TIMEOUT_MS,
     });
     const res = await client.messages.create({
       model: c.model,
@@ -70,7 +74,7 @@ export async function complete(system: string, user: string, opts: { maxTokens?:
       system,
       messages: [{ role: "user", content: user }],
       output_config: { effort: "low" },
-    });
+    }, { signal: AbortSignal.timeout(AI_TIMEOUT_MS) });
     if (res.stop_reason === "refusal") throw new Error("The model declined this request.");
     return res.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("").trim();
   }
@@ -82,6 +86,7 @@ export async function complete(system: string, user: string, opts: { maxTokens?:
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${c.apiKey}` },
     body: JSON.stringify({ model: c.model, max_tokens: maxTokens, temperature: 0.2, messages: [{ role: "system", content: system }, { role: "user", content: user }] }),
+    signal: AbortSignal.timeout(AI_TIMEOUT_MS),
   });
   const text = await res.text();
   if (!res.ok) {
@@ -193,6 +198,7 @@ export async function completeWithImage(system: string, user: string, image: { d
       fetch: tauriFetch as unknown as typeof fetch,
       dangerouslyAllowBrowser: true,
       maxRetries: 1,
+      timeout: AI_TIMEOUT_MS,
     });
     const res = await client.messages.create({
       model: c.model,
@@ -206,7 +212,7 @@ export async function completeWithImage(system: string, user: string, image: { d
         ],
       }],
       output_config: { effort: "low" },
-    });
+    }, { signal: AbortSignal.timeout(AI_TIMEOUT_MS) });
     if (res.stop_reason === "refusal") throw new Error("The model declined this request.");
     return res.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("").trim();
   }
@@ -225,6 +231,7 @@ export async function completeWithImage(system: string, user: string, image: { d
         { role: "user", content: [{ type: "image_url", image_url: { url: `data:${image.mediaType};base64,${image.data}` } }, { type: "text", text: user }] },
       ],
     }),
+    signal: AbortSignal.timeout(AI_TIMEOUT_MS),
   });
   const text = await res.text();
   if (!res.ok) {

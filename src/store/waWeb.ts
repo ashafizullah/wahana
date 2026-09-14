@@ -19,6 +19,8 @@ const store = () => (storePromise ??= load(STORE_FILE, { autoSave: true, default
 
 interface State {
   sessions: WaWebSession[];
+  /** False on macOS < 14: every WhatsApp Web webview shares one login, so only one session is usable. */
+  isolated: boolean;
   active: string | null;
   /** Sessions shown side by side while in WhatsApp Web mode (ordered, left → right). */
   panes: string[];
@@ -41,9 +43,11 @@ const pick = (st: State): Persisted => ({ sessions: st.sessions, active: st.acti
 
 export const useWaWeb = create<State>((set, get) => ({
   sessions: [],
+  isolated: true,
   active: null,
   panes: [],
   async hydrate() {
+    invoke<boolean>("wa_web_isolation_supported").then((isolated) => set({ isolated })).catch(console.error);
     const s = await store();
     const sessions = (await s.get<WaWebSession[]>("sessions")) ?? [];
     const has = (id: string) => sessions.some((x) => x.id === id);

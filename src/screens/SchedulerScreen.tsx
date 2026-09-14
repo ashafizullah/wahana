@@ -179,8 +179,9 @@ function ScheduleForm({ session, profile, initial, onClose, onSaved }: { session
         media_mime: file ? file.type || "application/octet-stream" : null,
         media_name: file ? file.name : null,
         next_run: firstRun,
+        anchor: whenUnix,
         repeat,
-        weekdays: repeat === "weekly" ? weekdays.sort().join(",") : null,
+        weekdays: repeat === "weekly" ? [...weekdays].sort().join(",") : null,
         enabled: 1,
         created_at: initial?.created_at,
       });

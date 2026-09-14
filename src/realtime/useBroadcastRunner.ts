@@ -1,20 +1,25 @@
 import { useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSettings } from "@/store/settings";
-import { db } from "@/store/scheduler";
-import { getBroadcast, markItem, nextPending, setBroadcastStatus, type Broadcast } from "@/store/broadcast";
+import { getBroadcast, listRunning, markItem, nextPending, setBroadcastStatus } from "@/store/broadcast";
 import { expandTemplate } from "@/store/quickReplies";
 import { sendNotification } from "@tauri-apps/plugin-notification";
 
+/** Pause a broadcast after this many recipients fail in a row (session down, rate-limited…). */
+export const MAX_CONSECUTIVE_ERRORS = 5;
+
 /**
- * Sends the next pending recipient of every `running` broadcast, waiting a
- * random delay between recipients (anti-spam). Runs while the app is alive.
+ * Sends the next pending recipient of every `running` broadcast of the active
+ * profile, waiting a random delay between recipients (anti-spam). Runs while
+ * the app is alive.
  */
 export function useBroadcastRunner() {
   const client = useSettings((s) => s.client);
+  const profile = useSettings((s) => s.activeProfile);
   const qc = useQueryClient();
   const busy = useRef(false);
   const nextAt = useRef<Record<string, number>>({});
+  const errorStreak = useRef<Record<string, number>>({});
 
   useEffect(() => {
     if (!client) return;
@@ -22,10 +27,13 @@ export function useBroadcastRunner() {
       if (busy.current) return;
       busy.current = true;
       try {
-        const running = await (await db()).select<Broadcast[]>("SELECT * FROM broadcasts WHERE status = 'running'");
-        for (const b of running) {
-          if ((nextAt.current[b.id] ?? 0) > Date.now()) continue;
-          const item = await nextPending(b.id);
+        // Slim rows only: media_b64 is loaded per send below, not once a second.
+        const running = await listRunning(profile);
+        for (const slim of running) {
+          if ((nextAt.current[slim.id] ?? 0) > Date.now()) continue;
+          const item = await nextPending(slim.id);
+          const b = item ? await getBroadcast(slim.id) : slim;
+          if (!b || b.status !== "running") continue;
           if (!item) {
             await setBroadcastStatus(b.id, "done");
             if (useSettings.getState().notifications) sendNotification({ title: "Broadcast finished", body: b.name ?? b.id });
@@ -44,8 +52,17 @@ export function useBroadcastRunner() {
             else if (b.kind === "file" && file) res = await c.sendFile(b.session, item.chat_id, file, text || undefined);
             else res = await c.sendText(b.session, item.chat_id, text);
             await markItem(item.id, "sent", undefined, res?.id);
+            errorStreak.current[b.id] = 0;
           } catch (e) {
             await markItem(item.id, "error", e instanceof Error ? e.message : String(e));
+            const streak = (errorStreak.current[b.id] ?? 0) + 1;
+            errorStreak.current[b.id] = streak;
+            if (streak >= MAX_CONSECUTIVE_ERRORS) {
+              errorStreak.current[b.id] = 0;
+              await setBroadcastStatus(b.id, "paused");
+              if (useSettings.getState().notifications)
+                sendNotification({ title: "Broadcast paused", body: `${b.name ?? b.id}: ${streak} recipients failed in a row. Check the session and resume.` });
+            }
           }
           const wait = b.delay_min + Math.random() * Math.max(0, b.delay_max - b.delay_min);
           nextAt.current[b.id] = Date.now() + wait * 1000;
@@ -61,7 +78,7 @@ export function useBroadcastRunner() {
     void tick();
     const t = setInterval(tick, 1000);
     return () => clearInterval(t);
-  }, [client, qc]);
+  }, [client, profile, qc]);
 }
 
 export { getBroadcast };

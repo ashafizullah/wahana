@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSettings } from "@/store/settings";
-import { dueSchedules, nextOccurrence, recordRun, type Schedule } from "@/store/scheduler";
+import { claimRun, dueSchedules, nextOccurrence, recordRun, type Schedule } from "@/store/scheduler";
 import { sendNotification } from "@tauri-apps/plugin-notification";
 import { qk } from "@/api/queries";
 
@@ -44,17 +44,19 @@ export function useScheduler() {
         for (const s of due) {
           const late = now - s.next_run;
           const next = nextOccurrence(s, now);
+          // Claim first, send second: never send twice (second instance, crash after send).
+          if (!(await claimRun(s, next))) continue;
           if (late > GRACE_SECONDS) {
-            await recordRun(s, "missed", { error: `Missed by ${Math.round(late / 60)} min (app was not running)`, nextRun: next });
+            await recordRun(s, "missed", { error: `Missed by ${Math.round(late / 60)} min (app was not running)` });
             continue;
           }
           try {
             const res = (await execute(s)) as { id?: string } | undefined;
-            await recordRun(s, "ok", { messageId: res?.id, nextRun: next });
+            await recordRun(s, "ok", { messageId: res?.id });
             if (s.target_id) qc.invalidateQueries({ queryKey: qk.chats(s.session) });
           } catch (e) {
             const msg = e instanceof Error ? e.message : String(e);
-            await recordRun(s, "error", { error: msg, nextRun: next });
+            await recordRun(s, "error", { error: msg });
             if (useSettings.getState().notifications) sendNotification({ title: "Scheduled message failed", body: `${s.target_name ?? s.target_id ?? "status"}: ${msg}`.slice(0, 200) });
           }
         }

@@ -46,6 +46,10 @@ export const listBroadcasts = async (profile: string) =>
     [profile],
   );
 
+/** Running broadcasts of one profile, without `media_b64` (polled every second). */
+export const listRunning = async (profile: string) =>
+  (await db()).select<Broadcast[]>(`SELECT ${COLS}, NULL AS media_b64 FROM broadcasts b WHERE b.profile = $1 AND b.status = 'running'`, [profile]);
+
 export const getBroadcast = async (id: string) => (await (await db()).select<Broadcast[]>("SELECT * FROM broadcasts WHERE id = $1", [id]))[0];
 export const listItems = async (id: string) => (await db()).select<BroadcastItem[]>("SELECT * FROM broadcast_items WHERE broadcast_id = $1 ORDER BY id", [id]);
 export const nextPending = async (id: string) => (await (await db()).select<BroadcastItem[]>("SELECT * FROM broadcast_items WHERE broadcast_id = $1 AND status = 'pending' ORDER BY id LIMIT 1", [id]))[0];
