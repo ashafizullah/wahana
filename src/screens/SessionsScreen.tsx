@@ -8,7 +8,7 @@ import { useSettings } from "@/store/settings";
 import { Badge, Button, Input, Avatar } from "@/components/ui";
 import type { SessionInfo, SessionStatus } from "@/api/types";
 import { WahaError } from "@/api/client";
-import { cn } from "@/lib/utils";
+import { cn, errMsg } from "@/lib/utils";
 
 const tone: Record<SessionStatus, "green" | "amber" | "red" | "neutral" | "blue"> = {
   WORKING: "green",
@@ -34,7 +34,7 @@ export function SessionsScreen() {
       await act.mutateAsync({ action, name });
       if (action === "create") setNewName("");
     } catch (e) {
-      setActionError(e instanceof Error ? e.message : String(e));
+      setActionError(errMsg(e));
     }
   };
 
@@ -57,7 +57,7 @@ export function SessionsScreen() {
 
         {error && (
           <div className="rounded-lg bg-red-50 text-red-800 dark:bg-red-900/30 dark:text-red-300 px-3 py-2 text-sm selectable">
-            {error instanceof Error ? error.message : String(error)}
+            {errMsg(error)}
           </div>
         )}
         {actionError && (
@@ -244,7 +244,7 @@ function QrLogin({ session }: { session: string }) {
                 const r = await client!.requestPairingCode(session, phone.replace(/\D/g, ""));
                 setCode(r.code);
               } catch (e) {
-                setErr(e instanceof Error ? e.message : String(e));
+                setErr(errMsg(e));
               }
             }}
           >

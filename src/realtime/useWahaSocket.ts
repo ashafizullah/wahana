@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSettings } from "@/store/settings";
-import type { WahaEvent, WAMessage, MessageAckPayload, SessionStatusPayload } from "@/api/types";
+import type { WahaEvent, WAMessage, MessageAckPayload, PresenceInfo, SessionStatusPayload } from "@/api/types";
 import { notifyIncoming } from "@/realtime/notify";
 import { qk } from "@/api/queries";
 import { useUnread } from "@/store/unread";
@@ -14,9 +14,9 @@ import { usePolls, type PollVoteEvent } from "@/store/polls";
 import { useChatPrefs } from "@/store/chatPrefs";
 import { useCalls, type CallEvent } from "@/store/calls";
 import { useLiveMessages } from "@/store/liveMessages";
-import { messageChatId } from "@/lib/utils";
+import { convKey, messageChatId } from "@/lib/utils";
+import { useLatest } from "@/lib/hooks";
 import { pushPresence } from "@/realtime/usePresence";
-import type { PresenceInfo } from "@/api/types";
 
 export type SocketState = "idle" | "connecting" | "open" | "closed";
 
@@ -38,8 +38,7 @@ export function useWahaSocket() {
   const notifications = useSettings((s) => s.notifications);
   const qc = useQueryClient();
   const [state, setState] = useState<SocketState>("idle");
-  const notifRef = useRef(notifications);
-  notifRef.current = notifications;
+  const notifRef = useLatest(notifications);
 
   useEffect(() => {
     if (!client) {
@@ -154,9 +153,9 @@ export function useWahaSocket() {
           // Replays / duplicate deliveries: the caches dedupe by id, so the counters and notifications must too.
           const seenBefore =
             !!qc.getQueryData<WAMessage[]>(qk.messages(e.session, chatId))?.some((x) => x.id === m.id) ||
-            !!useLiveMessages.getState().byChat[`${e.session}:${chatId}`]?.some((x) => x.id === m.id);
+            !!useLiveMessages.getState().byChat[convKey(e.session, chatId)]?.some((x) => x.id === m.id);
           if (!m.fromMe && !seenBefore) useUnread.getState().incoming(e.session, chatId);
-          useRevoked.getState().remove(`${e.session}:${chatId}`, m.id);
+          useRevoked.getState().remove(convKey(e.session, chatId), m.id);
           useLiveMessages.getState().add(e.session, chatId, m);
           for (const id of new Set([chatId, m.from, m.to].filter(Boolean))) {
             qc.setQueryData(qk.messages(e.session, id), (old?: WAMessage[]) => {
@@ -166,7 +165,7 @@ export function useWahaSocket() {
             });
           }
           qc.invalidateQueries({ queryKey: qk.chats(e.session) });
-          if (!m.fromMe && !seenBefore && notifRef.current && !useChatPrefs.getState().muted[`${e.session}:${chatId}`]) {
+          if (!m.fromMe && !seenBefore && notifRef.current && !useChatPrefs.getState().muted[convKey(e.session, chatId)]) {
             const multi = (qc.getQueryData<{ name: string }[]>(qk.sessions)?.length ?? 0) > 1;
             void notifyIncoming(m, multi ? e.session : undefined);
           }
@@ -219,7 +218,7 @@ export function useWahaSocket() {
             const chatId = messageChatId(ref);
             useRevoked.getState().add({
               id: p.revokedMessageId ?? ref.id,
-              chat: `${e.session}:${chatId}`,
+              chat: convKey(e.session, chatId),
               timestamp: p.before?.timestamp ?? ref.timestamp,
               fromMe: ref.fromMe,
               participant: ref.participant,

@@ -5,6 +5,7 @@ import { useWaWeb, type WaWebSession } from "@/store/waWeb";
 import { confirm } from "@/components/Confirm";
 import { Button } from "@/components/ui";
 import { cn } from "@/lib/utils";
+import { useLatest } from "@/lib/hooks";
 
 /**
  * WhatsApp Web mode: every session in `panes` side by side, each a native (remote,
@@ -71,8 +72,7 @@ function WaWebPane({ session, isActive, index, count }: { session: WaWebSession;
 
   const ref = useRef<HTMLDivElement>(null);
   const syncRef = useRef<() => void>(() => {});
-  const nameRef = useRef(session.name);
-  nameRef.current = session.name;
+  const nameRef = useLatest(session.name);
   useEffect(() => {
     const el = ref.current;
     if (!el) return;

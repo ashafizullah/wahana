@@ -2,12 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import { confirm } from "@/components/Confirm";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Crown, Shield, MoreVertical, UserPlus, Link as LinkIcon, RefreshCw, LogOut, Pencil, Loader2, Copy, Check, UserCheck, X as XIcon, Users, Camera, Lock, Download } from "lucide-react";
-import { fileToBase64 } from "@/lib/utils";
 import { save } from "@tauri-apps/plugin-dialog";
 import { writeTextFile } from "@tauri-apps/plugin-fs";
 import { requireClient } from "@/store/settings";
-import { Avatar, Button, Input } from "@/components/ui";
-import { cn, displayId } from "@/lib/utils";
+import { Avatar, Button, Input, MenuItem } from "@/components/ui";
+import { cn, displayId, errMsg, fileToBase64 } from "@/lib/utils";
 import type { GowsGroup, JoinRequest } from "@/api/types";
 import type { MentionResolver } from "@/lib/waMarkdown";
 import { qk } from "@/api/queries";
@@ -91,7 +90,7 @@ function ParticipantsModal({
       await fn();
       await qc.invalidateQueries({ queryKey: ["group", session, chatId] });
     } catch (e) {
-      setErr(`${label}: ${e instanceof Error ? e.message : String(e)}`);
+      setErr(`${label}: ${errMsg(e)}`);
     } finally {
       setBusy(null);
     }
@@ -159,7 +158,7 @@ function ParticipantsModal({
                     <MenuItem onClick={() => act("Make admin", p, () => requireClient().promoteAdmins(session, chatId, [pid(p)]))}>Make group admin</MenuItem>
                   )}
                   <MenuItem
-                    danger
+                    className="text-red-600"
                     onClick={async () => {
                       if (await confirm({ title: `Remove ${label} from the group?`, danger: true, confirmLabel: "Confirm" })) void act("Remove", p, () => requireClient().removeParticipants(session, chatId, [pid(p)]));
                     }}
@@ -187,14 +186,6 @@ function ParticipantAvatar({ session, id, name, size = 28 }: { session: string; 
     retry: 0,
   });
   return <Avatar src={pic.data ?? undefined} name={name} size={size} />;
-}
-
-function MenuItem({ children, onClick, danger }: { children: React.ReactNode; onClick: () => void; danger?: boolean }) {
-  return (
-    <button onClick={onClick} className={cn("w-full px-3 py-1.5 text-left hover:bg-neutral-100 dark:hover:bg-neutral-800", danger && "text-red-600")}>
-      {children}
-    </button>
-  );
 }
 
 /** Admin tools: add member, invite link, rename, description, leave. */
@@ -234,7 +225,7 @@ export function GroupTools({
       if (refresh) await qc.invalidateQueries({ queryKey: ["group", session, chatId] });
       return true;
     } catch (e) {
-      setErr(`${name}: ${e instanceof Error ? e.message : String(e)}`);
+      setErr(`${name}: ${errMsg(e)}`);
       return false;
     } finally {
       setBusy(null);
@@ -465,7 +456,7 @@ function JoinRequestsModal({
       await qc.invalidateQueries({ queryKey: ["join-requests", session, chatId] });
       await qc.invalidateQueries({ queryKey: ["group", session, chatId] });
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setErr(errMsg(e));
     } finally {
       setBusy(null);
     }

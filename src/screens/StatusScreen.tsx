@@ -10,7 +10,7 @@ import { loadMessageMedia } from "@/lib/mediaCache";
 import { WaMarkdown } from "@/lib/waMarkdown";
 import { Avatar, Button, Input } from "@/components/ui";
 import { GenerateButton } from "@/components/GenerateButton";
-import { cn, displayId, fileToBase64, formatTime } from "@/lib/utils";
+import { cn, displayId, fileToBase64, formatTime, errMsg } from "@/lib/utils";
 import type { WAMessage } from "@/api/types";
 import { NotConnected } from "@/components/NotConnected";
 
@@ -265,7 +265,7 @@ function StoryViewer({
         obj = URL.createObjectURL(blob);
         setBlob(obj);
       })
-      .catch((e) => alive && setErr(e instanceof Error ? e.message : String(e)))
+      .catch((e) => alive && setErr(errMsg(e)))
       .finally(() => alive && setLoading(false));
     return () => {
       alive = false;
@@ -323,7 +323,7 @@ function StoryViewer({
                 await requireClient().deleteStatus(session, story.m.id.split("_")[2] ?? story.m.id);
                 onDeleted();
               } catch (e) {
-                setErr(e instanceof Error ? e.message : String(e));
+                setErr(errMsg(e));
               } finally {
                 setBusy(false);
               }
@@ -402,7 +402,7 @@ function ComposeStatus({ session, onClose, onPosted }: { session: string; onClos
       }
       onPosted();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setErr(errMsg(e));
     } finally {
       setBusy(false);
     }

@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Loader2, Send, X } from "lucide-react";
 import { useChats, useSendText, qk } from "@/api/queries";
 import { requireClient, useSettings } from "@/store/settings";
-import { Button } from "@/components/ui";
+import { Button, MenuItem, Popover } from "@/components/ui";
 import { AttachMenu, VoiceRecorder, LocationDialog, ContactDialog, PollDialog, type AttachKind } from "@/components/AttachMenu";
 import { QuoteView } from "@/components/QuoteView";
 import { EmojiButton } from "@/components/EmojiPicker";
@@ -11,12 +10,12 @@ import { MentionPicker, type MentionCandidate } from "@/components/MentionPicker
 import { QuickReplyPicker } from "@/components/QuickReplyPicker";
 import { useGroupInfo } from "@/realtime/useNames";
 import { useChatPrefs } from "@/store/chatPrefs";
-import { Languages, Sparkles, WandSparkles, Undo2, RefreshCw, Loader2 as Spinner } from "lucide-react";
+import { Languages, Loader2, Loader2 as Spinner, RefreshCw, Send, Sparkles, Undo2, WandSparkles, X } from "lucide-react";
 import { aiConfigured, translate, langName, rewriteDraft, smartReplies, REWRITE_MODES, type RewriteMode } from "@/lib/ai";
 import { transcript } from "@/lib/exportChat";
 import type { MentionResolver } from "@/lib/waMarkdown";
-import type { WAMessage } from "@/api/types";
-import { cn, displayId, fileToBase64, isGroup } from "@/lib/utils";
+import type { ViewMessage, WAMessage } from "@/api/types";
+import { cn, displayId, fileToBase64, isGroup, errMsg, convKey } from "@/lib/utils";
 import { useQueryClient } from "@tanstack/react-query";
 
 
@@ -37,7 +36,7 @@ export function TranslateDraftButton({ text, onResult }: { text: string; onResul
           try {
             onResult(await translate(text, target));
           } catch (e) {
-            setErr(e instanceof Error ? e.message : String(e));
+            setErr(errMsg(e));
             setTimeout(() => setErr(null), 4000);
           } finally {
             setBusy(false);
@@ -68,7 +67,7 @@ export function WriteAssistButton({ text, onResult }: { text: string; onResult: 
       const out = await rewriteDraft(text, mode);
       if (out) { setUndo(before); onResult(out); }
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setErr(errMsg(e));
       setTimeout(() => setErr(null), 4000);
     } finally {
       setBusy(null);
@@ -76,31 +75,36 @@ export function WriteAssistButton({ text, onResult }: { text: string; onResult: 
   };
   return (
     <div className="relative">
-      <Button
-        variant="ghost"
-        disabled={(!text.trim() && !undo) || !!busy || !ready}
-        title={ready ? "Writing assistant" : "Set up AI in Settings to use the writing assistant"}
-        onClick={() => setOpen((v) => !v)}
+      <Popover
+        open={open}
+        onClose={() => setOpen(false)}
+        side="top"
+        className="w-52 py-1"
+        trigger={
+          <Button
+            variant="ghost"
+            disabled={(!text.trim() && !undo) || !!busy || !ready}
+            title={ready ? "Writing assistant" : "Set up AI in Settings to use the writing assistant"}
+            onClick={() => setOpen((v) => !v)}
+          >
+            {busy ? <Spinner size={18} className="animate-spin" /> : <WandSparkles size={18} />}
+          </Button>
+        }
       >
-        {busy ? <Spinner size={18} className="animate-spin" /> : <WandSparkles size={18} />}
-      </Button>
-      {open && (
-        <div className="absolute bottom-full left-0 mb-1 z-30 w-52 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-xl py-1 text-sm" onMouseLeave={() => setOpen(false)}>
-          {undo && (
-            <>
-              <button onClick={() => { onResult(undo); setUndo(null); setOpen(false); }} className="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-neutral-100 dark:hover:bg-neutral-800">
-                <Undo2 size={14} /> Undo last rewrite
-              </button>
-              <div className="my-1 border-t border-neutral-200 dark:border-neutral-800" />
-            </>
-          )}
-          {REWRITE_MODES.map(([id, label]) => (
-            <button key={id} disabled={!text.trim()} onClick={() => void run(id)} className="w-full px-3 py-1.5 text-left hover:bg-neutral-100 dark:hover:bg-neutral-800 disabled:opacity-40">
-              {label}
-            </button>
-          ))}
-        </div>
-      )}
+        {undo && (
+          <>
+            <MenuItem onClick={() => { onResult(undo); setUndo(null); setOpen(false); }}>
+              <Undo2 size={14} /> Undo last rewrite
+            </MenuItem>
+            <div className="my-1 border-t border-neutral-200 dark:border-neutral-800" />
+          </>
+        )}
+        {REWRITE_MODES.map(([id, label]) => (
+          <MenuItem key={id} disabled={!text.trim()} onClick={() => void run(id)}>
+            {label}
+          </MenuItem>
+        ))}
+      </Popover>
       {err && <div className="absolute bottom-full left-0 mb-1 w-64 rounded-lg bg-red-600 text-white text-xs px-2 py-1 shadow z-30 selectable">{err}</div>}
     </div>
   );
@@ -119,10 +123,10 @@ export function SmartReplies({ chatId, chatName, recent, resolveName, onPick }: 
     setBusy(true);
     setErr(null);
     try {
-      const usable = recent.filter((m) => !(m as WAMessage & { waiting?: boolean }).waiting && (m.body || m.hasMedia));
+      const usable = recent.filter((m) => !(m as ViewMessage).waiting && (m.body || m.hasMedia));
       setItems(await smartReplies(transcript(usable, resolveName), { chatName, isGroup: isGroup(chatId) }));
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setErr(errMsg(e));
     } finally {
       setBusy(false);
     }
@@ -177,7 +181,7 @@ export function Composer({
   /** Newest loaded messages (oldest first) for reply suggestions. */
   recent: WAMessage[];
 }) {
-  const draftKey = `${session}:${chatId}`;
+  const draftKey = convKey(session, chatId);
   const setDraft = useDrafts((s) => s.set);
   const [text, setTextRaw] = useState(() => useDrafts.getState().drafts[draftKey] ?? "");
   const setText = (v: string) => {
@@ -186,7 +190,7 @@ export function Composer({
   };
   const [uploading, setUploading] = useState(false);
   const [translating, setTranslating] = useState(false);
-  const autoOut = useChatPrefs((s) => s.autoTranslate[`${session}:${chatId}`]?.out); // NB: chatPrefs keys are session:chatId
+  const autoOut = useChatPrefs((s) => s.autoTranslate[convKey(session, chatId)]?.out); // NB: chatPrefs keys are session:chatId
   const [dialog, setDialog] = useState<AttachKind | null>(null);
   const [mention, setMention] = useState<{ start: number; query: string } | null>(null);
   const [slash, setSlash] = useState<string | null>(null); // "/query" at the start of the composer
@@ -262,7 +266,7 @@ export function Composer({
         setText("");
         onClearEdit();
       } catch (e) {
-        setErr(e instanceof Error ? e.message : String(e));
+        setErr(errMsg(e));
       }
       return;
     }
@@ -282,7 +286,7 @@ export function Composer({
       await send.mutateAsync({ text: out, replyTo: replyTo?.id, mentions: [...new Set(mentions)] });
       onClearReply();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setErr(errMsg(e));
       setText(t);
     }
   };
@@ -316,7 +320,7 @@ export function Composer({
       setText("");
       appendSent(msg);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setErr(errMsg(e));
     } finally {
       setUploading(false);
       if (fileRef.current) fileRef.current.value = "";

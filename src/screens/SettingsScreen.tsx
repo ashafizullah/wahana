@@ -1,21 +1,20 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { confirm } from "@/components/Confirm";
-import { CheckCircle2, XCircle, Loader2, Plug, Image as ImageIcon, Bell, Info, Plus, Trash2, Server, HardDrive, RefreshCw, SlidersHorizontal, Zap, Pencil, Sparkles, ChevronDown } from "lucide-react";
+import { Bell, CheckCircle2, ChevronDown, DatabaseBackup, Download, HardDrive, Image as ImageIcon, Info, Loader2, Pencil, Plug, Plus, RefreshCw, Server, SlidersHorizontal, Sparkles, Trash2, Upload, XCircle, Zap } from "lucide-react";
 import { DEFAULT_MODELS, LANGUAGES, personaKey, testAi } from "@/lib/ai";
 import { usingFallback } from "@/lib/secrets";
 import { exportBackup, pickBackup, restoreBackup, type Backup, type RestoreOptions } from "@/lib/backup";
-import { DatabaseBackup, Upload, Download } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { deleteQuickReply, listQuickReplies, saveQuickReply, type QuickReply } from "@/store/quickReplies";
 import { cacheClear, cacheStats, formatBytes, type CacheStats } from "@/lib/mediaCache";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSettings } from "@/store/settings";
-import { useSessions } from "@/api/queries";
+import { useServerVersion, useSessions } from "@/api/queries";
 import { SessionSelect } from "@/components/SessionSelect";
 import { WahaClient } from "@/api/client";
 import { Button, Input, Label } from "@/components/ui";
-import { useServerVersion } from "@/api/queries";
 import { getVersion } from "@tauri-apps/api/app";
+import { errMsg } from "@/lib/utils";
 
 const OPEN_KEY = "settings.open";
 const DEFAULT_OPEN = ["Servers", "Connection"];
@@ -180,7 +179,7 @@ function ProfilesSection() {
       setUrl("");
       setKey("");
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setErr(errMsg(e));
     } finally {
       setBusy(false);
     }
@@ -270,7 +269,7 @@ function ConnectionSection({ onSaved }: { onSaved: () => void }) {
       const v = await new WahaClient({ baseUrl: baseUrl.trim(), apiKey: apiKey.trim() }).serverVersion();
       setResult({ ok: true, text: `WAHA ${v.version} · ${v.engine} · ${v.tier}` });
     } catch (e) {
-      setResult({ ok: false, text: e instanceof Error ? e.message : String(e) });
+      setResult({ ok: false, text: errMsg(e) });
     } finally {
       setTesting(false);
     }
@@ -283,7 +282,7 @@ function ConnectionSection({ onSaved }: { onSaved: () => void }) {
       qc.clear();
       onSaved();
     } catch (e) {
-      setResult({ ok: false, text: e instanceof Error ? e.message : String(e) });
+      setResult({ ok: false, text: errMsg(e) });
     } finally {
       setSaving(false);
     }
@@ -564,7 +563,7 @@ function AiSection() {
         </div>
       )}
       <div className="flex gap-2">
-        <Button variant="secondary" disabled={busy !== null || !cfg.apiKey || !cfg.model || (provider !== "anthropic" && !cfg.baseUrl)} onClick={async () => { setBusy("test"); setResult(null); try { const out = await testAi(cfg); setResult({ ok: true, text: `Model replied: ${out.slice(0, 80)}` }); } catch (e) { setResult({ ok: false, text: e instanceof Error ? e.message : String(e) }); } finally { setBusy(null); } }}>
+        <Button variant="secondary" disabled={busy !== null || !cfg.apiKey || !cfg.model || (provider !== "anthropic" && !cfg.baseUrl)} onClick={async () => { setBusy("test"); setResult(null); try { const out = await testAi(cfg); setResult({ ok: true, text: `Model replied: ${out.slice(0, 80)}` }); } catch (e) { setResult({ ok: false, text: errMsg(e) }); } finally { setBusy(null); } }}>
           {busy === "test" && <Loader2 size={14} className="animate-spin" />} Test
         </Button>
         <Button disabled={busy !== null || !dirty} onClick={async () => { setBusy("save"); try { await s.save({ aiProvider: provider, aiBaseUrl: cfg.baseUrl, aiModel: cfg.model, aiFastModel: fastModel.trim(), aiApiKey: cfg.apiKey, aiSystemPrompt: persona.trim() }); setResult({ ok: true, text: "Saved." }); } finally { setBusy(null); } }}>
@@ -682,7 +681,7 @@ function BackupSection() {
               const p = await exportBackup(includeSecrets);
               if (p) setMsg({ ok: true, text: `Saved to ${p}` });
             } catch (e) {
-              setMsg({ ok: false, text: e instanceof Error ? e.message : String(e) });
+              setMsg({ ok: false, text: errMsg(e) });
             } finally {
               setBusy(null);
             }
@@ -704,7 +703,7 @@ function BackupSection() {
                 const r = await pickBackup();
                 if (r) setPending(r);
               } catch (e) {
-                setMsg({ ok: false, text: e instanceof Error ? e.message : String(e) });
+                setMsg({ ok: false, text: errMsg(e) });
               }
             }}
           >
@@ -731,7 +730,7 @@ function BackupSection() {
                     setPending(null);
                     setMsg({ ok: true, text: "Restored. Some changes apply after the app is reopened." });
                   } catch (e) {
-                    setMsg({ ok: false, text: e instanceof Error ? e.message : String(e) });
+                    setMsg({ ok: false, text: errMsg(e) });
                   } finally {
                     setBusy(null);
                   }

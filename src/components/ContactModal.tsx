@@ -6,7 +6,7 @@ import { confirm } from "@/components/Confirm";
 import { requireClient } from "@/store/settings";
 import { Avatar, Button } from "@/components/ui";
 import type { MentionResolver } from "@/lib/waMarkdown";
-import { displayId } from "@/lib/utils";
+import { displayId, errMsg } from "@/lib/utils";
 
 /** Contact card for a participant id (LID or phone id): photo, names, number, open chat. */
 export function ContactModal({
@@ -105,7 +105,7 @@ export function ContactModal({
               </div>
               <div className="flex gap-2 justify-end">
                 <Button size="sm" variant="secondary" onClick={() => setSaving(false)}>Cancel</Button>
-                <Button size="sm" disabled={!first.trim() || busy === "save"} onClick={async () => { setBusy("save"); setMsg(null); try { await requireClient().saveContact(session, phoneId ?? id, first.trim(), last.trim()); setMsg("Saved to your phone contacts."); setSaving(false); qc.invalidateQueries({ queryKey: ["contacts", session] }); qc.invalidateQueries({ queryKey: ["contact", session, id] }); } catch (e) { setMsg(e instanceof Error ? e.message : String(e)); } finally { setBusy(null); } }}>
+                <Button size="sm" disabled={!first.trim() || busy === "save"} onClick={async () => { setBusy("save"); setMsg(null); try { await requireClient().saveContact(session, phoneId ?? id, first.trim(), last.trim()); setMsg("Saved to your phone contacts."); setSaving(false); qc.invalidateQueries({ queryKey: ["contacts", session] }); qc.invalidateQueries({ queryKey: ["contact", session, id] }); } catch (e) { setMsg(errMsg(e)); } finally { setBusy(null); } }}>
                   {busy === "save" ? <Loader2 size={12} className="animate-spin" /> : "Save"}
                 </Button>
               </div>
@@ -130,7 +130,7 @@ export function ContactModal({
                     else await requireClient().unblockContact(session, target);
                     setMsg(choice === "block" ? "Blocked." : "Unblocked.");
                   } catch (e) {
-                    setMsg(e instanceof Error ? e.message : String(e));
+                    setMsg(errMsg(e));
                   } finally {
                     setBusy(null);
                   }

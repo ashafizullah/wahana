@@ -1,41 +1,41 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { Loader2, Search, CheckCheck, X, Info, CalendarDays, ArrowDown } from "lucide-react";
-import { useChats, useMessages, useSessions, useMediaPrefixes, qk } from "@/api/queries";
-import { requireClient, useSettings } from "@/store/settings";
-import { Avatar, Button } from "@/components/ui";
-import { MessageMenu, type MenuPos } from "@/components/MessageMenu";
-import { InfoPanel } from "@/components/InfoPanel";
-import { usePresence, presenceLabel } from "@/realtime/usePresence";
-import { useNameResolver } from "@/realtime/useNames";
-import { ResizeHandle, usePaneWidth } from "@/components/ResizeHandle";
-import { MessageInfoModal } from "@/components/MessageInfo";
+import { ArrowDown, CalendarDays, CheckCheck, Download, Info, Languages, Loader2, MoreVertical, Search, Sparkles, X } from "lucide-react";
+import { mediaOpts, qk, useChats, useMediaPrefixes, useMessages, useSessions } from "@/api/queries";
+import type { ViewMessage, WAMessage } from "@/api/types";
+import { confirm } from "@/components/Confirm";
 import { ContactModal } from "@/components/ContactModal";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
-import { confirm } from "@/components/Confirm";
-import { useHidden } from "@/store/hidden";
-import { tombstonesFor, useRevoked } from "@/store/revoked";
-import { useLiveMessages } from "@/store/liveMessages";
-import { bareId } from "@/store/reactions";
-import { useChatPrefs, type AutoTranslate } from "@/store/chatPrefs";
-const EMPTY_AUTO: AutoTranslate = {};
-import { exportChat, type ExportFormat } from "@/lib/exportChat";
-import { MoreVertical, Download, Languages, Sparkles } from "lucide-react";
+import { InfoPanel } from "@/components/InfoPanel";
+import { MessageInfoModal } from "@/components/MessageInfo";
+import { MessageMenu, type MenuPos } from "@/components/MessageMenu";
+import { NotConnected } from "@/components/NotConnected";
+import { ResizeHandle, usePaneWidth } from "@/components/ResizeHandle";
 import { SummaryModal } from "@/components/SummaryModal";
-import { useTranslations } from "@/store/translations";
-import { aiConfigured, translate, LANGUAGES } from "@/lib/ai";
-import type { WAMessage } from "@/api/types";
-import { cn, displayId, formatDateDivider, formatTime, isGroup } from "@/lib/utils";
-import { useQueryClient } from "@tanstack/react-query";
-import { chatKey, useUnread } from "@/store/unread";
+import { Avatar, Button, MenuItem, Popover } from "@/components/ui";
+import { aiConfigured, LANGUAGES, translate } from "@/lib/ai";
+import { exportChat, type ExportFormat } from "@/lib/exportChat";
+import { useEvent, useLatest } from "@/lib/hooks";
+import { cn, convKey, displayId, errMsg, formatDateDivider, formatTime, isGroup } from "@/lib/utils";
+import { useNameResolver } from "@/realtime/useNames";
+import { presenceLabel, usePresence } from "@/realtime/usePresence";
+import { useChatPrefs, type AutoTranslate } from "@/store/chatPrefs";
+import { useHidden } from "@/store/hidden";
+import { useLiveMessages } from "@/store/liveMessages";
 import { usePushNames } from "@/store/pushNames";
+import { bareId } from "@/store/reactions";
+import { tombstonesFor, useRevoked } from "@/store/revoked";
+import { requireClient, useSettings } from "@/store/settings";
+import { useTranslations } from "@/store/translations";
+import { chatKey, useUnread } from "@/store/unread";
 import { useWaWeb } from "@/store/waWeb";
 import { WhatsAppWebScreen } from "@/screens/WhatsAppWebScreen";
-import { NotConnected } from "@/components/NotConnected";
-
 import { ChatList, SessionPicker } from "@/screens/chats/ChatList";
-import { Bubble, senderName } from "@/screens/chats/MessageBubble";
 import { Composer } from "@/screens/chats/Composer";
+import { Bubble, senderName } from "@/screens/chats/MessageBubble";
+
+const EMPTY_AUTO: AutoTranslate = {};
 
 export function ChatScreen() {
   const { client, session } = useSettings();
@@ -114,7 +114,7 @@ function Conversation({ session, chatId, onOpenChat }: { session: string; chatId
   const [moreOpen, setMoreOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [summary, setSummary] = useState(false);
-  const autoTr = useChatPrefs((s) => s.autoTranslate[`${session}:${chatId}`] ?? EMPTY_AUTO);
+  const autoTr = useChatPrefs((s) => s.autoTranslate[convKey(session, chatId)] ?? EMPTY_AUTO);
   const setAutoTranslate = useChatPrefs((s) => s.setAutoTranslate);
   // Last-opened time captured before markSeen() below overwrites it, for "since I last read" summaries.
   const seenAtRef = useRef<number | undefined>(undefined);
@@ -122,6 +122,7 @@ function Conversation({ session, chatId, onOpenChat }: { session: string; chatId
   const [readSentFor, setReadSentFor] = useState<string | null>(null); // id of the last incoming message we've acknowledged manually
   const [search, setSearch] = useState<string | null>(null); // null = closed
   const [highlight, setHighlight] = useState<string | null>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
   const prefixes = useMediaPrefixes();
   const presence = usePresence(session, chatId);
   const resolveName = useNameResolver(session, chatId);
@@ -134,16 +135,16 @@ function Conversation({ session, chatId, onOpenChat }: { session: string; chatId
   // Messages arrive newest-first from the API; render oldest-first, minus the ones deleted "for me".
   const hiddenIds = useHidden((s) => s.ids);
   const revokedItems = useRevoked((s) => s.items);
-  const live = useLiveMessages((s) => s.byChat[`${session}:${chatId}`]);
+  const live = useLiveMessages((s) => s.byChat[convKey(session, chatId)]);
   const ordered = useMemo(() => {
-    const list: (WAMessage & { revoked?: boolean; waiting?: boolean })[] = (messages ?? []).filter((m) => !hiddenIds[m.id]);
+    const list: ViewMessage[] = (messages ?? []).filter((m) => !hiddenIds[m.id]);
     // Messages we received live but the server no longer returns (WAHA storage gaps): keep them in the loaded range.
     if (live?.length && messages) {
       const have = new Set(list.map((m) => m.id));
       const oldest = list.length ? Math.min(...list.map((m) => m.timestamp)) : 0;
       for (const m of live) if (!have.has(m.id) && !hiddenIds[m.id] && m.timestamp >= oldest) list.push(m);
     }
-    const stones = tombstonesFor(revokedItems, `${session}:${chatId}`);
+    const stones = tombstonesFor(revokedItems, convKey(session, chatId));
     if (stones.length) {
       const have = new Map(list.map((m) => [bareId(m.id), m]));
       const oldest = list.length ? Math.min(...list.map((m) => m.timestamp)) : 0;
@@ -171,7 +172,7 @@ function Conversation({ session, chatId, onOpenChat }: { session: string; chatId
             mediaUrl: "",
             revoked: (t.kind ?? "revoked") === "revoked",
             waiting: t.kind === "waiting",
-          } as WAMessage & { revoked: boolean; waiting: boolean });
+          } as ViewMessage);
         }
       }
     }
@@ -249,7 +250,6 @@ function Conversation({ session, chatId, onOpenChat }: { session: string; chatId
     if (grew && (atBottomRef.current || last?.fromMe)) el.scrollTop = el.scrollHeight;
   }, [ordered]);
 
-  const loadOlderRef = useRef<() => Promise<void>>(async () => {});
   useEffect(() => {
     const el = listRef.current;
     const content = contentRef.current;
@@ -281,14 +281,14 @@ function Conversation({ session, chatId, onOpenChat }: { session: string; chatId
     const target = autoTr.in;
     if (!target || !aiConfigured()) return;
     const t = useTranslations.getState();
-    const todo = [...ordered].reverse().filter((m) => !m.fromMe && m.body && !(m as WAMessage & { waiting?: boolean }).waiting).slice(0, 20)
+    const todo = [...ordered].reverse().filter((m) => !m.fromMe && m.body && !m.waiting).slice(0, 20)
       .filter((m) => !t.byMsg[m.id] && !autoTried.current.has(`${target}:${m.id}`));
     for (const m of todo) {
       autoTried.current.add(`${target}:${m.id}`);
       t.set(m.id, { target, loading: true });
       translate(m.body, target, m.id)
         .then((text) => useTranslations.getState().set(m.id, { target, text }))
-        .catch((e) => useTranslations.getState().set(m.id, { target, error: e instanceof Error ? e.message : String(e) }));
+        .catch((e) => useTranslations.getState().set(m.id, { target, error: errMsg(e) }));
     }
   }, [ordered, autoTr.in]);
   const setOpen = useUnread((s) => s.setOpen);
@@ -317,8 +317,7 @@ function Conversation({ session, chatId, onOpenChat }: { session: string; chatId
       const more = await requireClient().messages(session, chatId, {
         limit: 60,
         before: oldest - 1,
-        downloadMedia: prefixes.length > 0,
-        downloadMediaMimetypes: prefixes,
+        ...mediaOpts(prefixes),
       });
       usePushNames.getState().learn(more);
       const fresh = more.filter((m) => !ordered.some((o) => o.id === m.id));
@@ -335,8 +334,7 @@ function Conversation({ session, chatId, onOpenChat }: { session: string; chatId
       setLoadingOlder(false);
     }
   };
-
-  loadOlderRef.current = loadOlder;
+  const loadOlderRef = useLatest(loadOlder);
 
   const loadNewer = async () => {
     if (!ordered.length || newerInFlight.current || loadingNewer || !hasNewer) return;
@@ -348,8 +346,7 @@ function Conversation({ session, chatId, onOpenChat }: { session: string; chatId
         limit: 60,
         after: newest + 1,
         sortOrder: "asc",
-        downloadMedia: prefixes.length > 0,
-        downloadMediaMimetypes: prefixes,
+        ...mediaOpts(prefixes),
       });
       usePushNames.getState().learn(more);
       const fresh = more.filter((m) => !ordered.some((o) => o.id === m.id));
@@ -365,8 +362,7 @@ function Conversation({ session, chatId, onOpenChat }: { session: string; chatId
       setLoadingNewer(false);
     }
   };
-  const loadNewerRef = useRef(loadNewer);
-  loadNewerRef.current = loadNewer;
+  const loadNewerRef = useLatest(loadNewer);
 
   /** Replace the view with the 60 messages up to the end of `day` (local time). */
   const jumpToDate = async (day: string) => {
@@ -378,8 +374,7 @@ function Conversation({ session, chatId, onOpenChat }: { session: string; chatId
       const list = await requireClient().messages(session, chatId, {
         limit: 60,
         before: end,
-        downloadMedia: prefixes.length > 0,
-        downloadMediaMimetypes: prefixes,
+        ...mediaOpts(prefixes),
       });
       usePushNames.getState().learn(list);
       qc.setQueryData(qk.messages(session, chatId), list);
@@ -434,9 +429,7 @@ function Conversation({ session, chatId, onOpenChat }: { session: string; chatId
     setTimeout(() => setHighlight((h) => (h === full ? null : h)), 2000);
   };
   // Stable identities so memoised bubbles don't re-render on every parent tick.
-  const jumpToRef = useRef(jumpTo);
-  jumpToRef.current = jumpTo;
-  const onJumpStable = useCallback((id: string) => jumpToRef.current(id), []);
+  const onJumpStable = useEvent(jumpTo);
   const onReplyStable = useCallback((m: WAMessage) => setReplyTo(m), []);
   const onMenuStable = useCallback((m: WAMessage, pos: MenuPos) => setMenu({ m, pos }), []);
   const onSenderStable = useCallback((id: string) => setContactId(id), []);
@@ -448,7 +441,7 @@ function Conversation({ session, chatId, onOpenChat }: { session: string; chatId
       if ((e.metaKey || e.ctrlKey) && e.key === "f") {
         e.preventDefault();
         setSearch((v) => (v === null ? "" : v));
-        setTimeout(() => document.getElementById("msg-search")?.focus(), 0);
+        searchRef.current?.focus();
       }
     };
     window.addEventListener("keydown", onKey);
@@ -473,7 +466,7 @@ function Conversation({ session, chatId, onOpenChat }: { session: string; chatId
                   await requireClient().sendSeen(session, chatId);
                   setReadSentFor(lastIn!.id);
                 } catch (e) {
-                  await confirm({ title: "Couldn't send read receipt", message: e instanceof Error ? e.message : String(e), confirmLabel: "OK" });
+                  await confirm({ title: "Couldn't send read receipt", message: errMsg(e), confirmLabel: "OK" });
                 }
               }}
             >
@@ -490,107 +483,108 @@ function Conversation({ session, chatId, onOpenChat }: { session: string; chatId
             </div>
           </div>
         </button>
-        <div className="relative">
-          <Button variant="ghost" size="sm" onClick={() => setDatePick((v) => !v)} title="Jump to date">
-            <CalendarDays size={16} />
-          </Button>
-          {datePick && (
-            <div className="absolute right-0 top-full mt-1 z-30 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-xl p-3 space-y-2 w-56">
-              <div className="text-xs font-medium">Jump to date</div>
-              <input
-                type="date"
-                autoFocus
-                max={new Date().toISOString().slice(0, 10)}
-                onChange={(e) => e.target.value && void jumpToDate(e.target.value)}
-                className="w-full rounded-lg border border-neutral-300 dark:border-neutral-700 bg-transparent px-2 py-1 text-sm outline-none"
-              />
-              <div className="text-[11px] text-neutral-500">Shows messages up to the end of that day.</div>
-            </div>
-          )}
-        </div>
+        <Popover
+          open={datePick}
+          onClose={() => setDatePick(false)}
+          align="right"
+          className="p-3 space-y-2 w-56"
+          trigger={
+            <Button variant="ghost" size="sm" onClick={() => setDatePick((v) => !v)} title="Jump to date">
+              <CalendarDays size={16} />
+            </Button>
+          }
+        >
+          <div className="text-xs font-medium">Jump to date</div>
+          <input
+            type="date"
+            autoFocus
+            max={new Date().toISOString().slice(0, 10)}
+            onChange={(e) => e.target.value && void jumpToDate(e.target.value)}
+            className="w-full rounded-lg border border-neutral-300 dark:border-neutral-700 bg-transparent px-2 py-1 text-sm outline-none"
+          />
+          <div className="text-[11px] text-neutral-500">Shows messages up to the end of that day.</div>
+        </Popover>
         {aiConfigured() && (
           <Button variant="ghost" size="sm" onClick={() => setSummary(true)} title="Summarize with AI">
             <Sparkles size={16} />
           </Button>
         )}
-        <Button variant="ghost" size="sm" onClick={() => { setSearch((v) => (v === null ? "" : null)); setTimeout(() => document.getElementById("msg-search")?.focus(), 0); }} title="Search in chat (⌘F)">
+        <Button variant="ghost" size="sm" onClick={() => setSearch((v) => (v === null ? "" : null))} title="Search in chat (⌘F)">
           <Search size={16} />
         </Button>
         <Button variant="ghost" size="sm" onClick={() => setInfo((v) => !v)} title="Info">
           <Info size={16} />
         </Button>
-        <div className="relative">
-          <Button variant="ghost" size="sm" onClick={() => setMoreOpen((v) => !v)} title="More"><MoreVertical size={16} /></Button>
-          {moreOpen && (
-            <div className="absolute right-0 top-full mt-1 z-30 w-56 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-xl py-1 text-sm" onMouseLeave={() => setMoreOpen(false)}>
-              <button
-                onClick={() => { setMoreOpen(false); setSummary(true); }}
-                className="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-neutral-100 dark:hover:bg-neutral-800"
+        <Popover
+          open={moreOpen}
+          onClose={() => setMoreOpen(false)}
+          align="right"
+          className="w-56 py-1"
+          trigger={<Button variant="ghost" size="sm" onClick={() => setMoreOpen((v) => !v)} title="More"><MoreVertical size={16} /></Button>}
+        >
+          <MenuItem onClick={() => { setMoreOpen(false); setSummary(true); }}>
+            <Sparkles size={14} /> Summarize with AI
+          </MenuItem>
+        {aiConfigured() && (
+          <div className="px-3 py-1.5 space-y-1.5">
+            <div className="flex items-center gap-1 text-[11px] text-neutral-500"><Languages size={12} /> Auto-translate (this chat)</div>
+            <label className="flex items-center gap-2 text-xs">
+              <span className="w-24 shrink-0 text-neutral-500">Incoming →</span>
+              <select
+                value={autoTr.in ?? ""}
+                onChange={(e) => setAutoTranslate(convKey(session, chatId), { in: e.target.value || undefined })}
+                className="flex-1 min-w-0 rounded-md border border-neutral-300 dark:border-neutral-700 bg-transparent px-1.5 py-0.5 text-xs outline-none"
               >
-                <Sparkles size={14} /> Summarize with AI
-              </button>
-              {aiConfigured() && (
-                <div className="px-3 py-1.5 space-y-1.5">
-                  <div className="flex items-center gap-1 text-[11px] text-neutral-500"><Languages size={12} /> Auto-translate (this chat)</div>
-                  <label className="flex items-center gap-2 text-xs">
-                    <span className="w-24 shrink-0 text-neutral-500">Incoming →</span>
-                    <select
-                      value={autoTr.in ?? ""}
-                      onChange={(e) => setAutoTranslate(`${session}:${chatId}`, { in: e.target.value || undefined })}
-                      className="flex-1 min-w-0 rounded-md border border-neutral-300 dark:border-neutral-700 bg-transparent px-1.5 py-0.5 text-xs outline-none"
-                    >
-                      <option value="">Off</option>
-                      {LANGUAGES.map(([c, n]) => <option key={c} value={c}>{n}</option>)}
-                    </select>
-                  </label>
-                  <label className="flex items-center gap-2 text-xs">
-                    <span className="w-24 shrink-0 text-neutral-500">My messages →</span>
-                    <select
-                      value={autoTr.out ?? ""}
-                      onChange={(e) => setAutoTranslate(`${session}:${chatId}`, { out: e.target.value || undefined })}
-                      className="flex-1 min-w-0 rounded-md border border-neutral-300 dark:border-neutral-700 bg-transparent px-1.5 py-0.5 text-xs outline-none"
-                    >
-                      <option value="">Off (send as typed)</option>
-                      {LANGUAGES.map(([c, n]) => <option key={c} value={c}>{n}</option>)}
-                    </select>
-                  </label>
-                  <div className="text-[10px] text-neutral-400">Incoming: shown under each new message. Outgoing: your draft is translated right before sending.</div>
-                </div>
-              )}
-              <div className="my-1 border-t border-neutral-200 dark:border-neutral-800" />
-              <div className="px-3 py-1 text-[11px] text-neutral-500">Export loaded messages ({ordered.length})</div>
-              {(["txt", "html", "json"] as ExportFormat[]).map((f) => (
-                <button
-                  key={f}
-                  disabled={exporting}
-                  onClick={async () => {
-                    setMoreOpen(false);
-                    setExporting(true);
-                    try {
-                      const p = await exportChat(name, ordered.filter((m) => !(m as WAMessage & { waiting?: boolean }).waiting), f, resolveName);
-                      if (p) await confirm({ title: "Exported", message: p, confirmLabel: "OK" });
-                    } catch (e) {
-                      await confirm({ title: "Export failed", message: e instanceof Error ? e.message : String(e), confirmLabel: "OK" });
-                    } finally {
-                      setExporting(false);
-                    }
-                  }}
-                  className="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-neutral-100 dark:hover:bg-neutral-800"
-                >
-                  <Download size={14} /> Export as .{f}
-                </button>
-              ))}
-              <div className="px-3 py-1 text-[10px] text-neutral-400">Scroll up first to include older messages.</div>
-            </div>
-          )}
-        </div>
+                <option value="">Off</option>
+                {LANGUAGES.map(([c, n]) => <option key={c} value={c}>{n}</option>)}
+              </select>
+            </label>
+            <label className="flex items-center gap-2 text-xs">
+              <span className="w-24 shrink-0 text-neutral-500">My messages →</span>
+              <select
+                value={autoTr.out ?? ""}
+                onChange={(e) => setAutoTranslate(convKey(session, chatId), { out: e.target.value || undefined })}
+                className="flex-1 min-w-0 rounded-md border border-neutral-300 dark:border-neutral-700 bg-transparent px-1.5 py-0.5 text-xs outline-none"
+              >
+                <option value="">Off (send as typed)</option>
+                {LANGUAGES.map(([c, n]) => <option key={c} value={c}>{n}</option>)}
+              </select>
+            </label>
+            <div className="text-[10px] text-neutral-400">Incoming: shown under each new message. Outgoing: your draft is translated right before sending.</div>
+          </div>
+        )}
+        <div className="my-1 border-t border-neutral-200 dark:border-neutral-800" />
+        <div className="px-3 py-1 text-[11px] text-neutral-500">Export loaded messages ({ordered.length})</div>
+          {(["txt", "html", "json"] as ExportFormat[]).map((f) => (
+            <MenuItem
+              key={f}
+              disabled={exporting}
+              onClick={async () => {
+                setMoreOpen(false);
+                setExporting(true);
+                try {
+                  const p = await exportChat(name, ordered.filter((m) => !m.waiting), f, resolveName);
+                  if (p) await confirm({ title: "Exported", message: p, confirmLabel: "OK" });
+                } catch (e) {
+                  await confirm({ title: "Export failed", message: errMsg(e), confirmLabel: "OK" });
+                } finally {
+                  setExporting(false);
+                }
+              }}
+            >
+              <Download size={14} /> Export as .{f}
+            </MenuItem>
+          ))}
+          <div className="px-3 py-1 text-[10px] text-neutral-400">Scroll up first to include older messages.</div>
+        </Popover>
       </header>
       {search !== null && (
         <div className="shrink-0 bg-white dark:bg-neutral-900 border-b border-neutral-200 dark:border-neutral-800 px-4 py-2 space-y-1">
           <div className="flex items-center gap-2">
             <Search size={14} className="text-neutral-400" />
             <input
-              id="msg-search"
+              ref={searchRef}
+              autoFocus
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               onKeyDown={(e) => {

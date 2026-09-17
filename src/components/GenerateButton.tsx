@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { Loader2, Sparkles, Undo2 } from "lucide-react";
-import { Button } from "@/components/ui";
+import { Button, Popover } from "@/components/ui";
 import { aiConfigured, generateContent, type ContentKind } from "@/lib/ai";
 import { useSettings } from "@/store/settings";
+import { errMsg } from "@/lib/utils";
 
 /**
  * "Draft with AI": a brief → a ready-to-send WhatsApp message (persona-aware), for the
@@ -29,24 +30,24 @@ export function GenerateButton({ kind, text, onResult, session }: { kind: Conten
         setOpen(false);
       }
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setErr(errMsg(e));
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <div className="relative inline-flex items-center gap-1">
-      <Button size="sm" variant="secondary" disabled={!ready || busy} title={ready ? "Write this message from a short brief" : "Set up AI in Settings first"} onClick={() => setOpen((v) => !v)}>
-        {busy ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />} Draft with AI
-      </Button>
-      {undo !== null && (
-        <Button size="sm" variant="ghost" title="Restore the previous text" onClick={() => { onResult(undo); setUndo(null); }}>
-          <Undo2 size={12} />
-        </Button>
-      )}
-      {open && (
-        <div className="absolute top-full left-0 mt-1 z-30 w-80 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-xl p-3 space-y-2 text-sm">
+    <div className="inline-flex items-center gap-1">
+      <Popover
+        open={open}
+        onClose={() => setOpen(false)}
+        className="w-80 p-3 space-y-2"
+        trigger={
+          <Button size="sm" variant="secondary" disabled={!ready || busy} title={ready ? "Write this message from a short brief" : "Set up AI in Settings first"} onClick={() => setOpen((v) => !v)}>
+            {busy ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />} Draft with AI
+          </Button>
+        }
+      >
           <div className="text-xs text-neutral-500">What should the message say? Facts only — the AI writes the wording in your persona's voice.</div>
           <textarea
             autoFocus
@@ -62,7 +63,11 @@ export function GenerateButton({ kind, text, onResult, session }: { kind: Conten
             <Button size="sm" variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
             <Button size="sm" disabled={!brief.trim() || busy} onClick={() => void run()}>{busy && <Loader2 size={12} className="animate-spin" />} Generate</Button>
           </div>
-        </div>
+      </Popover>
+      {undo !== null && (
+        <Button size="sm" variant="ghost" title="Restore the previous text" onClick={() => { onResult(undo); setUndo(null); }}>
+          <Undo2 size={12} />
+        </Button>
       )}
     </div>
   );

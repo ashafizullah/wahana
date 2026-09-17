@@ -10,7 +10,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { requireClient } from "@/store/settings";
 import { qk, useChats } from "@/api/queries";
 import type { WAMessage } from "@/api/types";
-import { cn, displayId } from "@/lib/utils";
+import { cn, displayId, errMsg, convKey } from "@/lib/utils";
 import { Button, Input, Avatar } from "@/components/ui";
 import { useReactions } from "@/store/reactions";
 import { useHidden } from "@/store/hidden";
@@ -57,7 +57,7 @@ export function MessageMenu({
     t.set(m.id, { target, loading: true });
     translate(m.body, target, m.id)
       .then((text) => t.set(m.id, { target, text }))
-      .catch((e) => t.set(m.id, { target, error: e instanceof Error ? e.message : String(e) }));
+      .catch((e) => t.set(m.id, { target, error: errMsg(e) }));
   };
 
   const runImage = (kind: ImageNoteKind) => {
@@ -75,7 +75,7 @@ export function MessageMenu({
       return analyzeImage({ data, mediaType: mimetype.split(";")[0]! }, kind, useSettings.getState().aiTranslateTo, m.body || undefined);
     })()
       .then((text) => notes.set(m.id, { kind, text }))
-      .catch((e) => notes.set(m.id, { kind, error: e instanceof Error ? e.message : String(e) }));
+      .catch((e) => notes.set(m.id, { kind, error: errMsg(e) }));
   };
   const isImage = m.hasMedia && mediaKind(m) === "image";
 
@@ -106,7 +106,7 @@ export function MessageMenu({
       qc.invalidateQueries({ queryKey: qk.messages(session, chatId) });
       if (close) onClose();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setErr(errMsg(e));
     } finally {
       setBusy(null);
     }
@@ -122,7 +122,7 @@ export function MessageMenu({
     if (choice === "everyone") {
       await run("delete", async () => {
         await requireClient().deleteMessage(session, chatId, m.id);
-        useRevoked.getState().add({ id: m.id, chat: `${session}:${chatId}`, timestamp: m.timestamp, fromMe: true, participant: m.participant, from: m.from });
+        useRevoked.getState().add({ id: m.id, chat: convKey(session, chatId), timestamp: m.timestamp, fromMe: true, participant: m.participant, from: m.from });
       });
     }
     else {
@@ -286,7 +286,7 @@ function ForwardDialog({ session, messageId, onClose }: { session: string; messa
       await requireClient().forwardMessage(session, toChatId, messageId);
       setDone((d) => new Set(d).add(toChatId));
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setErr(errMsg(e));
     } finally {
       setBusy(null);
     }

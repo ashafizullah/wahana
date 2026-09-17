@@ -6,6 +6,7 @@ import { Button, Input, Label } from "@/components/ui";
 import { qk } from "@/api/queries";
 import type { SessionInfo, WebhookConfig } from "@/api/types";
 import { confirm } from "@/components/Confirm";
+import { errMsg } from "@/lib/utils";
 
 const ALL_EVENTS = ["message", "message.any", "message.ack", "message.reaction", "message.revoked", "message.edited", "message.waiting", "session.status", "state.change", "group.v2.join", "group.v2.leave", "group.v2.update", "group.v2.participants", "presence.update", "poll.vote", "chat.archive", "call.received", "call.accepted", "call.rejected", "label.upsert", "label.deleted", "label.chat.added", "label.chat.deleted", "event.response", "engine.event"];
 
@@ -54,7 +55,7 @@ export function WebhooksModal({ session, onClose }: { session: SessionInfo; onCl
       qc.invalidateQueries({ queryKey: qk.sessions });
       onClose();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setErr(errMsg(e));
     } finally {
       setBusy(false);
     }

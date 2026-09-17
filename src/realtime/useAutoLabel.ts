@@ -3,7 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useSettings } from "@/store/settings";
 import { aiConfigured, suggestLabels } from "@/lib/ai";
 import { transcript } from "@/lib/exportChat";
-import { displayId, isChannel, isGroup } from "@/lib/utils";
+import { displayId, isChannel, isGroup, convKey } from "@/lib/utils";
 import type { IncomingMessage } from "@/realtime/useWahaSocket";
 import type { WAMessage } from "@/api/types";
 import { qk } from "@/api/queries";
@@ -32,7 +32,7 @@ export function useAutoLabel() {
     const handle = async (session: string, chatId: string, m: WAMessage) => {
       if (!aiConfigured() || isGroup(chatId) || isChannel(chatId) || chatId === "status@broadcast") return;
       if (Date.now() / 1000 - m.timestamp > MAX_AGE_S) return;
-      const key = `${session}:${chatId}`;
+      const key = convKey(session, chatId);
       if (tried.current.has(key)) return;
       tried.current.add(key);
       const c = useSettings.getState().client;

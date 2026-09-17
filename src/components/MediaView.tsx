@@ -5,7 +5,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { mediaKind, shouldAutoLoad, useSettings } from "@/store/settings";
 import { qk } from "@/api/queries";
 import type { WAMessage } from "@/api/types";
-import { cn } from "@/lib/utils";
+import { cn, errMsg } from "@/lib/utils";
 import { Lightbox } from "@/components/Lightbox";
 import { formatBytes as formatBytesExact, cacheGet, cachePut, mediaCacheKey } from "@/lib/mediaCache";
 
@@ -109,7 +109,7 @@ export function MediaView({ message: m, session, chatId }: { message: WAMessage;
         setBlobUrl(obj);
         void cachePut(cacheKey, blob);
       } catch (e) {
-        if (!cancelled) setErr(e instanceof Error ? e.message : String(e));
+        if (!cancelled) setErr(errMsg(e));
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -134,7 +134,7 @@ export function MediaView({ message: m, session, chatId }: { message: WAMessage;
               url = full.media?.url ?? null;
               setResolvedUrl(url);
             } catch (e) {
-              setErr(e instanceof Error ? e.message : String(e));
+              setErr(errMsg(e));
             }
           }
           if (url) void openUrl(url);

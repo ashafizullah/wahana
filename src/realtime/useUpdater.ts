@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
+import { errMsg } from "@/lib/utils";
 
 export interface UpdaterState {
   update: Update | null;
@@ -48,7 +49,7 @@ export function useUpdater(): UpdaterState {
       });
       await relaunch();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errMsg(e));
       setProgress(null);
     }
   };

@@ -1,5 +1,5 @@
 import { memo, useState } from "react";
-import { Check, CheckCheck, Clock, X } from "lucide-react";
+import { Check, CheckCheck, Clock, Copy, Languages, Loader2 as Spinner, ScanText, Sparkles, X } from "lucide-react";
 import { mediaKind, requireClient } from "@/store/settings";
 import { Avatar } from "@/components/ui";
 import { MediaView } from "@/components/MediaView";
@@ -8,14 +8,13 @@ import { QuoteView, type ReplyTo } from "@/components/QuoteView";
 import { LinkPreviewCard } from "@/components/LinkPreview";
 import { bareId, summarize, useReactions } from "@/store/reactions";
 import { usePolls } from "@/store/polls";
-import { Languages, Sparkles, ScanText, Copy, Loader2 as Spinner } from "lucide-react";
 import { useTranslations } from "@/store/translations";
 import { useImageNotes } from "@/store/imageNotes";
 import { langName } from "@/lib/ai";
 import type { MentionResolver } from "@/lib/waMarkdown";
 import { WaMarkdown } from "@/lib/waMarkdown";
-import type { WAMessage } from "@/api/types";
-import { cn, displayId, formatTime } from "@/lib/utils";
+import type { ViewMessage, WAMessage } from "@/api/types";
+import { cn, displayId, formatTime, errMsg } from "@/lib/utils";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
 
@@ -51,7 +50,7 @@ export const Bubble = memo(function Bubble({
   const onReply = () => onReplyMsg(m);
   const onMenu = (pos: MenuPos) => onMenuMsg(m, pos);
   const mine = m.fromMe;
-  const { revoked, waiting } = m as WAMessage & { revoked?: boolean; waiting?: boolean };
+  const { revoked, waiting } = m as ViewMessage;
   if (waiting) {
     return (
       <div className={cn("flex", mine ? "justify-end" : "justify-start")}>
@@ -245,7 +244,7 @@ export function PollView({ message: m, session, chatId }: { message: WAMessage; 
       await requireClient().votePoll(session, chatId, m.id, next);
       setOwn(m.id, next);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setErr(errMsg(e));
     } finally {
       setBusy(false);
     }

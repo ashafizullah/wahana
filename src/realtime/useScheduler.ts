@@ -4,6 +4,7 @@ import { useSettings } from "@/store/settings";
 import { claimRun, dueSchedules, nextOccurrence, recordRun, type Schedule } from "@/store/scheduler";
 import { sendNotification } from "@tauri-apps/plugin-notification";
 import { qk } from "@/api/queries";
+import { errMsg } from "@/lib/utils";
 
 /** Jobs later than this are marked missed instead of sent (app was closed). */
 export const GRACE_SECONDS = 60 * 60;
@@ -55,7 +56,7 @@ export function useScheduler() {
             await recordRun(s, "ok", { messageId: res?.id });
             if (s.target_id) qc.invalidateQueries({ queryKey: qk.chats(s.session) });
           } catch (e) {
-            const msg = e instanceof Error ? e.message : String(e);
+            const msg = errMsg(e);
             await recordRun(s, "error", { error: msg });
             if (useSettings.getState().notifications) sendNotification({ title: "Scheduled message failed", body: `${s.target_name ?? s.target_id ?? "status"}: ${msg}`.slice(0, 200) });
           }

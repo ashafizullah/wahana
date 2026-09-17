@@ -5,6 +5,19 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+/** Human-readable message for anything thrown (Error, string, Tauri invoke payload…). */
+export function errMsg(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
+}
+
+/**
+ * Key for per-conversation state that is scoped to a WAHA session (chatPrefs, liveMessages,
+ * revoked tombstones, drafts). Not profile-scoped — see `chatKey` in `store/unread` for that.
+ */
+export function convKey(session: string, chatId: string) {
+  return `${session}:${chatId}`;
+}
+
 export function formatTime(unixSeconds: number) {
   const d = new Date(unixSeconds * 1000);
   const now = new Date();

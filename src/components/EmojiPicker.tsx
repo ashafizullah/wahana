@@ -3,14 +3,14 @@ import { Smile } from "lucide-react";
 import data from "@emoji-mart/data";
 import { Picker } from "emoji-mart";
 import { Button } from "@/components/ui";
+import { useLatest } from "@/lib/hooks";
 
 /** Emoji button + popover picker (emoji-mart core, data bundled locally so it works offline). */
 export function EmojiButton({ onPick }: { onPick: (emoji: string) => void }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const host = useRef<HTMLDivElement>(null);
-  const onPickRef = useRef(onPick);
-  onPickRef.current = onPick;
+  const onPickRef = useLatest(onPick);
 
   useEffect(() => {
     if (!open || !host.current) return;

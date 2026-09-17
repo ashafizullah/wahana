@@ -1,5 +1,6 @@
-import type { ButtonHTMLAttributes, InputHTMLAttributes } from "react";
-import { cn } from "@/lib/utils";
+import { useRef, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from "react";
+import { cn, initials } from "@/lib/utils";
+import { useDismiss } from "@/lib/hooks";
 
 export function Button({
   className,
@@ -61,12 +62,7 @@ export function Badge({ children, tone = "neutral" }: { children: React.ReactNod
 }
 
 export function Avatar({ src, name, size = 40 }: { src?: string | null; name: string; size?: number }) {
-  const letters = name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((w) => w[0]!.toUpperCase())
-    .join("");
+  const letters = initials(name);
   return (
     <div
       style={{ width: size, height: size, fontSize: size * 0.38 }}
@@ -74,5 +70,59 @@ export function Avatar({ src, name, size = 40 }: { src?: string | null; name: st
     >
       {src ? <img src={src} alt="" className="w-full h-full object-cover" /> : letters || "?"}
     </div>
+  );
+}
+
+/**
+ * Anchored dropdown: `trigger` stays in flow, `children` render in an absolutely positioned panel
+ * that closes on outside click or Escape. The panel is only mounted while `open`.
+ */
+export function Popover({
+  open,
+  onClose,
+  trigger,
+  side = "bottom",
+  align = "left",
+  className,
+  children,
+}: {
+  open: boolean;
+  onClose: () => void;
+  trigger: ReactNode;
+  side?: "top" | "bottom";
+  align?: "left" | "right";
+  className?: string;
+  children: ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  useDismiss(ref, open, onClose);
+  return (
+    <div ref={ref} className="relative">
+      {trigger}
+      {open && (
+        <div
+          className={cn(
+            "absolute z-30 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-xl text-sm",
+            side === "bottom" ? "top-full mt-1" : "bottom-full mb-1",
+            align === "left" ? "left-0" : "right-0",
+            className,
+          )}
+        >
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Row inside a `Popover` menu. */
+export function MenuItem({ className, children, ...props }: ButtonHTMLAttributes<HTMLButtonElement>) {
+  return (
+    <button
+      className={cn("w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-neutral-100 dark:hover:bg-neutral-800 disabled:opacity-40", className)}
+      {...props}
+    >
+      {children}
+    </button>
   );
 }

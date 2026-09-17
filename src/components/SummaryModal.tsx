@@ -9,8 +9,8 @@ import type { MentionResolver } from "@/lib/waMarkdown";
 import { transcript } from "@/lib/exportChat";
 import { LANGUAGES, aiConfigured, summarizeChat } from "@/lib/ai";
 import { useSettings } from "@/store/settings";
-import type { WAMessage } from "@/api/types";
-import { isGroup } from "@/lib/utils";
+import type { ViewMessage, WAMessage } from "@/api/types";
+import { isGroup, errMsg, convKey } from "@/lib/utils";
 
 type ScopeId = "unread" | "today" | "yesterday" | "50" | "100" | "300" | "all";
 
@@ -64,7 +64,7 @@ export function SummaryModal({
   onLoadOlder: () => Promise<void> | void;
   onClose: () => void;
 }) {
-  const key = `${session}:${chatId}`;
+  const key = convKey(session, chatId);
   const prev = lastResult.get(key);
   const defaultLang = useSettings((s) => s.aiTranslateTo);
   const [scope, setScope] = useState<ScopeId>(prev?.scope ?? "100");
@@ -88,7 +88,7 @@ export function SummaryModal({
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  const usable = useMemo(() => messages.filter((m) => !(m as WAMessage & { waiting?: boolean }).waiting && (m.body || m.hasMedia)), [messages]);
+  const usable = useMemo(() => messages.filter((m) => !(m as ViewMessage).waiting && (m.body || m.hasMedia)), [messages]);
   const scopes = useMemo(() => {
     const now = new Date();
     const today = startOfDay(now);
@@ -116,7 +116,7 @@ export function SummaryModal({
       lastResult.set(key, r);
       setResult(r);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setErr(errMsg(e));
     } finally {
       setBusy(false);
     }
@@ -132,7 +132,7 @@ export function SummaryModal({
       lastTasks.set(key, r);
       setTasks(r);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setErr(errMsg(e));
     } finally {
       setTasksBusy(false);
     }
@@ -284,7 +284,7 @@ function TaskRow({ task, session, chatId, chatName, profile, meId }: { task: Ext
       });
       setDone(to);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setErr(errMsg(e));
     } finally {
       setBusy(false);
     }

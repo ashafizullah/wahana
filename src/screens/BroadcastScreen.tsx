@@ -5,7 +5,7 @@ import { useSettings } from "@/store/settings";
 import { SessionSelect } from "@/components/SessionSelect";
 import { useChats, useContacts } from "@/api/queries";
 import { Avatar, Button, Input, Label } from "@/components/ui";
-import { cn, displayId, fileToBase64, isChannel, isGroup } from "@/lib/utils";
+import { cn, displayId, fileToBase64, isChannel, isGroup, errMsg } from "@/lib/utils";
 import { confirm } from "@/components/Confirm";
 import { createBroadcast, deleteBroadcast, listBroadcasts, listItems, retryFailed, setBroadcastStatus, type BroadcastSummary } from "@/store/broadcast";
 import type { Kind } from "@/store/scheduler";
@@ -129,7 +129,7 @@ function NewBroadcast({ session, profile, onClose, onCreated }: { session: strin
       if (startNow) await setBroadcastStatus(id, "running");
       onCreated();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setErr(errMsg(e));
     } finally {
       setBusy(false);
     }

@@ -5,7 +5,7 @@ import { CalendarClock, Plus, Trash2, Pencil, Loader2, X, History, Play, Pause, 
 import { useSettings } from "@/store/settings";
 import { useChats } from "@/api/queries";
 import { Avatar, Button, Input, Label } from "@/components/ui";
-import { cn, displayId, fileToBase64, isChannel, isGroup } from "@/lib/utils";
+import { cn, displayId, fileToBase64, isChannel, isGroup, errMsg } from "@/lib/utils";
 import { stripWaMarkdown } from "@/lib/waMarkdown";
 import { deleteSchedule, getSchedule, listRuns, listSchedules, nextOccurrence, setEnabled, upsertSchedule, type Kind, type Repeat, type Schedule, type TargetType } from "@/store/scheduler";
 import { GRACE_SECONDS } from "@/realtime/useScheduler";
@@ -187,7 +187,7 @@ function ScheduleForm({ session, profile, initial, onClose, onSaved }: { session
       });
       onSaved();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setErr(errMsg(e));
     } finally {
       setBusy(false);
     }

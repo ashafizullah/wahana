@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { Loader2, Search, Users, Megaphone, SquarePen } from "lucide-react";
+import { BellOff, Loader2, Megaphone, Pin, Search, SquarePen, Users } from "lucide-react";
 import { useChats, useSessions, qk } from "@/api/queries";
 import { requireClient, useSettings } from "@/store/settings";
 import { Avatar, Button } from "@/components/ui";
@@ -8,12 +8,11 @@ import { NewChatDialog } from "@/components/NewChatDialog";
 import { useNameResolver } from "@/realtime/useNames";
 import { confirm } from "@/components/Confirm";
 import { useChatPrefs } from "@/store/chatPrefs";
-import { Pin, BellOff } from "lucide-react";
 import { LabelsDialog, useLabelMap, useLabels } from "@/components/LabelsDialog";
 import type { MentionResolver } from "@/lib/waMarkdown";
 import { stripWaMarkdown, replaceMentions } from "@/lib/waMarkdown";
 import type { ChatOverview, WAMessage } from "@/api/types";
-import { cn, displayId, formatTime, isChannel, isGroup } from "@/lib/utils";
+import { cn, displayId, formatTime, isChannel, isGroup, errMsg } from "@/lib/utils";
 import { useQueryClient } from "@tanstack/react-query";
 import { chatKey, unreadFor, useUnread } from "@/store/unread";
 import { useWaWeb } from "@/store/waWeb";
@@ -148,7 +147,7 @@ export function ChatList({
               if (selected === rowMenu.chat.id) onSelect("");
               qc.invalidateQueries({ queryKey: qk.chats(session) });
             } catch (e) {
-              await confirm({ title: "Couldn't delete chat", message: e instanceof Error ? e.message : String(e), confirmLabel: "OK" });
+              await confirm({ title: "Couldn't delete chat", message: errMsg(e), confirmLabel: "OK" });
             }
           }}
           pinned={!!pinned[`${session}:${rowMenu.chat.id}`]}
@@ -166,14 +165,14 @@ export function ChatList({
               togglePref("archived", key, !wasArchived);
               qc.invalidateQueries({ queryKey: qk.chats(session) });
             } catch (e) {
-              await confirm({ title: wasArchived ? "Couldn't unarchive chat" : "Couldn't archive chat", message: e instanceof Error ? e.message : String(e), confirmLabel: "OK" });
+              await confirm({ title: wasArchived ? "Couldn't unarchive chat" : "Couldn't archive chat", message: errMsg(e), confirmLabel: "OK" });
             }
           }}
           onUnread={async () => {
             try {
               await requireClient().markUnread(session, rowMenu.chat.id);
             } catch (e) {
-              await confirm({ title: "Couldn't mark unread", message: e instanceof Error ? e.message : String(e), confirmLabel: "OK" });
+              await confirm({ title: "Couldn't mark unread", message: errMsg(e), confirmLabel: "OK" });
             }
           }}
         />

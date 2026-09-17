@@ -6,7 +6,7 @@ import { useSettings } from "@/store/settings";
 import { useChats } from "@/api/queries";
 import { SessionSelect } from "@/components/SessionSelect";
 import { Avatar, Badge, Button, Input, Label } from "@/components/ui";
-import { cn, displayId, isGroup } from "@/lib/utils";
+import { cn, displayId, isGroup, errMsg } from "@/lib/utils";
 import { aiConfigured } from "@/lib/ai";
 import { aiAutoReply, sampleMessage } from "@/lib/autoReplyAi";
 import { NotConnected } from "@/components/NotConnected";
@@ -229,7 +229,7 @@ function RuleForm({ session, profile, initial, onClose, onSaved }: { session: st
       });
       onSaved();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setErr(errMsg(e));
     } finally {
       setBusy(false);
     }
@@ -243,7 +243,7 @@ function RuleForm({ session, profile, initial, onClose, onSaved }: { session: st
       const text = await aiAutoReply({ instructions, session: sess, chatName: "Customer", isGroup: false, messages: [sampleMessage(test.trim())] });
       setPreview({ busy: false, text });
     } catch (e) {
-      setPreview({ busy: false, error: e instanceof Error ? e.message : String(e) });
+      setPreview({ busy: false, error: errMsg(e) });
     }
   };
 

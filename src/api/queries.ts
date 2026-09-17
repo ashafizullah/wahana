@@ -62,6 +62,11 @@ export function useMediaPrefixes() {
   return autoLoadMimePrefixes({ autoLoadImages, autoLoadStickers, autoLoadVideos, autoLoadAudio });
 }
 
+/** `messages()` options that make WAHA inline media for the auto-load MIME prefixes. */
+export function mediaOpts(prefixes: string[]) {
+  return { downloadMedia: prefixes.length > 0, downloadMediaMimetypes: prefixes };
+}
+
 export function useMessages(session: string, chatId: string | null) {
   const client = useSettings((s) => s.client);
   const prefixes = useMediaPrefixes();
@@ -71,8 +76,7 @@ export function useMessages(session: string, chatId: string | null) {
     queryFn: async () => {
       const list = await requireClient().messages(session, chatId!, {
         limit: 60,
-        downloadMedia: prefixes.length > 0,
-        downloadMediaMimetypes: prefixes,
+        ...mediaOpts(prefixes),
       });
       usePushNames.getState().learn(list);
       // A refetch only returns the newest page; keep older pages the user already scrolled to.

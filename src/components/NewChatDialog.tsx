@@ -5,7 +5,7 @@ import { Dialog } from "@/components/AttachMenu";
 import { Avatar, Button, Input, Label } from "@/components/ui";
 import { useContacts, qk } from "@/api/queries";
 import { requireClient } from "@/store/settings";
-import { cn, displayId } from "@/lib/utils";
+import { cn, displayId, errMsg } from "@/lib/utils";
 
 type Tab = "contacts" | "group" | "join" | "channels";
 
@@ -59,7 +59,7 @@ function ContactsTab({ session, onPick }: { session: string; onPick: (id: string
       if (!r.numberExists) return setErr("This number is not on WhatsApp.");
       onPick((r as { pn?: string }).pn ?? r.chatId ?? `${digits}@c.us`);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setErr(errMsg(e));
     } finally {
       setBusy(false);
     }
@@ -142,7 +142,7 @@ function NewGroupTab({ session, onCreated }: { session: string; onCreated: (id: 
               if (id) onCreated(id);
               else setErr("Group created, but the server did not return its id — refresh the chat list.");
             } catch (e) {
-              setErr(e instanceof Error ? e.message : String(e));
+              setErr(errMsg(e));
             } finally {
               setBusy(false);
             }
@@ -192,7 +192,7 @@ function JoinTab({ session, onJoined }: { session: string; onJoined: (id: string
               qc.invalidateQueries({ queryKey: qk.chats(session) });
               onJoined(r.id);
             } catch (e) {
-              setErr(e instanceof Error ? e.message : String(e));
+              setErr(errMsg(e));
             } finally {
               setBusy(false);
             }

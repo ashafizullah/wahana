@@ -7,7 +7,7 @@ import { activeRules, lastReplyAt, logReply, repliesSince, repliesToday, ruleMat
 import { expandTemplate } from "@/store/quickReplies";
 import { aiAutoReply } from "@/lib/autoReplyAi";
 import { qk } from "@/api/queries";
-import { displayId, isGroup } from "@/lib/utils";
+import { displayId, isGroup, errMsg, convKey } from "@/lib/utils";
 import type { WAMessage } from "@/api/types";
 import type { IncomingMessage } from "@/realtime/useWahaSocket";
 
@@ -42,7 +42,7 @@ export function useAutoReply() {
       const st = useSettings.getState();
       if (st.autoReplyPaused || !st.client) return;
       if (Date.now() / 1000 - m.timestamp > MAX_AGE_S) return;
-      const key = `${session}:${chatId}`;
+      const key = convKey(session, chatId);
       if (inflight.current.has(key)) return; // one at a time per chat: bursts get one answer
       inflight.current.add(key);
       let rule: AutoReplyRule | undefined;
@@ -79,7 +79,7 @@ export function useAutoReply() {
         await c.sendText(session, chatId, reply, rule.quote ? m.id : undefined);
         await logReply({ rule_id: rule.id, session, chat_id: chatId, chat_name: chatName, incoming: body || null, reply, status: "sent", error: null });
       } catch (e) {
-        if (rule) await logReply({ rule_id: rule.id, session, chat_id: chatId, chat_name: chatName, incoming: body || null, reply: null, status: "error", error: e instanceof Error ? e.message : String(e) });
+        if (rule) await logReply({ rule_id: rule.id, session, chat_id: chatId, chat_name: chatName, incoming: body || null, reply: null, status: "error", error: errMsg(e) });
         else console.warn("auto-reply failed", e);
       } finally {
         inflight.current.delete(key);
@@ -114,7 +114,7 @@ export function useAutoReply() {
     const aiReply = async (rule: AutoReplyRule, session: string, chatId: string, chatName: string, m: WAMessage, recent: WAMessage[]) => {
       // Always include the trigger message.
       const messages = [...recent.filter((x) => x.id !== m.id), m].sort((a, b) => a.timestamp - b.timestamp).slice(-rule.ai_context);
-      const language = useChatPrefs.getState().autoTranslate[`${session}:${chatId}`]?.out;
+      const language = useChatPrefs.getState().autoTranslate[convKey(session, chatId)]?.out;
       return aiAutoReply({ instructions: rule.ai_instructions, session, chatName, isGroup: isGroup(chatId), messages, language });
     };
 

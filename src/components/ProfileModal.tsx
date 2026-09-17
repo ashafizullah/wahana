@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { X, Camera, Trash2, Loader2, Check, Pencil } from "lucide-react";
 import { requireClient } from "@/store/settings";
 import { Avatar, Button, Input, Label } from "@/components/ui";
-import { fileToBase64 } from "@/lib/utils";
+import { fileToBase64, errMsg } from "@/lib/utils";
 import { qk } from "@/api/queries";
 
 /** Edit the WhatsApp profile of a session: picture, display name, about. */
@@ -41,7 +41,7 @@ export function ProfileModal({ session, onClose }: { session: string; onClose: (
       await qc.invalidateQueries({ queryKey: qk.sessions });
       setMsg({ ok: true, text: done });
     } catch (e) {
-      setMsg({ ok: false, text: e instanceof Error ? e.message : String(e) });
+      setMsg({ ok: false, text: errMsg(e) });
     } finally {
       setBusy(null);
     }

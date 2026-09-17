@@ -8,6 +8,11 @@ export type WAMessage = Schemas["WAMessage"] & {
   /** Present in newer WAHA builds; used to route realtime events. */
   chatId?: string;
 };
+/**
+ * A message as rendered in the conversation: the API shape plus client-side flags
+ * (`revoked` = deleted for everyone, `waiting` = placeholder until the real message arrives).
+ */
+export type ViewMessage = WAMessage & { revoked?: boolean; waiting?: boolean };
 export type WAMedia = Schemas["WAMedia"];
 /** Contact as returned by `/api/contacts` and `/api/contacts/all` (GOWS). */
 export interface Contact {

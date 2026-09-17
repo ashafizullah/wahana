@@ -1,20 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { Paperclip, Image as ImageIcon, FileText, Mic, MapPin, Contact, BarChart3, X, Loader2, Square, Plus, Trash2 } from "lucide-react";
-import { Button, Input, Label } from "@/components/ui";
-import { cn } from "@/lib/utils";
+import { Button, Input, Label, MenuItem, Popover } from "@/components/ui";
+import { cn, errMsg } from "@/lib/utils";
 
 export type AttachKind = "image" | "file" | "voice" | "location" | "contact" | "poll";
 
 /** Paperclip popover listing the attachment types. */
 export function AttachMenu({ disabled, onPick }: { disabled?: boolean; onPick: (k: AttachKind) => void }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => ref.current && !ref.current.contains(e.target as Node) && setOpen(false);
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [open]);
 
   const items: { k: AttachKind; icon: typeof Paperclip; label: string }[] = [
     { k: "image", icon: ImageIcon, label: "Photo / video" },
@@ -26,28 +19,30 @@ export function AttachMenu({ disabled, onPick }: { disabled?: boolean; onPick: (
   ];
 
   return (
-    <div ref={ref} className="relative">
-      <Button variant="ghost" onClick={() => setOpen((o) => !o)} disabled={disabled} title="Attach">
-        {disabled ? <Loader2 size={18} className="animate-spin" /> : <Paperclip size={18} />}
-      </Button>
-      {open && (
-        <div className="absolute bottom-full left-0 mb-2 w-48 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-xl py-1 text-sm z-20">
-          {items.map((it) => (
-            <button
-              key={it.k}
-              onClick={() => {
-                setOpen(false);
-                onPick(it.k);
-              }}
-              className="w-full flex items-center gap-2.5 px-3 py-1.5 text-left hover:bg-neutral-100 dark:hover:bg-neutral-800"
-            >
-              <it.icon size={15} className="text-wa-dark" />
-              {it.label}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
+    <Popover
+      open={open}
+      onClose={() => setOpen(false)}
+      side="top"
+      className="w-48 py-1"
+      trigger={
+        <Button variant="ghost" onClick={() => setOpen((o) => !o)} disabled={disabled} title="Attach">
+          {disabled ? <Loader2 size={18} className="animate-spin" /> : <Paperclip size={18} />}
+        </Button>
+      }
+    >
+      {items.map((it) => (
+        <MenuItem
+          key={it.k}
+          onClick={() => {
+            setOpen(false);
+            onPick(it.k);
+          }}
+        >
+          <it.icon size={15} className="text-wa-dark" />
+          {it.label}
+        </MenuItem>
+      ))}
+    </Popover>
   );
 }
 
@@ -84,7 +79,7 @@ async function guard(fn: () => Promise<void>, setBusy: (b: boolean) => void, set
     await fn();
     return true;
   } catch (e) {
-    setErr(e instanceof Error ? e.message : String(e));
+    setErr(errMsg(e));
     return false;
   } finally {
     setBusy(false);
@@ -118,7 +113,7 @@ export function VoiceRecorder({ onSend, onClose }: { onSend: (blob: Blob, mime: 
       setSecs(0);
       setBlob(null);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setErr(errMsg(e));
     }
   };
 

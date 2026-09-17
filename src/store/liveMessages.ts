@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { load, type Store } from "@tauri-apps/plugin-store";
 import type { WAMessage } from "@/api/types";
+import { convKey } from "@/lib/utils";
 
 /**
  * Messages received live over the WebSocket, kept locally so they survive a
@@ -46,7 +47,7 @@ export const useLiveMessages = create<State>((set, get) => ({
     set({ byChat });
   },
   add(session, chatId, m) {
-    const key = `${session}:${chatId}`;
+    const key = convKey(session, chatId);
     set((st) => {
       const cur = st.byChat[key] ?? [];
       const next = [slim(m), ...cur.filter((x) => x.id !== m.id)].slice(0, PER_CHAT);

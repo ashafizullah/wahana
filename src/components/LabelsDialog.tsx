@@ -6,7 +6,7 @@ import { aiConfigured, suggestLabels, type LabelSuggestion } from "@/lib/ai";
 import { transcript } from "@/lib/exportChat";
 import { useNameResolver } from "@/realtime/useNames";
 import { Button, Input } from "@/components/ui";
-import { cn } from "@/lib/utils";
+import { cn, errMsg } from "@/lib/utils";
 import { confirm } from "@/components/Confirm";
 
 export const LABEL_COLORS = ["#ff9485", "#64c4ff", "#ffd429", "#dfaef0", "#99b6c1", "#55ccb3", "#ff9dff", "#d3a91b", "#ffc5c7", "#a9c4a0"];
@@ -63,7 +63,7 @@ export function LabelsDialog({ session, chatId, chatName, onClose }: { session: 
       if (!usable.length) throw new Error("No recent messages to classify.");
       setAi(await suggestLabels(transcript(usable, resolveName), { chatName, existing: (labels ?? []).map((l) => l.name), language: useSettings.getState().aiTranslateTo }));
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setErr(errMsg(e));
     } finally {
       setAiBusy(false);
     }
@@ -115,7 +115,7 @@ export function LabelsDialog({ session, chatId, chatName, onClose }: { session: 
                 <button key={c} onClick={() => setNewColor(c)} className={cn("w-5 h-5 rounded-full border-2", newColor === c ? "border-neutral-800 dark:border-white" : "border-transparent")} style={{ background: c }} />
               ))}
             </div>
-            <Button size="sm" variant="secondary" disabled={!newName.trim()} onClick={async () => { try { await requireClient().createLabel(session, newName.trim(), newColor); setNewName(""); invalidate(); } catch (e) { setErr(e instanceof Error ? e.message : String(e)); } }}><Plus size={12} /></Button>
+            <Button size="sm" variant="secondary" disabled={!newName.trim()} onClick={async () => { try { await requireClient().createLabel(session, newName.trim(), newColor); setNewName(""); invalidate(); } catch (e) { setErr(errMsg(e)); } }}><Plus size={12} /></Button>
           </div>
           {aiConfigured() && (
             <div className="rounded-lg bg-neutral-50 dark:bg-neutral-800/60 px-3 py-2 text-xs space-y-1.5">
@@ -161,7 +161,7 @@ export function LabelsDialog({ session, chatId, chatName, onClose }: { session: 
           {err && <div className="text-xs text-red-600 selectable">{err}</div>}
           <div className="flex justify-end gap-2">
             <Button variant="secondary" onClick={onClose}>Cancel</Button>
-            <Button disabled={busy || selected === null} onClick={async () => { setBusy(true); try { await requireClient().setChatLabels(session, chatId, [...sel]); invalidate(); onClose(); } catch (e) { setErr(e instanceof Error ? e.message : String(e)); } finally { setBusy(false); } }}>
+            <Button disabled={busy || selected === null} onClick={async () => { setBusy(true); try { await requireClient().setChatLabels(session, chatId, [...sel]); invalidate(); onClose(); } catch (e) { setErr(errMsg(e)); } finally { setBusy(false); } }}>
               {busy ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />} Save
             </Button>
           </div>

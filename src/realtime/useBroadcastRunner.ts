@@ -4,6 +4,7 @@ import { useSettings } from "@/store/settings";
 import { getBroadcast, listRunning, markItem, nextPending, setBroadcastStatus } from "@/store/broadcast";
 import { expandTemplate } from "@/store/quickReplies";
 import { sendNotification } from "@tauri-apps/plugin-notification";
+import { errMsg } from "@/lib/utils";
 
 /** Pause a broadcast after this many recipients fail in a row (session down, rate-limited…). */
 export const MAX_CONSECUTIVE_ERRORS = 5;
@@ -54,7 +55,7 @@ export function useBroadcastRunner() {
             await markItem(item.id, "sent", undefined, res?.id);
             errorStreak.current[b.id] = 0;
           } catch (e) {
-            await markItem(item.id, "error", e instanceof Error ? e.message : String(e));
+            await markItem(item.id, "error", errMsg(e));
             const streak = (errorStreak.current[b.id] ?? 0) + 1;
             errorStreak.current[b.id] = streak;
             if (streak >= MAX_CONSECUTIVE_ERRORS) {
