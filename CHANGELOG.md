@@ -1,10 +1,14 @@
 # Changelog
 
-## Unreleased
+## 0.4.8 — 2026-09-18
 
 ### Fixed
 
 - "Draft with AI" (broadcast, status) wrote in the _Target language_ (the other side's) instead of _My language_.
+
+### Changed
+
+- README and release notes explain the macOS Gatekeeper "damaged" message and the `xattr -cr` fix, and which build (`aarch64` / `x64`) to pick.
 
 ## 0.4.7 — 2026-09-18
 
