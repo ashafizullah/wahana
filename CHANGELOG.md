@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- Internal: `SettingsScreen.tsx` (1,180 lines) split into one module per section under `src/screens/settings/`; no behaviour change.
+
 ## 0.4.6 — 2026-09-17
 
 ### Added

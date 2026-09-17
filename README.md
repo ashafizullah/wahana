@@ -143,7 +143,7 @@ npx openapi-typescript@7 spec/waha-openapi.fixed.json -o src/api/schema.d.ts
 src/api/         typed WAHA client, query hooks, generated OpenAPI types
 src/realtime/    WebSocket, presence, scheduler & broadcast runners, updater
 src/store/       zustand stores (settings, unread, reactions, receipts, …) and SQLite data layers
-src/screens/     Chats (chats/ = list, header, search, bubbles, composer, paging/scroll hooks), Status, Scheduler, Broadcast, Sessions, Events, Settings
+src/screens/     Chats (chats/ = list, header, search, bubbles, composer, paging/scroll hooks), Status, Scheduler, Broadcast, Sessions, Events, Settings (settings/ = one file per section)
 src/components/  dialogs, menus, media, group tools
 src/lib/         WhatsApp markdown, AI client, media cache, secrets, backup, export
 src-tauri/       Rust shell: keychain, media cache, tray, SQLite migrations
