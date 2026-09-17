@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { load, type Store } from "@tauri-apps/plugin-store";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 
 /**
  * WhatsApp Web sessions: plain web.whatsapp.com logins rendered in native child webviews,
@@ -28,6 +29,8 @@ interface State {
   sizes: Record<string, number>;
   /** Rows the split view is laid out in; 0 = as few as fit. More rows are added when panes would get too narrow. */
   rows: number;
+  /** Unread chats per session, as reported by each webview from its "(N) WhatsApp" tab title. Not persisted. */
+  unread: Record<string, number>;
   hydrate: () => Promise<void>;
   add: (name?: string) => WaWebSession;
   rename: (id: string, name: string) => void;
@@ -59,10 +62,14 @@ export const useWaWeb = create<State>((set, get) => ({
   panes: [],
   sizes: {},
   rows: 0,
+  unread: {},
   async hydrate() {
     invoke<boolean>("wa_web_isolation_supported")
       .then((isolated) => set({ isolated }))
       .catch(console.error);
+    listen<{ id: string; count: number }>("waweb-unread", ({ payload }) =>
+      set((st) => (st.unread[payload.id] === payload.count ? st : { unread: { ...st.unread, [payload.id]: payload.count } })),
+    ).catch(console.error);
     const s = await store();
     const sessions = (await s.get<WaWebSession[]>("sessions")) ?? [];
     const has = (id: string) => sessions.some((x) => x.id === id);
@@ -99,9 +106,10 @@ export const useWaWeb = create<State>((set, get) => ({
       const panes = st.panes.filter((p) => p !== id);
       const active = st.active === id ? (panes[0] ?? null) : st.active;
       const { [id]: _, ...sizes } = st.sizes;
+      const { [id]: _u, ...unread } = st.unread;
       const next = pick({ ...st, sessions: st.sessions.filter((s) => s.id !== id), active, panes, sizes });
       persist(next);
-      return next;
+      return { ...next, unread };
     });
   },
   setActive(id) {
@@ -180,3 +188,6 @@ export const useWaWeb = create<State>((set, get) => ({
     });
   },
 }));
+
+/** Unread chats across every WhatsApp Web session. */
+export const totalWaWebUnread = (unread: Record<string, number>) => Object.values(unread).reduce((a, b) => a + b, 0);

@@ -12,7 +12,7 @@ use std::{
 };
 use tauri::{
     webview::{DownloadEvent, NewWindowResponse},
-    AppHandle, LogicalPosition, LogicalSize, Manager, WebviewBuilder, WebviewUrl,
+    AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, Webview, WebviewBuilder, WebviewUrl,
 };
 use tauri_plugin_notification::NotificationExt;
 
@@ -256,6 +256,28 @@ fn wa_web_create(
     }
 }
 
+/// Payload of the `waweb-unread` event sent to the main webview.
+#[derive(Clone, serde::Serialize)]
+pub struct WaWebUnread {
+    pub id: String,
+    pub count: u32,
+}
+
+/// Called by the WhatsApp Web child webview (see the init script) whenever its unread
+/// count changes. The session id is taken from the calling webview's label, never from
+/// the page, so one session can't spoof another.
+#[tauri::command]
+pub fn wa_web_report_unread(app: AppHandle, webview: Webview, count: u32) -> Result<(), String> {
+    let id = webview
+        .label()
+        .strip_prefix("waweb-")
+        .ok_or("not a WhatsApp Web webview")?
+        .to_string();
+    wa_web_log(&app, format!("unread {id}: {count}"));
+    app.emit_to("main", "waweb-unread", WaWebUnread { id, count })
+        .map_err(|e| e.to_string())
+}
+
 /// Hide (not destroy) a session's webview when it is not on screen.
 #[tauri::command]
 pub fn wa_web_hide(app: AppHandle, id: String) -> Result<(), String> {
@@ -324,6 +346,9 @@ fn wa_web_data_dir(app: &AppHandle, id: &str) -> Result<PathBuf, String> {
 /// would silently vanish. Replace the API with a thin shim that forwards to the OS
 /// notification center through Tauri's notification plugin. Only the `Notification`
 /// global is touched; the page itself is left as is.
+///
+/// The script also watches the tab title — WhatsApp Web keeps it as "(N) WhatsApp" —
+/// and reports N to the host so the pane's title bar and the app badge can show it.
 const WA_WEB_NOTIFICATION_SHIM: &str = r#"
 (() => {
   window.__wahanaSessionName = __WA_SESSION_NAME__;
@@ -332,6 +357,30 @@ const WA_WEB_NOTIFICATION_SHIM: &str = r#"
     if (!t) return;
     t.invoke("plugin:notification|notify", { options: { title: `${title} · ${window.__wahanaSessionName}`, body } }).catch(() => {});
   };
+  let lastUnread = -1;
+  const reportUnread = () => {
+    const t = window.__TAURI_INTERNALS__;
+    if (!t) return;
+    const m = /^\((\d+)\)/.exec(document.title ?? "");
+    const count = m ? Number(m[1]) : 0;
+    if (count === lastUnread) return;
+    lastUnread = count;
+    t.invoke("wa_web_report_unread", { count }).catch(() => {});
+  };
+  const watchTitle = () => {
+    const el = document.querySelector("title");
+    if (!el) return false;
+    new MutationObserver(reportUnread).observe(el, { childList: true, characterData: true, subtree: true });
+    reportUnread();
+    return true;
+  };
+  if (!watchTitle()) {
+    // <title> isn't in the DOM yet at document-start; wait for <head> to fill in.
+    const headObserver = new MutationObserver(() => {
+      if (watchTitle()) headObserver.disconnect();
+    });
+    headObserver.observe(document.documentElement, { childList: true, subtree: true });
+  }
   class WahanaNotification extends EventTarget {
     static permission = "granted";
     static maxActions = 0;

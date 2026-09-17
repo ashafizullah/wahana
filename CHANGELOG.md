@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- WhatsApp Web: unread count per session — shown on the pane's title bar, in the session picker, and included in the dock/taskbar badge and tray tooltip.
+
 ### Changed
 
 - Internal: `SettingsScreen.tsx` (1,180 lines) split into one module per section under `src/screens/settings/`; no behaviour change.

@@ -167,6 +167,7 @@ function WaWebPane({
   const movePane = useWaWeb((s) => s.movePane);
   const movePaneTo = useWaWeb((s) => s.movePaneTo);
   const setActive = useWaWeb((s) => s.setActive);
+  const unread = useWaWeb((s) => s.unread[session.id] ?? 0);
   const [name, setName] = useState(session.name);
   const [error, setError] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState(false);
@@ -269,6 +270,14 @@ function WaWebPane({
           className="flex-1 min-w-0 bg-transparent px-1.5 py-0.5 rounded outline-none focus:bg-white dark:focus:bg-neutral-800 font-medium cursor-text"
           title="Session name (click to rename)"
         />
+        {unread > 0 && (
+          <span
+            className="min-w-[18px] h-[18px] px-1 rounded-full bg-wa text-[10px] font-bold text-wa-teal grid place-items-center shrink-0"
+            title={`${unread} unread chats`}
+          >
+            {unread > 99 ? "99+" : unread}
+          </span>
+        )}
         <Button
           variant="ghost"
           size="sm"

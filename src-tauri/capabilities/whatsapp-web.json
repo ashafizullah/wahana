@@ -1,11 +1,18 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "whatsapp-web",
-  "description": "WhatsApp Web child webview (remote): may only post OS notifications",
+  "description": "WhatsApp Web child webview (remote): may only post OS notifications and report its unread count",
   "local": false,
   "remote": {
-    "urls": ["https://web.whatsapp.com/*"]
+    "urls": [
+      "https://web.whatsapp.com/*"
+    ]
   },
-  "webviews": ["waweb-*"],
-  "permissions": ["notification:allow-notify"]
+  "webviews": [
+    "waweb-*"
+  ],
+  "permissions": [
+    "notification:allow-notify",
+    "allow-wa-web-report-unread"
+  ]
 }

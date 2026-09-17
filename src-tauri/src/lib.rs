@@ -79,7 +79,8 @@ pub fn run() {
             waweb::wa_web_isolation_supported,
             waweb::wa_web_set_bounds,
             waweb::wa_web_hide,
-            waweb::wa_web_remove
+            waweb::wa_web_remove,
+            waweb::wa_web_report_unread
         ])
         .setup(|app| {
             let show = MenuItem::with_id(app, "show", "Open Wahana", true, None::<&str>)?;

@@ -82,7 +82,7 @@ You need:
 
 - Plain, unmodified web.whatsapp.com embedded next to your WAHA sessions in the same picker — one place for everything
 - Several WhatsApp Web accounts, each with its own isolated login — show any number of them side by side in one split view, drag the dividers to give one more room (double-click to even them out), drag title bars to reorder, lay them out in 1–4 rows, hide, rename / remove at will; when the window is too narrow the panes wrap onto extra rows
-- Notifications reach the OS notification center, downloads land in ~/Downloads, links open in your browser, calls work
+- Notifications reach the OS notification center, unread counts show on each pane and in the app badge, downloads land in ~/Downloads, links open in your browser, calls work
 
 **App**
 

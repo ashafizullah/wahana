@@ -9,6 +9,18 @@
     "main"
   ],
   "permissions": [
+    "allow-save-api-key",
+    "allow-get-api-key",
+    "allow-delete-api-key",
+    "allow-media-cache-has",
+    "allow-media-cache-get",
+    "allow-media-cache-put",
+    "allow-media-cache-stats",
+    "allow-media-cache-clear",
+    "allow-wa-web-isolation-supported",
+    "allow-wa-web-set-bounds",
+    "allow-wa-web-hide",
+    "allow-wa-web-remove",
     "core:default",
     "opener:default",
     "store:default",

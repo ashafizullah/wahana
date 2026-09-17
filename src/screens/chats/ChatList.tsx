@@ -267,6 +267,7 @@ export function SessionPicker({ sessions }: { sessions: { name: string; status: 
   const setActive = useWaWeb((s) => s.setActive);
   const add = useWaWeb((s) => s.add);
   const isolated = useWaWeb((s) => s.isolated);
+  const waWebUnread = useWaWeb((s) => s.unread);
   const canAddWaWeb = isolated || waWeb.length === 0;
   const dot = (status: string) => (status === "WORKING" ? "bg-emerald-500" : status === "STOPPED" ? "bg-neutral-400" : "bg-amber-400");
   const current = sessions.find((s) => s.name === value);
@@ -301,6 +302,7 @@ export function SessionPicker({ sessions }: { sessions: { name: string; status: 
           {waWeb.map((s) => (
             <option key={s.id} value={`waweb:${s.id}`}>
               {s.name}
+              {waWebUnread[s.id] ? ` · ${waWebUnread[s.id]} unread` : ""}
             </option>
           ))}
           <option value={WAWEB_NEW} disabled={!canAddWaWeb}>

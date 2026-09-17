@@ -26,7 +26,7 @@ import { useBroadcastRunner } from "@/realtime/useBroadcastRunner";
 import { pruneLogs } from "@/store/scheduler";
 import { useAutoLabel } from "@/realtime/useAutoLabel";
 import { useScheduler } from "@/realtime/useScheduler";
-import { useWaWeb } from "@/store/waWeb";
+import { totalWaWebUnread, useWaWeb } from "@/store/waWeb";
 import { useAutoReply } from "@/realtime/useAutoReply";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { ConfirmHost } from "@/components/Confirm";
@@ -66,7 +66,8 @@ export default function App() {
   const hydrateCalls = useCalls((s) => s.hydrate);
   const hydrateLive = useLiveMessages((s) => s.hydrate);
   const hydrateWaWeb = useWaWeb((s) => s.hydrate);
-  const unread = totalUnread(unreadCounts);
+  const waWebUnread = useWaWeb((s) => s.unread);
+  const unread = totalUnread(unreadCounts) + totalWaWebUnread(waWebUnread);
   useBadge(unread);
   const updater = useUpdater();
   useScheduler();
