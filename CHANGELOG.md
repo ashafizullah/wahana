@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.5 — 2026-09-17
+
+### Changed
+
+- Windows: the setup wizard (NSIS `.exe` header/sidebar and MSI banner/dialog) now shows the Wahana logo instead of the default installer artwork.
+
 ## 0.4.4 — 2026-09-17
 
 ### Fixed
