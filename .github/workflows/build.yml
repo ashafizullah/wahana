@@ -48,7 +48,7 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "Wahana ${{ github.ref_name }}"
-          releaseBody: "See the assets below to download and install this version. macOS builds are not notarized: right-click → Open on first launch."
+          releaseBody: "See the assets below to download and install this version (macOS: `aarch64` for Apple Silicon, `x64` for Intel). macOS builds are not notarized, so Gatekeeper may say the app is damaged — after copying it to Applications run `xattr -cr /Applications/Wahana.app` once, then open it normally."
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}

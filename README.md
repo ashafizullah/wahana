@@ -25,7 +25,7 @@
 
 Grab the latest `.dmg` (macOS, Apple Silicon or Intel) or `.msi` (Windows x64) from the [Releases page](https://github.com/ashafizullah/wahana/releases/latest). The app checks for signed updates automatically.
 
-> macOS: the build is not notarized yet — on first launch, right-click the app → **Open**, or run `xattr -dr com.apple.quarantine /Applications/Wahana.app`.
+> macOS: the build is not notarized yet, so Gatekeeper may claim the app "is damaged and can't be opened". It isn't — after copying it to Applications, run `xattr -cr /Applications/Wahana.app` once in Terminal, then open it normally. Pick `aarch64` for Apple Silicon (M1–M4) and `x64` for Intel Macs.
 
 ## How it works
 
