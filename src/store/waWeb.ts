@@ -24,6 +24,8 @@ interface State {
   active: string | null;
   /** Sessions shown side by side while in WhatsApp Web mode (ordered, left → right). */
   panes: string[];
+  /** Relative width of each pane (flex-grow weight); a missing entry means 1. */
+  sizes: Record<string, number>;
   hydrate: () => Promise<void>;
   add: (name?: string) => WaWebSession;
   rename: (id: string, name: string) => void;
@@ -34,18 +36,25 @@ interface State {
   /** Take a session out of the split view; leaving WhatsApp Web mode when none is left. */
   hidePane: (id: string) => void;
   movePane: (id: string, dir: -1 | 1) => void;
+  /** Move `delta` weight from pane `b` to pane `a` (negative: the other way), keeping both ≥ minWeight. */
+  resizePanes: (a: string, b: string, delta: number, minWeight: number) => void;
+  /** Back to equal widths. */
+  resetSizes: () => void;
 }
 
-type Persisted = Pick<State, "sessions" | "active" | "panes">;
+type Persisted = Pick<State, "sessions" | "active" | "panes" | "sizes">;
 const persist = (st: Persisted) =>
-  void store().then((s) => Promise.all([s.set("sessions", st.sessions), s.set("active", st.active), s.set("panes", st.panes)]));
-const pick = (st: State): Persisted => ({ sessions: st.sessions, active: st.active, panes: st.panes });
+  void store().then((s) =>
+    Promise.all([s.set("sessions", st.sessions), s.set("active", st.active), s.set("panes", st.panes), s.set("sizes", st.sizes)]),
+  );
+const pick = (st: State): Persisted => ({ sessions: st.sessions, active: st.active, panes: st.panes, sizes: st.sizes });
 
 export const useWaWeb = create<State>((set, get) => ({
   sessions: [],
   isolated: true,
   active: null,
   panes: [],
+  sizes: {},
   async hydrate() {
     invoke<boolean>("wa_web_isolation_supported")
       .then((isolated) => set({ isolated }))
@@ -57,13 +66,16 @@ export const useWaWeb = create<State>((set, get) => ({
     if (active && !has(active)) active = null;
     let panes = ((await s.get<string[]>("panes")) ?? []).filter(has);
     if (active && !panes.includes(active)) panes = [...panes, active];
-    set({ sessions, active, panes });
+    const sizes = Object.fromEntries(
+      Object.entries((await s.get<Record<string, number>>("sizes")) ?? {}).filter(([id, w]) => has(id) && Number.isFinite(w) && w > 0),
+    );
+    set({ sessions, active, panes, sizes });
   },
   add(name) {
     const n = get().sessions.length + 1;
     const session = { id: crypto.randomUUID().replace(/-/g, ""), name: name ?? `WhatsApp Web ${n}` };
     set((st) => {
-      const next = { sessions: [...st.sessions, session], active: session.id, panes: [...st.panes, session.id] };
+      const next = pick({ ...st, sessions: [...st.sessions, session], active: session.id, panes: [...st.panes, session.id] });
       persist(next);
       return next;
     });
@@ -81,7 +93,8 @@ export const useWaWeb = create<State>((set, get) => ({
     set((st) => {
       const panes = st.panes.filter((p) => p !== id);
       const active = st.active === id ? (panes[0] ?? null) : st.active;
-      const next = { sessions: st.sessions.filter((s) => s.id !== id), active, panes };
+      const { [id]: _, ...sizes } = st.sizes;
+      const next = { sessions: st.sessions.filter((s) => s.id !== id), active, panes, sizes };
       persist(next);
       return next;
     });
@@ -119,6 +132,25 @@ export const useWaWeb = create<State>((set, get) => ({
       const panes = [...st.panes];
       [panes[i], panes[j]] = [panes[j]!, panes[i]!];
       const next = pick({ ...st, panes });
+      persist(next);
+      return next;
+    });
+  },
+  resizePanes(a, b, delta, minWeight) {
+    set((st) => {
+      const wa = st.sizes[a] ?? 1;
+      const wb = st.sizes[b] ?? 1;
+      // Neither pane may shrink below minWeight; clamp the transfer accordingly.
+      const d = Math.max(minWeight - wa, Math.min(wb - minWeight, delta));
+      if (d === 0) return st;
+      const next = pick({ ...st, sizes: { ...st.sizes, [a]: wa + d, [b]: wb - d } });
+      persist(next);
+      return next;
+    });
+  },
+  resetSizes() {
+    set((st) => {
+      const next = pick({ ...st, sizes: {} });
       persist(next);
       return next;
     });

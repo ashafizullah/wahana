@@ -24,7 +24,7 @@ export function usePaneWidth(key: string, initial: number, min: number, max: num
 }
 
 /** Vertical drag handle placed between two panes. */
-export function ResizeHandle({ onDrag, onReset }: { onDrag: (dx: number) => void; onReset?: () => void }) {
+export function ResizeHandle({ onDrag, onReset, className }: { onDrag: (dx: number) => void; onReset?: () => void; className?: string }) {
   const [active, setActive] = useState(false);
   const last = useRef(0);
   return (
@@ -55,6 +55,7 @@ export function ResizeHandle({ onDrag, onReset }: { onDrag: (dx: number) => void
       className={cn(
         "relative w-1 shrink-0 cursor-col-resize group",
         "after:absolute after:inset-y-0 after:-left-1 after:-right-1 after:content-['']", // wider hit area
+        className,
       )}
       title="Drag to resize · double-click to reset"
     >

@@ -1,16 +1,26 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ChevronLeft, ChevronRight, Columns2, Loader2, Plus, Trash2, X } from "lucide-react";
 import { useWaWeb, type WaWebSession } from "@/store/waWeb";
 import { confirm } from "@/components/Confirm";
 import { Button } from "@/components/ui";
+import { ResizeHandle } from "@/components/ResizeHandle";
 import { cn } from "@/lib/utils";
 import { useLatest } from "@/lib/hooks";
+
+/** Narrowest a pane may get; when a row can't fit every pane this wide, panes wrap onto more rows. */
+const MIN_PANE_WIDTH = 400;
+const HANDLE_WIDTH = 8;
 
 /**
  * WhatsApp Web mode: every session in `panes` side by side, each a native (remote,
  * IPC-less) child webview positioned over its placeholder. Webviews are hidden — not
  * destroyed — when a pane unmounts, so logins survive switching away.
+ *
+ * Panes share a row by weight (`sizes`); dragging the handle between two panes moves
+ * width from one to the other. Native webviews can't be clipped, so instead of
+ * scrolling the row wraps into as many rows as needed to keep every pane at least
+ * MIN_PANE_WIDTH wide and fully on screen.
  */
 export function WhatsAppWebScreen({ header }: { header: React.ReactNode }) {
   const sessions = useWaWeb((s) => s.sessions);
@@ -20,6 +30,19 @@ export function WhatsAppWebScreen({ header }: { header: React.ReactNode }) {
   const add = useWaWeb((s) => s.add);
   const shown = panes.map((id) => sessions.find((s) => s.id === id)).filter((s): s is WaWebSession => !!s);
   const hidden = sessions.filter((s) => !panes.includes(s.id));
+
+  const gridRef = useRef<HTMLDivElement>(null);
+  const [gridWidth, setGridWidth] = useState(0);
+  useEffect(() => {
+    const el = gridRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([entry]) => setGridWidth(entry?.contentRect.width ?? 0));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const cols = Math.max(1, Math.min(shown.length, Math.floor((gridWidth + HANDLE_WIDTH) / (MIN_PANE_WIDTH + HANDLE_WIDTH))));
+  const rows: WaWebSession[][] = [];
+  for (let i = 0; i < shown.length; i += cols) rows.push(shown.slice(i, i + cols));
 
   return (
     <div className="flex-1 min-w-0 flex flex-col bg-white dark:bg-neutral-900">
@@ -50,14 +73,47 @@ export function WhatsAppWebScreen({ header }: { header: React.ReactNode }) {
           </select>
         </label>
       </div>
-      <div className="flex-1 min-h-0 flex divide-x divide-neutral-200 dark:divide-neutral-800">
-        {shown.map((s, i) => (
-          <WaWebPane key={s.id} session={s} isActive={s.id === active} index={i} count={shown.length} />
+      <div ref={gridRef} className="flex-1 min-h-0 flex flex-col divide-y divide-neutral-200 dark:divide-neutral-800">
+        {rows.map((row, r) => (
+          <PaneRow key={r} row={row} offset={r * cols} count={shown.length} active={active} />
         ))}
         {shown.length === 0 && (
           <div className="flex-1 grid place-items-center text-sm text-neutral-500">No WhatsApp Web session in view — add one above.</div>
         )}
       </div>
+    </div>
+  );
+}
+
+function PaneRow({ row, offset, count, active }: { row: WaWebSession[]; offset: number; count: number; active: string | null }) {
+  const sizes = useWaWeb((s) => s.sizes);
+  const resizePanes = useWaWeb((s) => s.resizePanes);
+  const resetSizes = useWaWeb((s) => s.resetSizes);
+  const rowRef = useRef<HTMLDivElement>(null);
+  const totalWeight = row.reduce((sum, s) => sum + (sizes[s.id] ?? 1), 0);
+  /** Convert a pixel drag into weight units: the row's pane width (handles excluded) carries `totalWeight`. */
+  const onDrag = (a: string, b: string, dx: number) => {
+    const el = rowRef.current;
+    if (!el) return;
+    const paneWidth = el.clientWidth - HANDLE_WIDTH * (row.length - 1);
+    if (paneWidth <= 0) return;
+    const perPx = totalWeight / paneWidth;
+    resizePanes(a, b, dx * perPx, MIN_PANE_WIDTH * perPx);
+  };
+  return (
+    <div ref={rowRef} className="flex-1 min-h-0 flex">
+      {row.map((s, i) => (
+        <Fragment key={s.id}>
+          {i > 0 && (
+            <ResizeHandle
+              className="w-2 bg-neutral-100 dark:bg-neutral-800"
+              onDrag={(dx) => onDrag(row[i - 1]!.id, s.id, dx)}
+              onReset={resetSizes}
+            />
+          )}
+          <WaWebPane session={s} isActive={s.id === active} index={offset + i} count={count} weight={sizes[s.id] ?? 1} />
+        </Fragment>
+      ))}
     </div>
   );
 }
@@ -68,7 +124,19 @@ const syncAllPanes = () => window.dispatchEvent(new Event(SYNC_EVENT));
 /** After a removal the store has already dropped the pane, so a plain sync only reaches survivors. */
 const syncOtherPanes = () => setTimeout(syncAllPanes, 0);
 
-function WaWebPane({ session, isActive, index, count }: { session: WaWebSession; isActive: boolean; index: number; count: number }) {
+function WaWebPane({
+  session,
+  isActive,
+  index,
+  count,
+  weight,
+}: {
+  session: WaWebSession;
+  isActive: boolean;
+  index: number;
+  count: number;
+  weight: number;
+}) {
   const rename = useWaWeb((s) => s.rename);
   const remove = useWaWeb((s) => s.remove);
   const hidePane = useWaWeb((s) => s.hidePane);
@@ -121,7 +189,11 @@ function WaWebPane({ session, isActive, index, count }: { session: WaWebSession;
   }, [index, count, session.name]);
 
   return (
-    <div className="flex-1 min-w-0 flex flex-col" onMouseDown={() => !isActive && setActive(session.id)}>
+    <div
+      className="flex flex-col"
+      style={{ flex: `${weight} 1 0px`, minWidth: MIN_PANE_WIDTH }}
+      onMouseDown={() => !isActive && setActive(session.id)}
+    >
       <div
         className={cn(
           "flex items-center gap-1 px-2 py-1 border-b border-neutral-200 dark:border-neutral-800 text-xs",

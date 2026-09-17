@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- WhatsApp Web split view: drag the divider between two panes to resize them (double-click to reset to equal widths). Sizes are remembered.
+
+### Changed
+
+- WhatsApp Web split view is responsive: panes never shrink below 400px; when the window can't fit them all in one row they wrap onto additional rows instead of squeezing.
+
 ## 0.4.5 — 2026-09-17
 
 ### Changed
