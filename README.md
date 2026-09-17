@@ -40,6 +40,7 @@ You need:
 ## Features
 
 **Chats**
+
 - Session list with QR / pairing-code login, multiple sessions and multiple servers (per-server keys in the OS keychain)
 - Realtime via WAHA WebSocket: messages, acks, presence (online / typing), reactions, edits, deletions
 - WhatsApp formatting, @mentions with autocomplete, link previews, quoted replies with media thumbnails
@@ -51,20 +52,24 @@ You need:
 - Deleted-message tombstones and "waiting for this message" placeholders; live messages survive server history gaps
 
 **Groups & contacts**
+
 - Group info with description, searchable participants (photos, names, numbers), add / remove / promote / demote
 - Join requests (approve / reject), invite link, rename, description, photo, admin-only settings, leave, participants CSV
 - New chat by number, create group, join by link, browse / follow channels; contact card with block and save
 
 **Status (stories)**
+
 - View contacts' updates (auto-play, start from unseen, next contact), post text / photo / video, delete your own
 
 **Automation**
+
 - **Scheduler** — one-off or daily / weekly / monthly messages to chats, groups, channels or your status, from any session (SQLite-backed, with history)
 - **Broadcast** — one message to many recipients from any session, with random pauses, progress, retry and per-recipient log
 - **Auto-reply** — per-session rules (direct messages / groups / specific chats, hours & weekdays, keyword or regex match) answering with a fixed text or an AI reply that follows your instructions; per-chat cooldown, reply log, one-click pause
 - Webhook manager per session, live event log for debugging integrations
 
 **AI (bring your own key)**
+
 - Anthropic (official SDK) or any OpenAI-compatible endpoint (routers, Ollama…); optional cheaper "fast model" for short tasks; a persona/system prompt used by every feature, with per-session overrides when one app serves several businesses
 - Translate incoming messages and drafts; per-chat auto-translate (incoming shown in your language, outgoing sent in theirs)
 - Summarize a chat or group (since last read / today / last N) or ask a question about it
@@ -74,11 +79,13 @@ You need:
 - Optionally label new direct chats automatically with your existing labels (Settings → AI)
 
 **WhatsApp Web (no server needed)**
+
 - Plain, unmodified web.whatsapp.com embedded next to your WAHA sessions in the same picker — one place for everything
 - Several WhatsApp Web accounts, each with its own isolated login — show any number of them side by side in one split view, reorder, hide, rename / remove at will
 - Notifications reach the OS notification center, downloads land in ~/Downloads, links open in your browser, calls work
 
 **App**
+
 - System tray, desktop notifications, incoming-call banner, keyboard shortcuts, light / dark theme
 - Privacy tweaks: typing indicator on/off, read receipts always / on reply / manual / never
 - Settings backup & restore, auto-updater
@@ -103,7 +110,8 @@ VITE_WAHA_SESSION=default
 ### Check
 
 ```bash
-npm run check           # tsc + unit tests (vitest)
+npm run check           # tsc + eslint + prettier --check + unit tests (vitest)
+npm run format          # prettier --write .
 cd src-tauri && cargo clippy --all-targets -- -D warnings && cargo fmt --check
 ```
 

@@ -44,7 +44,13 @@ export function Label({ children }: { children: React.ReactNode }) {
   return <label className="block text-xs font-medium text-neutral-600 dark:text-neutral-400 mb-1">{children}</label>;
 }
 
-export function Badge({ children, tone = "neutral" }: { children: React.ReactNode; tone?: "green" | "amber" | "red" | "neutral" | "blue" }) {
+export function Badge({
+  children,
+  tone = "neutral",
+}: {
+  children: React.ReactNode;
+  tone?: "green" | "amber" | "red" | "neutral" | "blue";
+}) {
   return (
     <span
       className={cn(
@@ -119,7 +125,10 @@ export function Popover({
 export function MenuItem({ className, children, ...props }: ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
     <button
-      className={cn("w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-neutral-100 dark:hover:bg-neutral-800 disabled:opacity-40", className)}
+      className={cn(
+        "w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-neutral-100 dark:hover:bg-neutral-800 disabled:opacity-40",
+        className,
+      )}
       {...props}
     >
       {children}

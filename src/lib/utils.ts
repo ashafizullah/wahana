@@ -77,13 +77,7 @@ export function fileToBase64(file: File): Promise<string> {
  * Resolve the chat a message belongs to. WAHA/GOWS may report LID ids
  * (`@lid`) while the chat list uses phone ids (`@c.us`); prefer the phone form.
  */
-export function messageChatId(m: {
-  from: string;
-  to: string;
-  fromMe: boolean;
-  chatId?: string;
-  _data?: unknown;
-}): string {
+export function messageChatId(m: { from: string; to: string; fromMe: boolean; chatId?: string; _data?: unknown }): string {
   if (m.chatId) return m.chatId;
   const info = (m._data as { Info?: { Chat?: string; SenderAlt?: string; RecipientAlt?: string } } | undefined)?.Info;
   let chat = info?.Chat || (m.fromMe ? m.to : m.from);

@@ -57,7 +57,9 @@ export function ChatScreen() {
   if (!client) {
     return (
       <NotConnected>
-        <Button variant="secondary" onClick={() => addWaWeb()}>Use WhatsApp Web instead</Button>
+        <Button variant="secondary" onClick={() => addWaWeb()}>
+          Use WhatsApp Web instead
+        </Button>
       </NotConnected>
     );
   }
@@ -65,7 +67,11 @@ export function ChatScreen() {
     return <Empty>Session “{session}” not found on server. Pick one in Sessions.</Empty>;
   }
   if (sessionInfo && sessionInfo.status !== "WORKING") {
-    return <Empty>Session “{session}” is {sessionInfo.status}. Start / log in from Sessions.</Empty>;
+    return (
+      <Empty>
+        Session “{session}” is {sessionInfo.status}. Start / log in from Sessions.
+      </Empty>
+    );
   }
 
   return (
@@ -97,7 +103,6 @@ function Empty({ children }: { children: React.ReactNode }) {
   );
 }
 
-
 function Conversation({ session, chatId, onOpenChat }: { session: string; chatId: string; onOpenChat: (id: string) => void }) {
   const { data: chats } = useChats(session);
   const chat = chats?.find((c) => c.id === chatId);
@@ -128,7 +133,9 @@ function Conversation({ session, chatId, onOpenChat }: { session: string; chatId
   const resolveName = useNameResolver(session, chatId);
   const { data: sessionsForMe } = useSessions();
   const me = sessionsForMe?.find((x) => x.name === session)?.me;
-  const meId = me?.id, meLid = me?.lid, meJid = me?.jid;
+  const meId = me?.id,
+    meLid = me?.lid,
+    meJid = me?.jid;
   const myIds = useMemo(() => [meId, meLid, meJid].filter((x): x is string => !!x), [meId, meLid, meJid]);
   const presenceText = presenceLabel(presence, chatId, isGroup(chatId), (id) => resolveName(id) ?? displayId(id));
 
@@ -251,27 +258,6 @@ function Conversation({ session, chatId, onOpenChat }: { session: string; chatId
   }, [ordered]);
 
   useEffect(() => {
-    const el = listRef.current;
-    const content = contentRef.current;
-    if (!el || !content) return;
-    const onScroll = () => {
-      atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
-      if (el.scrollTop < 150) void loadOlderRef.current();
-      if (el.scrollHeight - el.scrollTop - el.clientHeight < 150) void loadNewerRef.current();
-    };
-    el.addEventListener("scroll", onScroll, { passive: true });
-    // Media/bubbles growing after render: keep pinned to the bottom if we were there.
-    const ro = new ResizeObserver(() => {
-      if (atBottomRef.current && pendingPrepend.current === null) el.scrollTop = el.scrollHeight;
-    });
-    ro.observe(content);
-    return () => {
-      el.removeEventListener("scroll", onScroll);
-      ro.disconnect();
-    };
-  }, [chatId]);
-
-  useEffect(() => {
     setHasMore(true);
   }, [chatId]);
 
@@ -281,7 +267,10 @@ function Conversation({ session, chatId, onOpenChat }: { session: string; chatId
     const target = autoTr.in;
     if (!target || !aiConfigured()) return;
     const t = useTranslations.getState();
-    const todo = [...ordered].reverse().filter((m) => !m.fromMe && m.body && !m.waiting).slice(0, 20)
+    const todo = [...ordered]
+      .reverse()
+      .filter((m) => !m.fromMe && m.body && !m.waiting)
+      .slice(0, 20)
       .filter((m) => !t.byMsg[m.id] && !autoTried.current.has(`${target}:${m.id}`));
     for (const m of todo) {
       autoTried.current.add(`${target}:${m.id}`);
@@ -305,7 +294,10 @@ function Conversation({ session, chatId, onOpenChat }: { session: string; chatId
   }, [ordered]);
   useEffect(() => {
     markSeen(session, chatId);
-    if (useSettings.getState().readReceipts === "always") requireClient().sendSeen(session, chatId).catch(() => {});
+    if (useSettings.getState().readReceipts === "always")
+      requireClient()
+        .sendSeen(session, chatId)
+        .catch(() => {});
   }, [session, chatId, newestIncomingId, markSeen]);
 
   const loadOlder = async () => {
@@ -364,6 +356,27 @@ function Conversation({ session, chatId, onOpenChat }: { session: string; chatId
   };
   const loadNewerRef = useLatest(loadNewer);
 
+  useEffect(() => {
+    const el = listRef.current;
+    const content = contentRef.current;
+    if (!el || !content) return;
+    const onScroll = () => {
+      atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+      if (el.scrollTop < 150) void loadOlderRef.current();
+      if (el.scrollHeight - el.scrollTop - el.clientHeight < 150) void loadNewerRef.current();
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    // Media/bubbles growing after render: keep pinned to the bottom if we were there.
+    const ro = new ResizeObserver(() => {
+      if (atBottomRef.current && pendingPrepend.current === null) el.scrollTop = el.scrollHeight;
+    });
+    ro.observe(content);
+    return () => {
+      el.removeEventListener("scroll", onScroll);
+      ro.disconnect();
+    };
+  }, [chatId, loadOlderRef, loadNewerRef]);
+
   /** Replace the view with the 60 messages up to the end of `day` (local time). */
   const jumpToDate = async (day: string) => {
     const end = Math.floor(new Date(`${day}T23:59:59`).getTime() / 1000);
@@ -403,15 +416,21 @@ function Conversation({ session, chatId, onOpenChat }: { session: string; chatId
     const el = topRef.current;
     const root = listRef.current;
     if (!el || !root) return;
-    const io = new IntersectionObserver((entries) => entries[0]?.isIntersecting && void loadOlderRef.current(), { root, rootMargin: "200px 0px 0px 0px" });
+    const io = new IntersectionObserver((entries) => entries[0]?.isIntersecting && void loadOlderRef.current(), {
+      root,
+      rootMargin: "200px 0px 0px 0px",
+    });
     io.observe(el);
     return () => io.disconnect();
-  }, [chatId]);
+  }, [chatId, loadOlderRef]);
 
   const matches = useMemo(() => {
     const term = search?.trim().toLowerCase();
     if (!term) return [];
-    return [...ordered].reverse().filter((m) => m.body?.toLowerCase().includes(term)).slice(0, 100);
+    return [...ordered]
+      .reverse()
+      .filter((m) => m.body?.toLowerCase().includes(term))
+      .slice(0, 100);
   }, [ordered, search]);
 
   const jumpTo = (id: string) => {
@@ -450,287 +469,340 @@ function Conversation({ session, chatId, onOpenChat }: { session: string; chatId
 
   return (
     <>
-    <div className="flex-1 min-w-0 flex flex-col bg-[#efeae2] dark:bg-neutral-950">
-      <header className="h-14 shrink-0 flex items-center gap-3 px-4 bg-white dark:bg-neutral-900 border-b border-neutral-200 dark:border-neutral-800">
-        {readMode === "manual" && (() => {
-          const lastIn = [...ordered].reverse().find((m) => !m.fromMe);
-          const pending = !!lastIn && readSentFor !== lastIn.id;
-          return (
-            <Button
-              variant={pending ? "primary" : "ghost"}
-              size="sm"
-              title={pending ? "Send read receipt (blue ticks) for this chat" : "Read receipt already sent"}
-              disabled={!pending}
-              onClick={async () => {
-                try {
-                  await requireClient().sendSeen(session, chatId);
-                  setReadSentFor(lastIn!.id);
-                } catch (e) {
-                  await confirm({ title: "Couldn't send read receipt", message: errMsg(e), confirmLabel: "OK" });
-                }
-              }}
-            >
-              <CheckCheck size={16} className={pending ? "" : "text-sky-500"} />
-            </Button>
-          );
-        })()}
-        <button className="flex items-center gap-3 min-w-0 flex-1 text-left" onClick={() => setInfo((v) => !v)} title="Chat info">
-          <Avatar src={chat?.picture} name={name} size={36} />
-          <div className="min-w-0">
-            <div className="font-medium truncate">{name}</div>
-            <div className={cn("text-xs truncate", presenceText?.includes("typing") || presenceText?.includes("recording") ? "text-wa-dark dark:text-wa" : "text-neutral-500")}>
-              {presenceText ?? displayId(chatId)}
+      <div className="flex-1 min-w-0 flex flex-col bg-[#efeae2] dark:bg-neutral-950">
+        <header className="h-14 shrink-0 flex items-center gap-3 px-4 bg-white dark:bg-neutral-900 border-b border-neutral-200 dark:border-neutral-800">
+          {readMode === "manual" &&
+            (() => {
+              const lastIn = [...ordered].reverse().find((m) => !m.fromMe);
+              const pending = !!lastIn && readSentFor !== lastIn.id;
+              return (
+                <Button
+                  variant={pending ? "primary" : "ghost"}
+                  size="sm"
+                  title={pending ? "Send read receipt (blue ticks) for this chat" : "Read receipt already sent"}
+                  disabled={!pending}
+                  onClick={async () => {
+                    try {
+                      await requireClient().sendSeen(session, chatId);
+                      setReadSentFor(lastIn!.id);
+                    } catch (e) {
+                      await confirm({ title: "Couldn't send read receipt", message: errMsg(e), confirmLabel: "OK" });
+                    }
+                  }}
+                >
+                  <CheckCheck size={16} className={pending ? "" : "text-sky-500"} />
+                </Button>
+              );
+            })()}
+          <button className="flex items-center gap-3 min-w-0 flex-1 text-left" onClick={() => setInfo((v) => !v)} title="Chat info">
+            <Avatar src={chat?.picture} name={name} size={36} />
+            <div className="min-w-0">
+              <div className="font-medium truncate">{name}</div>
+              <div
+                className={cn(
+                  "text-xs truncate",
+                  presenceText?.includes("typing") || presenceText?.includes("recording")
+                    ? "text-wa-dark dark:text-wa"
+                    : "text-neutral-500",
+                )}
+              >
+                {presenceText ?? displayId(chatId)}
+              </div>
             </div>
-          </div>
-        </button>
-        <Popover
-          open={datePick}
-          onClose={() => setDatePick(false)}
-          align="right"
-          className="p-3 space-y-2 w-56"
-          trigger={
-            <Button variant="ghost" size="sm" onClick={() => setDatePick((v) => !v)} title="Jump to date">
-              <CalendarDays size={16} />
+          </button>
+          <Popover
+            open={datePick}
+            onClose={() => setDatePick(false)}
+            align="right"
+            className="p-3 space-y-2 w-56"
+            trigger={
+              <Button variant="ghost" size="sm" onClick={() => setDatePick((v) => !v)} title="Jump to date">
+                <CalendarDays size={16} />
+              </Button>
+            }
+          >
+            <div className="text-xs font-medium">Jump to date</div>
+            <input
+              type="date"
+              autoFocus
+              max={new Date().toISOString().slice(0, 10)}
+              onChange={(e) => e.target.value && void jumpToDate(e.target.value)}
+              className="w-full rounded-lg border border-neutral-300 dark:border-neutral-700 bg-transparent px-2 py-1 text-sm outline-none"
+            />
+            <div className="text-[11px] text-neutral-500">Shows messages up to the end of that day.</div>
+          </Popover>
+          {aiConfigured() && (
+            <Button variant="ghost" size="sm" onClick={() => setSummary(true)} title="Summarize with AI">
+              <Sparkles size={16} />
             </Button>
-          }
-        >
-          <div className="text-xs font-medium">Jump to date</div>
-          <input
-            type="date"
-            autoFocus
-            max={new Date().toISOString().slice(0, 10)}
-            onChange={(e) => e.target.value && void jumpToDate(e.target.value)}
-            className="w-full rounded-lg border border-neutral-300 dark:border-neutral-700 bg-transparent px-2 py-1 text-sm outline-none"
-          />
-          <div className="text-[11px] text-neutral-500">Shows messages up to the end of that day.</div>
-        </Popover>
-        {aiConfigured() && (
-          <Button variant="ghost" size="sm" onClick={() => setSummary(true)} title="Summarize with AI">
-            <Sparkles size={16} />
+          )}
+          <Button variant="ghost" size="sm" onClick={() => setSearch((v) => (v === null ? "" : null))} title="Search in chat (⌘F)">
+            <Search size={16} />
           </Button>
-        )}
-        <Button variant="ghost" size="sm" onClick={() => setSearch((v) => (v === null ? "" : null))} title="Search in chat (⌘F)">
-          <Search size={16} />
-        </Button>
-        <Button variant="ghost" size="sm" onClick={() => setInfo((v) => !v)} title="Info">
-          <Info size={16} />
-        </Button>
-        <Popover
-          open={moreOpen}
-          onClose={() => setMoreOpen(false)}
-          align="right"
-          className="w-56 py-1"
-          trigger={<Button variant="ghost" size="sm" onClick={() => setMoreOpen((v) => !v)} title="More"><MoreVertical size={16} /></Button>}
-        >
-          <MenuItem onClick={() => { setMoreOpen(false); setSummary(true); }}>
-            <Sparkles size={14} /> Summarize with AI
-          </MenuItem>
-        {aiConfigured() && (
-          <div className="px-3 py-1.5 space-y-1.5">
-            <div className="flex items-center gap-1 text-[11px] text-neutral-500"><Languages size={12} /> Auto-translate (this chat)</div>
-            <label className="flex items-center gap-2 text-xs">
-              <span className="w-24 shrink-0 text-neutral-500">Incoming →</span>
-              <select
-                value={autoTr.in ?? ""}
-                onChange={(e) => setAutoTranslate(convKey(session, chatId), { in: e.target.value || undefined })}
-                className="flex-1 min-w-0 rounded-md border border-neutral-300 dark:border-neutral-700 bg-transparent px-1.5 py-0.5 text-xs outline-none"
-              >
-                <option value="">Off</option>
-                {LANGUAGES.map(([c, n]) => <option key={c} value={c}>{n}</option>)}
-              </select>
-            </label>
-            <label className="flex items-center gap-2 text-xs">
-              <span className="w-24 shrink-0 text-neutral-500">My messages →</span>
-              <select
-                value={autoTr.out ?? ""}
-                onChange={(e) => setAutoTranslate(convKey(session, chatId), { out: e.target.value || undefined })}
-                className="flex-1 min-w-0 rounded-md border border-neutral-300 dark:border-neutral-700 bg-transparent px-1.5 py-0.5 text-xs outline-none"
-              >
-                <option value="">Off (send as typed)</option>
-                {LANGUAGES.map(([c, n]) => <option key={c} value={c}>{n}</option>)}
-              </select>
-            </label>
-            <div className="text-[10px] text-neutral-400">Incoming: shown under each new message. Outgoing: your draft is translated right before sending.</div>
-          </div>
-        )}
-        <div className="my-1 border-t border-neutral-200 dark:border-neutral-800" />
-        <div className="px-3 py-1 text-[11px] text-neutral-500">Export loaded messages ({ordered.length})</div>
-          {(["txt", "html", "json"] as ExportFormat[]).map((f) => (
+          <Button variant="ghost" size="sm" onClick={() => setInfo((v) => !v)} title="Info">
+            <Info size={16} />
+          </Button>
+          <Popover
+            open={moreOpen}
+            onClose={() => setMoreOpen(false)}
+            align="right"
+            className="w-56 py-1"
+            trigger={
+              <Button variant="ghost" size="sm" onClick={() => setMoreOpen((v) => !v)} title="More">
+                <MoreVertical size={16} />
+              </Button>
+            }
+          >
             <MenuItem
-              key={f}
-              disabled={exporting}
-              onClick={async () => {
+              onClick={() => {
                 setMoreOpen(false);
-                setExporting(true);
-                try {
-                  const p = await exportChat(name, ordered.filter((m) => !m.waiting), f, resolveName);
-                  if (p) await confirm({ title: "Exported", message: p, confirmLabel: "OK" });
-                } catch (e) {
-                  await confirm({ title: "Export failed", message: errMsg(e), confirmLabel: "OK" });
-                } finally {
-                  setExporting(false);
-                }
+                setSummary(true);
               }}
             >
-              <Download size={14} /> Export as .{f}
+              <Sparkles size={14} /> Summarize with AI
             </MenuItem>
-          ))}
-          <div className="px-3 py-1 text-[10px] text-neutral-400">Scroll up first to include older messages.</div>
-        </Popover>
-      </header>
-      {search !== null && (
-        <div className="shrink-0 bg-white dark:bg-neutral-900 border-b border-neutral-200 dark:border-neutral-800 px-4 py-2 space-y-1">
-          <div className="flex items-center gap-2">
-            <Search size={14} className="text-neutral-400" />
-            <input
-              ref={searchRef}
-              autoFocus
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Escape") setSearch(null);
-                if (e.key === "Enter" && matches[0]) jumpTo(matches[0].id);
-              }}
-              placeholder="Search in loaded messages…"
-              className="flex-1 bg-transparent text-sm outline-none"
-            />
-            <span className="text-[11px] text-neutral-500">{search.trim() ? `${matches.length} match${matches.length === 1 ? "" : "es"}` : ""}</span>
-            {hasMore && search.trim() && (
-              <Button size="sm" variant="secondary" onClick={loadOlder} disabled={loadingOlder}>
-                {loadingOlder ? <Loader2 size={12} className="animate-spin" /> : "Load older"}
-              </Button>
+            {aiConfigured() && (
+              <div className="px-3 py-1.5 space-y-1.5">
+                <div className="flex items-center gap-1 text-[11px] text-neutral-500">
+                  <Languages size={12} /> Auto-translate (this chat)
+                </div>
+                <label className="flex items-center gap-2 text-xs">
+                  <span className="w-24 shrink-0 text-neutral-500">Incoming →</span>
+                  <select
+                    value={autoTr.in ?? ""}
+                    onChange={(e) => setAutoTranslate(convKey(session, chatId), { in: e.target.value || undefined })}
+                    className="flex-1 min-w-0 rounded-md border border-neutral-300 dark:border-neutral-700 bg-transparent px-1.5 py-0.5 text-xs outline-none"
+                  >
+                    <option value="">Off</option>
+                    {LANGUAGES.map(([c, n]) => (
+                      <option key={c} value={c}>
+                        {n}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="flex items-center gap-2 text-xs">
+                  <span className="w-24 shrink-0 text-neutral-500">My messages →</span>
+                  <select
+                    value={autoTr.out ?? ""}
+                    onChange={(e) => setAutoTranslate(convKey(session, chatId), { out: e.target.value || undefined })}
+                    className="flex-1 min-w-0 rounded-md border border-neutral-300 dark:border-neutral-700 bg-transparent px-1.5 py-0.5 text-xs outline-none"
+                  >
+                    <option value="">Off (send as typed)</option>
+                    {LANGUAGES.map(([c, n]) => (
+                      <option key={c} value={c}>
+                        {n}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <div className="text-[10px] text-neutral-400">
+                  Incoming: shown under each new message. Outgoing: your draft is translated right before sending.
+                </div>
+              </div>
             )}
-            <button onClick={() => setSearch(null)}><X size={14} /></button>
+            <div className="my-1 border-t border-neutral-200 dark:border-neutral-800" />
+            <div className="px-3 py-1 text-[11px] text-neutral-500">Export loaded messages ({ordered.length})</div>
+            {(["txt", "html", "json"] as ExportFormat[]).map((f) => (
+              <MenuItem
+                key={f}
+                disabled={exporting}
+                onClick={async () => {
+                  setMoreOpen(false);
+                  setExporting(true);
+                  try {
+                    const p = await exportChat(
+                      name,
+                      ordered.filter((m) => !m.waiting),
+                      f,
+                      resolveName,
+                    );
+                    if (p) await confirm({ title: "Exported", message: p, confirmLabel: "OK" });
+                  } catch (e) {
+                    await confirm({ title: "Export failed", message: errMsg(e), confirmLabel: "OK" });
+                  } finally {
+                    setExporting(false);
+                  }
+                }}
+              >
+                <Download size={14} /> Export as .{f}
+              </MenuItem>
+            ))}
+            <div className="px-3 py-1 text-[10px] text-neutral-400">Scroll up first to include older messages.</div>
+          </Popover>
+        </header>
+        {search !== null && (
+          <div className="shrink-0 bg-white dark:bg-neutral-900 border-b border-neutral-200 dark:border-neutral-800 px-4 py-2 space-y-1">
+            <div className="flex items-center gap-2">
+              <Search size={14} className="text-neutral-400" />
+              <input
+                ref={searchRef}
+                autoFocus
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") setSearch(null);
+                  if (e.key === "Enter" && matches[0]) jumpTo(matches[0].id);
+                }}
+                placeholder="Search in loaded messages…"
+                className="flex-1 bg-transparent text-sm outline-none"
+              />
+              <span className="text-[11px] text-neutral-500">
+                {search.trim() ? `${matches.length} match${matches.length === 1 ? "" : "es"}` : ""}
+              </span>
+              {hasMore && search.trim() && (
+                <Button size="sm" variant="secondary" onClick={loadOlder} disabled={loadingOlder}>
+                  {loadingOlder ? <Loader2 size={12} className="animate-spin" /> : "Load older"}
+                </Button>
+              )}
+              <button onClick={() => setSearch(null)}>
+                <X size={14} />
+              </button>
+            </div>
+            {search.trim() && matches.length > 0 && (
+              <div className="max-h-40 overflow-y-auto divide-y divide-neutral-100 dark:divide-neutral-800">
+                {matches.map((m) => (
+                  <button
+                    key={m.id}
+                    onClick={() => jumpTo(m.id)}
+                    className="w-full text-left px-1 py-1 text-xs hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                  >
+                    <span className="text-neutral-400 mr-2">{formatTime(m.timestamp)}</span>
+                    <span className="font-medium mr-1">{m.fromMe ? "You" : (resolveName(m.participant || m.from) ?? senderName(m))}:</span>
+                    <span className="opacity-80">{m.body.slice(0, 120)}</span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
-          {search.trim() && matches.length > 0 && (
-            <div className="max-h-40 overflow-y-auto divide-y divide-neutral-100 dark:divide-neutral-800">
-              {matches.map((m) => (
-                <button key={m.id} onClick={() => jumpTo(m.id)} className="w-full text-left px-1 py-1 text-xs hover:bg-neutral-100 dark:hover:bg-neutral-800">
-                  <span className="text-neutral-400 mr-2">{formatTime(m.timestamp)}</span>
-                  <span className="font-medium mr-1">{m.fromMe ? "You" : (resolveName(m.participant || m.from) ?? senderName(m))}:</span>
-                  <span className="opacity-80">{m.body.slice(0, 120)}</span>
-                </button>
-              ))}
+        )}
+
+        <div ref={listRef} className="flex-1 overflow-y-auto px-6 py-4 relative">
+          {isLoading && <Loader2 className="animate-spin text-neutral-400" />}
+          {error && <div className="text-sm text-red-600 selectable">{(error as Error).message}</div>}
+          <div ref={topRef} className="h-6 grid place-items-center text-neutral-400">
+            {loadingOlder && <Loader2 size={16} className="animate-spin" />}
+            {!hasMore && ordered.length > 0 && <span className="text-[11px]">Beginning of conversation</span>}
+          </div>
+          <div ref={contentRef} className="relative w-full" style={{ height: virtualizer.getTotalSize() }}>
+            {virtualizer.getVirtualItems().map((v) => {
+              const i = v.index;
+              const m = ordered[i]!;
+              const prev = ordered[i - 1];
+              const newDay = !prev || new Date(prev.timestamp * 1000).toDateString() !== new Date(m.timestamp * 1000).toDateString();
+              return (
+                <div
+                  key={m.id}
+                  ref={virtualizer.measureElement}
+                  data-index={i}
+                  className="pb-1"
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    width: "100%",
+                    transform: `translateY(${v.start - virtualizer.options.scrollMargin}px)`,
+                  }}
+                >
+                  <div
+                    id={`msg-${m.id}`}
+                    className={cn("rounded-lg transition-colors", highlight === m.id && "bg-amber-200/60 dark:bg-amber-500/20")}
+                  >
+                    {newDay && (
+                      <div className="flex justify-center my-3">
+                        <span className="rounded-md bg-white/80 dark:bg-neutral-800 px-2 py-0.5 text-[11px] text-neutral-600 dark:text-neutral-300 shadow-sm">
+                          {formatDateDivider(m.timestamp)}
+                        </span>
+                      </div>
+                    )}
+                    <ErrorBoundary inline label="message">
+                      <Bubble
+                        message={m}
+                        group={group}
+                        session={session}
+                        chatId={chatId}
+                        onReply={onReplyStable}
+                        onMenu={onMenuStable}
+                        resolveName={resolveName}
+                        myIds={myIds}
+                        onJump={onJumpStable}
+                        onSender={onSenderStable}
+                      />
+                    </ErrorBoundary>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {hasNewer && (
+            <div className="h-6 grid place-items-center text-neutral-400">
+              {loadingNewer && <Loader2 size={16} className="animate-spin" />}
             </div>
           )}
         </div>
-      )}
-
-      <div ref={listRef} className="flex-1 overflow-y-auto px-6 py-4 relative">
-        {isLoading && <Loader2 className="animate-spin text-neutral-400" />}
-        {error && <div className="text-sm text-red-600 selectable">{(error as Error).message}</div>}
-        <div ref={topRef} className="h-6 grid place-items-center text-neutral-400">
-          {loadingOlder && <Loader2 size={16} className="animate-spin" />}
-          {!hasMore && ordered.length > 0 && <span className="text-[11px]">Beginning of conversation</span>}
-        </div>
-        <div ref={contentRef} className="relative w-full" style={{ height: virtualizer.getTotalSize() }}>
-        {virtualizer.getVirtualItems().map((v) => {
-          const i = v.index;
-          const m = ordered[i]!;
-          const prev = ordered[i - 1];
-          const newDay = !prev || new Date(prev.timestamp * 1000).toDateString() !== new Date(m.timestamp * 1000).toDateString();
-          return (
-            <div
-              key={m.id}
-              ref={virtualizer.measureElement}
-              data-index={i}
-              className="pb-1"
-              style={{ position: "absolute", top: 0, left: 0, width: "100%", transform: `translateY(${v.start - virtualizer.options.scrollMargin}px)` }}
-            >
-            <div id={`msg-${m.id}`} className={cn("rounded-lg transition-colors", highlight === m.id && "bg-amber-200/60 dark:bg-amber-500/20")}>
-              {newDay && (
-                <div className="flex justify-center my-3">
-                  <span className="rounded-md bg-white/80 dark:bg-neutral-800 px-2 py-0.5 text-[11px] text-neutral-600 dark:text-neutral-300 shadow-sm">
-                    {formatDateDivider(m.timestamp)}
-                  </span>
-                </div>
-              )}
-              <ErrorBoundary inline label="message">
-                <Bubble
-                  message={m}
-                  group={group}
-                  session={session}
-                  chatId={chatId}
-                  onReply={onReplyStable}
-                  onMenu={onMenuStable}
-                  resolveName={resolveName}
-                  myIds={myIds}
-                  onJump={onJumpStable}
-                  onSender={onSenderStable}
-                />
-              </ErrorBoundary>
-            </div>
-            </div>
-          );
-        })}
-        </div>
         {hasNewer && (
-          <div className="h-6 grid place-items-center text-neutral-400">{loadingNewer && <Loader2 size={16} className="animate-spin" />}</div>
+          <div className="relative">
+            <button
+              onClick={backToLatest}
+              className="absolute bottom-3 right-4 z-20 flex items-center gap-1.5 rounded-full bg-wa-dark text-white px-3 py-1.5 text-xs shadow-lg hover:bg-wa-teal"
+            >
+              <ArrowDown size={14} /> Jump to latest
+            </button>
+          </div>
         )}
-      </div>
-      {hasNewer && (
-        <div className="relative">
-          <button
-            onClick={backToLatest}
-            className="absolute bottom-3 right-4 z-20 flex items-center gap-1.5 rounded-full bg-wa-dark text-white px-3 py-1.5 text-xs shadow-lg hover:bg-wa-teal"
-          >
-            <ArrowDown size={14} /> Jump to latest
-          </button>
-        </div>
-      )}
 
-      <Composer
-        session={session}
-        chatId={chatId}
-        replyTo={replyTo}
-        onClearReply={() => setReplyTo(null)}
-        editing={editing}
-        onClearEdit={() => setEditing(null)}
-        resolveName={resolveName}
-        myIds={myIds}
-        onEditLast={() => {
-          const last = [...ordered].reverse().find((m) => m.fromMe && m.body && Date.now() / 1000 - m.timestamp < 15 * 60);
-          if (last) setEditing(last);
-        }}
-        recent={ordered.slice(-30)}
-      />
-      {menu && (
-        <MessageMenu
-          message={menu.m}
+        <Composer
           session={session}
           chatId={chatId}
-          pos={menu.pos}
-          onClose={() => setMenu(null)}
-          onReply={() => setReplyTo(menu.m)}
-          onEdit={() => setEditing(menu.m)}
-          onInfo={() => setMsgInfo(menu.m)}
-        />
-      )}
-      {msgInfo && <MessageInfoModal message={msgInfo} chatId={chatId} resolveName={resolveName} onClose={() => setMsgInfo(null)} />}
-      {contactId && (
-        <ContactModal
-          session={session}
-          id={contactId}
+          replyTo={replyTo}
+          onClearReply={() => setReplyTo(null)}
+          editing={editing}
+          onClearEdit={() => setEditing(null)}
           resolveName={resolveName}
-          onOpenChat={(id) => onOpenChat(id)}
-          onClose={() => setContactId(null)}
+          myIds={myIds}
+          onEditLast={() => {
+            const last = [...ordered].reverse().find((m) => m.fromMe && m.body && Date.now() / 1000 - m.timestamp < 15 * 60);
+            if (last) setEditing(last);
+          }}
+          recent={ordered.slice(-30)}
+        />
+        {menu && (
+          <MessageMenu
+            message={menu.m}
+            session={session}
+            chatId={chatId}
+            pos={menu.pos}
+            onClose={() => setMenu(null)}
+            onReply={() => setReplyTo(menu.m)}
+            onEdit={() => setEditing(menu.m)}
+            onInfo={() => setMsgInfo(menu.m)}
+          />
+        )}
+        {msgInfo && <MessageInfoModal message={msgInfo} chatId={chatId} resolveName={resolveName} onClose={() => setMsgInfo(null)} />}
+        {contactId && (
+          <ContactModal
+            session={session}
+            id={contactId}
+            resolveName={resolveName}
+            onOpenChat={(id) => onOpenChat(id)}
+            onClose={() => setContactId(null)}
+          />
+        )}
+      </div>
+      {info && <InfoPanel session={session} chatId={chatId} chat={chat} myIds={myIds} onClose={() => setInfo(false)} />}
+      {summary && (
+        <SummaryModal
+          session={session}
+          chatId={chatId}
+          chatName={name}
+          messages={ordered}
+          resolve={resolveName}
+          seenAt={seenAtRef.current}
+          hasMore={hasMore}
+          onLoadOlder={loadOlder}
+          onClose={() => setSummary(false)}
         />
       )}
-    </div>
-    {info && <InfoPanel session={session} chatId={chatId} chat={chat} myIds={myIds} onClose={() => setInfo(false)} />}
-    {summary && (
-      <SummaryModal
-        session={session}
-        chatId={chatId}
-        chatName={name}
-        messages={ordered}
-        resolve={resolveName}
-        seenAt={seenAtRef.current}
-        hasMore={hasMore}
-        onLoadOlder={loadOlder}
-        onClose={() => setSummary(false)}
-      />
-    )}
     </>
   );
 }

@@ -47,7 +47,11 @@ export const useCalls = create<State>((set, get) => ({
         const log: CallLog = { ...e, session, status: "ringing", at: now };
         if (idx === -1) calls.unshift(log);
         if (calls.length > MAX) calls.length = MAX;
-        if (useSettings.getState().notifications) sendNotification({ title: `Incoming ${e.isVideo ? "video " : ""}call`, body: `From ${e.from.split("@")[0]} — answer on your phone` });
+        if (useSettings.getState().notifications)
+          sendNotification({
+            title: `Incoming ${e.isVideo ? "video " : ""}call`,
+            body: `From ${e.from.split("@")[0]} — answer on your phone`,
+          });
         void store().then((s) => s.set("calls", calls));
         return { calls, ringing: log };
       }
@@ -61,6 +65,9 @@ export const useCalls = create<State>((set, get) => ({
   dismiss() {
     const r = get().ringing;
     if (!r) return;
-    set((st) => ({ ringing: null, calls: st.calls.map((c) => (c.id === r.id && c.status === "ringing" ? { ...c, status: "missed" } : c)) }));
+    set((st) => ({
+      ringing: null,
+      calls: st.calls.map((c) => (c.id === r.id && c.status === "ringing" ? { ...c, status: "missed" } : c)),
+    }));
   },
 }));

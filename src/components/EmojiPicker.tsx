@@ -3,7 +3,7 @@ import { Smile } from "lucide-react";
 import data from "@emoji-mart/data";
 import { Picker } from "emoji-mart";
 import { Button } from "@/components/ui";
-import { useLatest } from "@/lib/hooks";
+import { useDismiss, useLatest } from "@/lib/hooks";
 
 /** Emoji button + popover picker (emoji-mart core, data bundled locally so it works offline). */
 export function EmojiButton({ onPick }: { onPick: (emoji: string) => void }) {
@@ -24,17 +24,11 @@ export function EmojiButton({ onPick }: { onPick: (emoji: string) => void }) {
       perLine: 9,
       onEmojiSelect: (e: { native: string }) => onPickRef.current(e.native),
     }) as unknown as HTMLElement;
-    host.current.replaceChildren(picker);
-    const onDown = (e: MouseEvent) => ref.current && !ref.current.contains(e.target as Node) && setOpen(false);
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
-      host.current?.replaceChildren();
-    };
-  }, [open]);
+    const el = host.current;
+    el.replaceChildren(picker);
+    return () => el.replaceChildren();
+  }, [open, onPickRef]);
+  useDismiss(ref, open, () => setOpen(false));
 
   return (
     <div ref={ref} className="relative">

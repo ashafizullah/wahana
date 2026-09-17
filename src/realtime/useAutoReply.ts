@@ -61,7 +61,11 @@ export function useAutoReply() {
         if (st.autoReplyDailyLimit > 0 && (await repliesToday(st.activeProfile)) >= st.autoReplyDailyLimit) {
           if (!dailyLimitWarned.current) {
             dailyLimitWarned.current = true;
-            if (st.notifications) sendNotification({ title: "Auto-reply daily limit reached", body: `${st.autoReplyDailyLimit} replies sent today; no more until midnight. Raise the limit in Auto-reply.` });
+            if (st.notifications)
+              sendNotification({
+                title: "Auto-reply daily limit reached",
+                body: `${st.autoReplyDailyLimit} replies sent today; no more until midnight. Raise the limit in Auto-reply.`,
+              });
           }
           return;
         }
@@ -70,16 +74,36 @@ export function useAutoReply() {
         const recent = await recentMessages(session, chatId, Math.max(20, rule.ai_context));
         if (userRepliedRecently(recent, m)) return;
 
-        const reply = rule.reply_kind === "ai" ? await aiReply(rule, session, chatId, chatName, m, recent) : templateReply(rule, chatId, chatName);
+        const reply =
+          rule.reply_kind === "ai" ? await aiReply(rule, session, chatId, chatName, m, recent) : templateReply(rule, chatId, chatName);
         if (!reply) throw new Error("Empty reply");
         await new Promise((r) => setTimeout(r, DELAY_MS[0] + Math.random() * (DELAY_MS[1] - DELAY_MS[0])));
         const c = useSettings.getState().client;
         if (!c || useSettings.getState().autoReplyPaused) return;
         if (rule.mark_seen) await c.sendSeen(session, chatId, [m.id], m.participant || undefined).catch(() => {});
         await c.sendText(session, chatId, reply, rule.quote ? m.id : undefined);
-        await logReply({ rule_id: rule.id, session, chat_id: chatId, chat_name: chatName, incoming: body || null, reply, status: "sent", error: null });
+        await logReply({
+          rule_id: rule.id,
+          session,
+          chat_id: chatId,
+          chat_name: chatName,
+          incoming: body || null,
+          reply,
+          status: "sent",
+          error: null,
+        });
       } catch (e) {
-        if (rule) await logReply({ rule_id: rule.id, session, chat_id: chatId, chat_name: chatName, incoming: body || null, reply: null, status: "error", error: errMsg(e) });
+        if (rule)
+          await logReply({
+            rule_id: rule.id,
+            session,
+            chat_id: chatId,
+            chat_name: chatName,
+            incoming: body || null,
+            reply: null,
+            status: "error",
+            error: errMsg(e),
+          });
         else console.warn("auto-reply failed", e);
       } finally {
         inflight.current.delete(key);

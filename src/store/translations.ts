@@ -15,5 +15,10 @@ interface State {
 export const useTranslations = create<State>((set) => ({
   byMsg: {},
   set: (id, e) => set((st) => ({ byMsg: { ...st.byMsg, [id]: e } })),
-  clear: (id) => set((st) => { const byMsg = { ...st.byMsg }; delete byMsg[id]; return { byMsg }; }),
+  clear: (id) =>
+    set((st) => {
+      const byMsg = { ...st.byMsg };
+      delete byMsg[id];
+      return { byMsg };
+    }),
 }));

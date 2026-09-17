@@ -16,6 +16,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx tsc --noEmit
+      - run: npx eslint src
+      - run: npx prettier --check .
       - run: npx vitest run
       - run: npx vite build
 

@@ -1,7 +1,25 @@
 import { useEffect, useRef, useState } from "react";
 import { confirm } from "@/components/Confirm";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Crown, Shield, MoreVertical, UserPlus, Link as LinkIcon, RefreshCw, LogOut, Pencil, Loader2, Copy, Check, UserCheck, X as XIcon, Users, Camera, Lock, Download } from "lucide-react";
+import {
+  Crown,
+  Shield,
+  MoreVertical,
+  UserPlus,
+  Link as LinkIcon,
+  RefreshCw,
+  LogOut,
+  Pencil,
+  Loader2,
+  Copy,
+  Check,
+  UserCheck,
+  X as XIcon,
+  Users,
+  Camera,
+  Lock,
+  Download,
+} from "lucide-react";
 import { save } from "@tauri-apps/plugin-dialog";
 import { writeTextFile } from "@tauri-apps/plugin-fs";
 import { requireClient } from "@/store/settings";
@@ -24,7 +42,13 @@ export function useAmAdmin(group: GowsGroup | undefined, myIds: string[]) {
 }
 
 /** Row in the info panel showing the participant count; opens the searchable modal. */
-export function ParticipantsRow(props: { session: string; chatId: string; group: GowsGroup; myIds: string[]; resolveName: MentionResolver }) {
+export function ParticipantsRow(props: {
+  session: string;
+  chatId: string;
+  group: GowsGroup;
+  myIds: string[];
+  resolveName: MentionResolver;
+}) {
   const [open, setOpen] = useState(false);
   const n = props.group.Participants?.length ?? props.group.ParticipantCount ?? 0;
   return (
@@ -36,7 +60,11 @@ export function ParticipantsRow(props: { session: string; chatId: string; group:
         <Users size={15} className="text-wa-dark" />
         <span className="flex-1">
           {n} participant{n === 1 ? "" : "s"}
-          {props.group.IsAnnounce && <span className="ml-2 text-[10px] rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 px-1.5 py-0.5">admins only</span>}
+          {props.group.IsAnnounce && (
+            <span className="ml-2 text-[10px] rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 px-1.5 py-0.5">
+              admins only
+            </span>
+          )}
         </span>
         <span className="text-xs text-neutral-400">›</span>
       </button>
@@ -100,78 +128,96 @@ function ParticipantsModal({
     .map((p) => {
       const phone = p.PhoneNumber?.split("@")[0] ?? "";
       const isMe = p.JID === meP?.JID;
-      const label = isMe ? "You" : resolveName(p.JID) ?? p.DisplayName ?? (phone ? `+${phone}` : displayId(p.JID));
+      const label = isMe ? "You" : (resolveName(p.JID) ?? p.DisplayName ?? (phone ? `+${phone}` : displayId(p.JID)));
       return { p, phone, isMe, label };
     })
-    .sort((a, b) => Number(b.p.IsSuperAdmin) - Number(a.p.IsSuperAdmin) || Number(b.p.IsAdmin) - Number(a.p.IsAdmin) || a.label.localeCompare(b.label));
+    .sort(
+      (a, b) =>
+        Number(b.p.IsSuperAdmin) - Number(a.p.IsSuperAdmin) || Number(b.p.IsAdmin) - Number(a.p.IsAdmin) || a.label.localeCompare(b.label),
+    );
   const term = q.trim().toLowerCase().replace(/^\+/, "");
   const filtered = term
-    ? rows.filter(({ label, phone, p }) => label.toLowerCase().includes(term) || phone.includes(term.replace(/\D/g, "") || "\u0000") || digits(p.JID).includes(term))
+    ? rows.filter(
+        ({ label, phone, p }) =>
+          label.toLowerCase().includes(term) || phone.includes(term.replace(/\D/g, "") || "\u0000") || digits(p.JID).includes(term),
+      )
     : rows;
   const admins = rows.filter((r) => r.p.IsAdmin || r.p.IsSuperAdmin).length;
 
   return (
     <div className="fixed inset-0 z-50 bg-black/40 grid place-items-center" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-    <div ref={ref} className="w-[460px] max-h-[80vh] flex flex-col rounded-xl bg-white dark:bg-neutral-900 shadow-2xl">
-      <div className="flex items-center gap-2 p-3 border-b border-neutral-200 dark:border-neutral-800">
-        <Users size={16} className="text-wa-dark" />
-        <span className="font-semibold flex-1">
-          Participants ({rows.length})
-          <span className="ml-2 text-xs font-normal text-neutral-500">{admins} admin{admins === 1 ? "" : "s"}</span>
-        </span>
-        <button onClick={onClose}><XIcon size={16} /></button>
-      </div>
-      <div className="p-2 border-b border-neutral-100 dark:border-neutral-800">
-        <Input placeholder="Search by name or phone number" value={q} onChange={(e) => setQ(e.target.value)} autoFocus />
-      </div>
-      {err && <div className="px-4 py-1 text-xs text-red-600 selectable">{err}</div>}
-      <ul className="flex-1 overflow-y-auto">
-        {filtered.length === 0 && <li className="p-6 text-sm text-neutral-500 text-center">No participants match.</li>}
-        {filtered.map(({ p, phone, isMe, label }) => {
-          return (
-            <li key={p.JID} className="relative flex items-center gap-3 px-4 py-2 text-sm group">
-              <ParticipantAvatar session={session} id={phone ? `${phone}@c.us` : p.JID} name={label} size={40} />
-              <span className="flex-1 min-w-0">
-                <span className="block truncate selectable font-medium">{label}</span>
-                {phone && label !== `+${phone}` && <span className="block text-xs text-neutral-500 selectable">+{phone}</span>}
-              </span>
-              {p.IsSuperAdmin ? (
-                <Crown size={14} className="text-amber-500" />
-              ) : p.IsAdmin ? (
-                <Shield size={14} className="text-emerald-600" />
-              ) : null}
-              {amAdmin && !isMe && !p.IsSuperAdmin && (
-                <button
-                  onClick={() => setMenu(menu === p.JID ? null : p.JID)}
-                  className="opacity-0 group-hover:opacity-100 data-[open=true]:opacity-100 text-neutral-400 hover:text-neutral-700"
-                  data-open={menu === p.JID}
-                  title="Manage"
-                >
-                  {busy === p.JID ? <Loader2 size={14} className="animate-spin" /> : <MoreVertical size={14} />}
-                </button>
-              )}
-              {menu === p.JID && (
-                <div className="absolute right-4 top-full z-30 w-44 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-xl py-1 text-xs" onMouseDown={(e) => e.stopPropagation()}>
-                  {p.IsAdmin ? (
-                    <MenuItem onClick={() => act("Dismiss admin", p, () => requireClient().demoteAdmins(session, chatId, [pid(p)]))}>Dismiss as admin</MenuItem>
-                  ) : (
-                    <MenuItem onClick={() => act("Make admin", p, () => requireClient().promoteAdmins(session, chatId, [pid(p)]))}>Make group admin</MenuItem>
-                  )}
-                  <MenuItem
-                    className="text-red-600"
-                    onClick={async () => {
-                      if (await confirm({ title: `Remove ${label} from the group?`, danger: true, confirmLabel: "Confirm" })) void act("Remove", p, () => requireClient().removeParticipants(session, chatId, [pid(p)]));
-                    }}
+      <div ref={ref} className="w-[460px] max-h-[80vh] flex flex-col rounded-xl bg-white dark:bg-neutral-900 shadow-2xl">
+        <div className="flex items-center gap-2 p-3 border-b border-neutral-200 dark:border-neutral-800">
+          <Users size={16} className="text-wa-dark" />
+          <span className="font-semibold flex-1">
+            Participants ({rows.length})
+            <span className="ml-2 text-xs font-normal text-neutral-500">
+              {admins} admin{admins === 1 ? "" : "s"}
+            </span>
+          </span>
+          <button onClick={onClose}>
+            <XIcon size={16} />
+          </button>
+        </div>
+        <div className="p-2 border-b border-neutral-100 dark:border-neutral-800">
+          <Input placeholder="Search by name or phone number" value={q} onChange={(e) => setQ(e.target.value)} autoFocus />
+        </div>
+        {err && <div className="px-4 py-1 text-xs text-red-600 selectable">{err}</div>}
+        <ul className="flex-1 overflow-y-auto">
+          {filtered.length === 0 && <li className="p-6 text-sm text-neutral-500 text-center">No participants match.</li>}
+          {filtered.map(({ p, phone, isMe, label }) => {
+            return (
+              <li key={p.JID} className="relative flex items-center gap-3 px-4 py-2 text-sm group">
+                <ParticipantAvatar session={session} id={phone ? `${phone}@c.us` : p.JID} name={label} size={40} />
+                <span className="flex-1 min-w-0">
+                  <span className="block truncate selectable font-medium">{label}</span>
+                  {phone && label !== `+${phone}` && <span className="block text-xs text-neutral-500 selectable">+{phone}</span>}
+                </span>
+                {p.IsSuperAdmin ? (
+                  <Crown size={14} className="text-amber-500" />
+                ) : p.IsAdmin ? (
+                  <Shield size={14} className="text-emerald-600" />
+                ) : null}
+                {amAdmin && !isMe && !p.IsSuperAdmin && (
+                  <button
+                    onClick={() => setMenu(menu === p.JID ? null : p.JID)}
+                    className="opacity-0 group-hover:opacity-100 data-[open=true]:opacity-100 text-neutral-400 hover:text-neutral-700"
+                    data-open={menu === p.JID}
+                    title="Manage"
                   >
-                    Remove from group
-                  </MenuItem>
-                </div>
-              )}
-            </li>
-          );
-        })}
-      </ul>
-    </div>
+                    {busy === p.JID ? <Loader2 size={14} className="animate-spin" /> : <MoreVertical size={14} />}
+                  </button>
+                )}
+                {menu === p.JID && (
+                  <div
+                    className="absolute right-4 top-full z-30 w-44 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-xl py-1 text-xs"
+                    onMouseDown={(e) => e.stopPropagation()}
+                  >
+                    {p.IsAdmin ? (
+                      <MenuItem onClick={() => act("Dismiss admin", p, () => requireClient().demoteAdmins(session, chatId, [pid(p)]))}>
+                        Dismiss as admin
+                      </MenuItem>
+                    ) : (
+                      <MenuItem onClick={() => act("Make admin", p, () => requireClient().promoteAdmins(session, chatId, [pid(p)]))}>
+                        Make group admin
+                      </MenuItem>
+                    )}
+                    <MenuItem
+                      className="text-red-600"
+                      onClick={async () => {
+                        if (await confirm({ title: `Remove ${label} from the group?`, danger: true, confirmLabel: "Confirm" }))
+                          void act("Remove", p, () => requireClient().removeParticipants(session, chatId, [pid(p)]));
+                      }}
+                    >
+                      Remove from group
+                    </MenuItem>
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      </div>
     </div>
   );
 }
@@ -180,7 +226,10 @@ function ParticipantsModal({
 function ParticipantAvatar({ session, id, name, size = 28 }: { session: string; id: string; name: string; size?: number }) {
   const pic = useQuery({
     queryKey: ["profile-picture", session, id],
-    queryFn: () => requireClient().profilePicture(session, id).then((r) => r.profilePictureURL),
+    queryFn: () =>
+      requireClient()
+        .profilePicture(session, id)
+        .then((r) => r.profilePictureURL),
     staleTime: 30 * 60_000,
     gcTime: 60 * 60_000,
     retry: 0,
@@ -253,21 +302,69 @@ export function GroupTools({
               }}
             >
               <Input placeholder="628123456789" value={phone} onChange={(e) => setPhone(e.target.value)} autoFocus />
-              <Button size="sm" type="submit" disabled={busy === "Add"}>{busy === "Add" ? <Loader2 size={12} className="animate-spin" /> : "Add"}</Button>
+              <Button size="sm" type="submit" disabled={busy === "Add"}>
+                {busy === "Add" ? <Loader2 size={12} className="animate-spin" /> : "Add"}
+              </Button>
             </form>
           )}
-          <input ref={picRef} type="file" accept="image/*" hidden onChange={async (e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) await run("Photo", async () => requireClient().setGroupPicture(session, chatId, { mimetype: f.type || "image/jpeg", filename: f.name, data: await fileToBase64(f) })); }} />
+          <input
+            ref={picRef}
+            type="file"
+            accept="image/*"
+            hidden
+            onChange={async (e) => {
+              const f = e.target.files?.[0];
+              e.target.value = "";
+              if (f)
+                await run("Photo", async () =>
+                  requireClient().setGroupPicture(session, chatId, {
+                    mimetype: f.type || "image/jpeg",
+                    filename: f.name,
+                    data: await fileToBase64(f),
+                  }),
+                );
+            }}
+          />
           <Row icon={Camera} label="Change group photo" busy={busy === "Photo"} onClick={() => picRef.current?.click()} />
           <Row icon={Lock} label="Group settings" onClick={() => setSettingsOpen((v) => !v)} />
           {settingsOpen && (
             <div className="px-4 pb-2 space-y-2">
-              <SettingToggle label="Only admins can send messages" checked={!!group.IsAnnounce} busy={busy === "announce"} onChange={(v) => run("announce", () => requireClient().setGroupMessagesAdminOnly(session, chatId, v))} />
-              <SettingToggle label="Only admins can edit group info" checked={!!group.IsLocked} busy={busy === "locked"} onChange={(v) => run("locked", () => requireClient().setGroupInfoAdminOnly(session, chatId, v))} />
-              <SettingToggle label="Approve new members" checked={!!group.IsJoinApprovalRequired} busy={busy === "approval"} onChange={(v) => run("approval", () => requireClient().setGroupMembershipApproval(session, chatId, v))} />
+              <SettingToggle
+                label="Only admins can send messages"
+                checked={!!group.IsAnnounce}
+                busy={busy === "announce"}
+                onChange={(v) => run("announce", () => requireClient().setGroupMessagesAdminOnly(session, chatId, v))}
+              />
+              <SettingToggle
+                label="Only admins can edit group info"
+                checked={!!group.IsLocked}
+                busy={busy === "locked"}
+                onChange={(v) => run("locked", () => requireClient().setGroupInfoAdminOnly(session, chatId, v))}
+              />
+              <SettingToggle
+                label="Approve new members"
+                checked={!!group.IsJoinApprovalRequired}
+                busy={busy === "approval"}
+                onChange={(v) => run("approval", () => requireClient().setGroupMembershipApproval(session, chatId, v))}
+              />
             </div>
           )}
-          <Row icon={Pencil} label="Change group name" onClick={() => { setEditing("subject"); setText(group.Name); }} />
-          <Row icon={Pencil} label="Change description" onClick={() => { setEditing("description"); setText(group.Topic ?? ""); }} />
+          <Row
+            icon={Pencil}
+            label="Change group name"
+            onClick={() => {
+              setEditing("subject");
+              setText(group.Name);
+            }}
+          />
+          <Row
+            icon={Pencil}
+            label="Change description"
+            onClick={() => {
+              setEditing("description");
+              setText(group.Topic ?? "");
+            }}
+          />
           {editing && (
             <div className="px-4 pb-2 space-y-1.5">
               <textarea
@@ -278,7 +375,9 @@ export function GroupTools({
                 className="w-full rounded-lg border border-neutral-300 dark:border-neutral-700 bg-transparent px-2 py-1 text-sm outline-none"
               />
               <div className="flex gap-2 justify-end">
-                <Button size="sm" variant="secondary" onClick={() => setEditing(null)}>Cancel</Button>
+                <Button size="sm" variant="secondary" onClick={() => setEditing(null)}>
+                  Cancel
+                </Button>
                 <Button
                   size="sm"
                   disabled={busy === "Save"}
@@ -327,7 +426,10 @@ export function GroupTools({
             <button
               title="Revoke and create a new link"
               onClick={async () => {
-                if (await confirm({ title: "Revoke the current invite link? Old links stop working.", danger: true, confirmLabel: "Confirm" })) void run("Revoke", async () => setInvite(String(await requireClient().revokeGroupInviteCode(session, chatId))), false);
+                if (
+                  await confirm({ title: "Revoke the current invite link? Old links stop working.", danger: true, confirmLabel: "Confirm" })
+                )
+                  void run("Revoke", async () => setInvite(String(await requireClient().revokeGroupInviteCode(session, chatId))), false);
               }}
             >
               <RefreshCw size={14} className={cn(busy === "Revoke" && "animate-spin")} />
@@ -340,16 +442,28 @@ export function GroupTools({
         label="Export participants (CSV)"
         busy={busy === "csv"}
         onClick={async () => {
-          const path = await save({ defaultPath: `${group.Name.replace(/[^\w.-]+/g, "_")}-participants.csv`, filters: [{ name: "CSV", extensions: ["csv"] }] });
+          const path = await save({
+            defaultPath: `${group.Name.replace(/[^\w.-]+/g, "_")}-participants.csv`,
+            filters: [{ name: "CSV", extensions: ["csv"] }],
+          });
           if (!path) return;
-          await run("csv", async () => {
-            const rows = [["name", "phone", "jid", "admin"]];
-            for (const p of group.Participants ?? []) {
-              const phone = p.PhoneNumber?.split("@")[0] ?? "";
-              rows.push([resolveName(p.JID) ?? p.DisplayName ?? "", phone ? `+${phone}` : "", p.JID, p.IsSuperAdmin ? "owner" : p.IsAdmin ? "admin" : ""]);
-            }
-            await writeTextFile(path, rows.map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n"));
-          }, false);
+          await run(
+            "csv",
+            async () => {
+              const rows = [["name", "phone", "jid", "admin"]];
+              for (const p of group.Participants ?? []) {
+                const phone = p.PhoneNumber?.split("@")[0] ?? "";
+                rows.push([
+                  resolveName(p.JID) ?? p.DisplayName ?? "",
+                  phone ? `+${phone}` : "",
+                  p.JID,
+                  p.IsSuperAdmin ? "owner" : p.IsAdmin ? "admin" : "",
+                ]);
+              }
+              await writeTextFile(path, rows.map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n"));
+            },
+            false,
+          );
         }}
       />
       <Row
@@ -369,12 +483,30 @@ export function GroupTools({
   );
 }
 
-function SettingToggle({ label, checked, busy, onChange }: { label: string; checked: boolean; busy?: boolean; onChange: (v: boolean) => void }) {
+function SettingToggle({
+  label,
+  checked,
+  busy,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  busy?: boolean;
+  onChange: (v: boolean) => void;
+}) {
   return (
     <label className="flex items-center gap-3 text-sm cursor-pointer">
       <span className="flex-1">{label}</span>
-      {busy ? <Loader2 size={14} className="animate-spin" /> : (
-        <button type="button" role="switch" aria-checked={checked} onClick={() => onChange(!checked)} className={cn("relative h-5 w-9 rounded-full transition", checked ? "bg-wa-dark" : "bg-neutral-300 dark:bg-neutral-700")}>
+      {busy ? (
+        <Loader2 size={14} className="animate-spin" />
+      ) : (
+        <button
+          type="button"
+          role="switch"
+          aria-checked={checked}
+          onClick={() => onChange(!checked)}
+          className={cn("relative h-5 w-9 rounded-full transition", checked ? "bg-wa-dark" : "bg-neutral-300 dark:bg-neutral-700")}
+        >
           <span className={cn("absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition", checked ? "left-[18px]" : "left-0.5")} />
         </button>
       )}
@@ -382,7 +514,21 @@ function SettingToggle({ label, checked, busy, onChange }: { label: string; chec
   );
 }
 
-function Row({ icon: Icon, label, onClick, danger, busy, highlight }: { icon: typeof UserPlus; label: string; onClick: () => void; danger?: boolean; busy?: boolean; highlight?: boolean }) {
+function Row({
+  icon: Icon,
+  label,
+  onClick,
+  danger,
+  busy,
+  highlight,
+}: {
+  icon: typeof UserPlus;
+  label: string;
+  onClick: () => void;
+  danger?: boolean;
+  busy?: boolean;
+  highlight?: boolean;
+}) {
   return (
     <button
       onClick={onClick}
@@ -392,7 +538,11 @@ function Row({ icon: Icon, label, onClick, danger, busy, highlight }: { icon: ty
         highlight && "bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-200 font-medium",
       )}
     >
-      {busy ? <Loader2 size={15} className="animate-spin" /> : <Icon size={15} className={danger ? "" : highlight ? "text-amber-600" : "text-wa-dark"} />}
+      {busy ? (
+        <Loader2 size={15} className="animate-spin" />
+      ) : (
+        <Icon size={15} className={danger ? "" : highlight ? "text-amber-600" : "text-wa-dark"} />
+      )}
       <span className="flex-1">{label}</span>
       {highlight && <span className="text-xs">›</span>}
     </button>
@@ -417,7 +567,9 @@ function JoinRequests({ session, chatId, resolveName }: { session: string; chatI
         onClick={() => setOpen(true)}
         highlight
       />
-      {open && <JoinRequestsModal session={session} chatId={chatId} resolveName={resolveName} requests={list} onClose={() => setOpen(false)} />}
+      {open && (
+        <JoinRequestsModal session={session} chatId={chatId} resolveName={resolveName} requests={list} onClose={() => setOpen(false)} />
+      )}
     </>
   );
 }
@@ -468,12 +620,22 @@ function JoinRequestsModal({
         <div className="flex items-center gap-2 p-3 border-b border-neutral-200 dark:border-neutral-800">
           <UserCheck size={16} className="text-wa-dark" />
           <span className="font-semibold flex-1">Join requests ({requests.length})</span>
-          <button onClick={onClose}><XIcon size={16} /></button>
+          <button onClick={onClose}>
+            <XIcon size={16} />
+          </button>
         </div>
         {err && <div className="px-4 py-1 text-xs text-red-600 selectable">{err}</div>}
         <ul className="flex-1 overflow-y-auto divide-y divide-neutral-100 dark:divide-neutral-800">
           {requests.map((r) => (
-            <JoinRequestRow key={idOf(r)} session={session} id={idOf(r)} request={r} resolveName={resolveName} busy={busy === idOf(r)} onDecide={(ok) => decide(r, ok)} />
+            <JoinRequestRow
+              key={idOf(r)}
+              session={session}
+              id={idOf(r)}
+              request={r}
+              resolveName={resolveName}
+              busy={busy === idOf(r)}
+              onDecide={(ok) => decide(r, ok)}
+            />
           ))}
           {requests.length === 0 && <li className="p-6 text-sm text-neutral-500 text-center">No pending requests.</li>}
         </ul>
@@ -500,7 +662,10 @@ function JoinRequestRow({
   // Requests only carry a LID; resolve phone number, name and picture from it.
   const pn = useQuery({
     queryKey: ["lid-pn", session, id],
-    queryFn: () => requireClient().lidToPhone(session, id).then((r) => r.pn),
+    queryFn: () =>
+      requireClient()
+        .lidToPhone(session, id)
+        .then((r) => r.pn),
     enabled: id.endsWith("@lid"),
     staleTime: Infinity,
     retry: 0,
@@ -508,7 +673,10 @@ function JoinRequestRow({
   const phoneDigits = (pn.data ?? (id.endsWith("@c.us") ? id : "")).split("@")[0] ?? "";
   const pic = useQuery({
     queryKey: ["profile-picture", session, id],
-    queryFn: () => requireClient().profilePicture(session, id).then((r) => r.profilePictureURL),
+    queryFn: () =>
+      requireClient()
+        .profilePicture(session, id)
+        .then((r) => r.profilePictureURL),
     staleTime: 10 * 60_000,
     retry: 0,
   });
@@ -525,7 +693,9 @@ function JoinRequestRow({
     (contact.data?.pushname ? `~${contact.data.pushname}` : null) ??
     (phoneDigits ? `+${phoneDigits}` : displayId(id));
   const when = request.timestamp;
-  const whenText = when ? new Date(when * 1000).toLocaleString([], { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : null;
+  const whenText = when
+    ? new Date(when * 1000).toLocaleString([], { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })
+    : null;
   return (
     <li className="flex items-center gap-3 px-4 py-2.5">
       <Avatar src={pic.data ?? undefined} name={name} size={44} />

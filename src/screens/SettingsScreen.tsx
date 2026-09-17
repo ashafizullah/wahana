@@ -1,6 +1,27 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { confirm } from "@/components/Confirm";
-import { Bell, CheckCircle2, ChevronDown, DatabaseBackup, Download, HardDrive, Image as ImageIcon, Info, Loader2, Pencil, Plug, Plus, RefreshCw, Server, SlidersHorizontal, Sparkles, Trash2, Upload, XCircle, Zap } from "lucide-react";
+import {
+  Bell,
+  CheckCircle2,
+  ChevronDown,
+  DatabaseBackup,
+  Download,
+  HardDrive,
+  Image as ImageIcon,
+  Info,
+  Loader2,
+  Pencil,
+  Plug,
+  Plus,
+  RefreshCw,
+  Server,
+  SlidersHorizontal,
+  Sparkles,
+  Trash2,
+  Upload,
+  XCircle,
+  Zap,
+} from "lucide-react";
 import { DEFAULT_MODELS, LANGUAGES, personaKey, testAi } from "@/lib/ai";
 import { usingFallback } from "@/lib/secrets";
 import { exportBackup, pickBackup, restoreBackup, type Backup, type RestoreOptions } from "@/lib/backup";
@@ -28,60 +49,106 @@ function loadOpen(): string[] {
 }
 const OpenCtx = createContext<{ open: string[]; toggle: (t: string) => void }>({ open: [], toggle: () => {} });
 
-const ALL_SECTIONS = ["Servers", "Connection", "Media", "Storage", "Tweaks", "AI", "Quick replies", "Notifications", "Backup & restore", "About"];
+const ALL_SECTIONS = [
+  "Servers",
+  "Connection",
+  "Media",
+  "Storage",
+  "Tweaks",
+  "AI",
+  "Quick replies",
+  "Notifications",
+  "Backup & restore",
+  "About",
+];
 
 export function SettingsScreen({ onSaved }: { onSaved: () => void }) {
   const [open, setOpen] = useState<string[]>(loadOpen);
-  useEffect(() => { try { localStorage.setItem(OPEN_KEY, JSON.stringify(open)); } catch { /* ignore */ } }, [open]);
+  useEffect(() => {
+    try {
+      localStorage.setItem(OPEN_KEY, JSON.stringify(open));
+    } catch {
+      /* ignore */
+    }
+  }, [open]);
   const toggle = (t: string) => setOpen((o) => (o.includes(t) ? o.filter((x) => x !== t) : [...o, t]));
   const allOpen = ALL_SECTIONS.every((t) => open.includes(t));
   return (
     <OpenCtx.Provider value={{ open, toggle }}>
-    <div className="flex-1 overflow-auto p-6">
-      <div className="space-y-3">
-        <div className="flex items-center gap-3">
-          <h1 className="text-xl font-semibold flex-1">Settings</h1>
-          <button className="text-xs text-neutral-500 hover:text-wa-dark" onClick={() => setOpen(allOpen ? [] : ALL_SECTIONS)}>
-            {allOpen ? "Collapse all" : "Expand all"}
-          </button>
-        </div>
-        {usingFallback() && (
-          <div className="rounded-lg bg-amber-50 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200 px-3 py-2 text-xs">
-            The OS keychain is unavailable on this machine, so API keys are kept in a local file (unencrypted). They still never leave your computer.
+      <div className="flex-1 overflow-auto p-6">
+        <div className="space-y-3">
+          <div className="flex items-center gap-3">
+            <h1 className="text-xl font-semibold flex-1">Settings</h1>
+            <button className="text-xs text-neutral-500 hover:text-wa-dark" onClick={() => setOpen(allOpen ? [] : ALL_SECTIONS)}>
+              {allOpen ? "Collapse all" : "Expand all"}
+            </button>
           </div>
-        )}
-        <Section icon={Server} title="Servers" description="You can keep several WAHA servers and switch between them. Each server's API key is stored in the OS keychain (macOS Keychain / Windows Credential Manager).">
-          <ProfilesSection />
-        </Section>
-        <Section icon={Plug} title="Connection" description="Settings for the selected server.">
-          <ConnectionSection onSaved={onSaved} />
-        </Section>
-        <Section icon={ImageIcon} title="Media" description="Choose what downloads automatically. Disabled kinds show a blurred preview until you click them — saves bandwidth and server work.">
-          <MediaSection />
-        </Section>
-        <Section icon={HardDrive} title="Storage" description="Downloaded media is kept on disk so it is not fetched again. Oldest files are evicted when the cap is reached.">
-          <StorageSection />
-        </Section>
-        <Section icon={SlidersHorizontal} title="Tweaks" description="Behaviour switches. They apply to what Wahana does — your phone follows its own WhatsApp settings.">
-          <TweaksSection />
-        </Section>
-        <Section icon={Sparkles} title="AI" description="Bring your own model. Anthropic uses the official SDK; OpenAI-compatible works with routers (TokenRouter, OpenRouter, Groq), Ollama, etc. The key is stored in the OS keychain.">
-          <AiSection />
-        </Section>
-        <Section icon={Zap} title="Quick replies" description="Type / in the composer to insert one. Variables: {name} {phone} {time} {date}.">
-          <QuickRepliesSection />
-        </Section>
-        <Section icon={Bell} title="Notifications">
-          <NotificationsSection />
-        </Section>
-        <Section icon={DatabaseBackup} title="Backup & restore" description="Export your configuration to a JSON file and import it on another machine or after a reinstall.">
-          <BackupSection />
-        </Section>
-        <Section icon={Info} title="About">
-          <AboutSection />
-        </Section>
+          {usingFallback() && (
+            <div className="rounded-lg bg-amber-50 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200 px-3 py-2 text-xs">
+              The OS keychain is unavailable on this machine, so API keys are kept in a local file (unencrypted). They still never leave
+              your computer.
+            </div>
+          )}
+          <Section
+            icon={Server}
+            title="Servers"
+            description="You can keep several WAHA servers and switch between them. Each server's API key is stored in the OS keychain (macOS Keychain / Windows Credential Manager)."
+          >
+            <ProfilesSection />
+          </Section>
+          <Section icon={Plug} title="Connection" description="Settings for the selected server.">
+            <ConnectionSection onSaved={onSaved} />
+          </Section>
+          <Section
+            icon={ImageIcon}
+            title="Media"
+            description="Choose what downloads automatically. Disabled kinds show a blurred preview until you click them — saves bandwidth and server work."
+          >
+            <MediaSection />
+          </Section>
+          <Section
+            icon={HardDrive}
+            title="Storage"
+            description="Downloaded media is kept on disk so it is not fetched again. Oldest files are evicted when the cap is reached."
+          >
+            <StorageSection />
+          </Section>
+          <Section
+            icon={SlidersHorizontal}
+            title="Tweaks"
+            description="Behaviour switches. They apply to what Wahana does — your phone follows its own WhatsApp settings."
+          >
+            <TweaksSection />
+          </Section>
+          <Section
+            icon={Sparkles}
+            title="AI"
+            description="Bring your own model. Anthropic uses the official SDK; OpenAI-compatible works with routers (TokenRouter, OpenRouter, Groq), Ollama, etc. The key is stored in the OS keychain."
+          >
+            <AiSection />
+          </Section>
+          <Section
+            icon={Zap}
+            title="Quick replies"
+            description="Type / in the composer to insert one. Variables: {name} {phone} {time} {date}."
+          >
+            <QuickRepliesSection />
+          </Section>
+          <Section icon={Bell} title="Notifications">
+            <NotificationsSection />
+          </Section>
+          <Section
+            icon={DatabaseBackup}
+            title="Backup & restore"
+            description="Export your configuration to a JSON file and import it on another machine or after a reinstall."
+          >
+            <BackupSection />
+          </Section>
+          <Section icon={Info} title="About">
+            <AboutSection />
+          </Section>
+        </div>
       </div>
-    </div>
     </OpenCtx.Provider>
   );
 }
@@ -105,7 +172,9 @@ function Section({
         type="button"
         aria-expanded={expanded}
         onClick={() => toggle(title)}
-        className={"w-full text-left px-5 py-3 flex items-start gap-3 " + (expanded ? "border-b border-neutral-100 dark:border-neutral-800" : "")}
+        className={
+          "w-full text-left px-5 py-3 flex items-start gap-3 " + (expanded ? "border-b border-neutral-100 dark:border-neutral-800" : "")
+        }
       >
         <Icon size={16} className="text-wa-dark mt-0.5 shrink-0" />
         <span className="flex-1 min-w-0">
@@ -119,17 +188,7 @@ function Section({
   );
 }
 
-function Toggle({
-  checked,
-  onChange,
-  label,
-  hint,
-}: {
-  checked: boolean;
-  onChange: (v: boolean) => void;
-  label: string;
-  hint?: string;
-}) {
+function Toggle({ checked, onChange, label, hint }: { checked: boolean; onChange: (v: boolean) => void; label: string; hint?: string }) {
   return (
     <label className="flex items-center gap-3 cursor-pointer">
       <span className="flex-1">
@@ -141,15 +200,9 @@ function Toggle({
         role="switch"
         aria-checked={checked}
         onClick={() => onChange(!checked)}
-        className={
-          "relative h-6 w-11 rounded-full transition " + (checked ? "bg-wa-dark" : "bg-neutral-300 dark:bg-neutral-700")
-        }
+        className={"relative h-6 w-11 rounded-full transition " + (checked ? "bg-wa-dark" : "bg-neutral-300 dark:bg-neutral-700")}
       >
-        <span
-          className={
-            "absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition " + (checked ? "left-[22px]" : "left-0.5")
-          }
-        />
+        <span className={"absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition " + (checked ? "left-[22px]" : "left-0.5")} />
       </button>
     </label>
   );
@@ -200,10 +253,19 @@ function ProfilesSection() {
             <span className={"w-2 h-2 rounded-full " + (p.id === activeProfile ? "bg-wa" : "bg-neutral-400")} />
             <span className="min-w-0 flex-1">
               <span className="block text-sm font-medium truncate">{p.name}</span>
-              <span className="block text-xs text-neutral-500 truncate selectable">{p.baseUrl} · {p.session}</span>
+              <span className="block text-xs text-neutral-500 truncate selectable">
+                {p.baseUrl} · {p.session}
+              </span>
             </span>
             {p.id !== activeProfile && (
-              <Button size="sm" variant="secondary" onClick={async () => { await switchProfile(p.id); qc.clear(); }}>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={async () => {
+                  await switchProfile(p.id);
+                  qc.clear();
+                }}
+              >
                 Use
               </Button>
             )}
@@ -224,17 +286,32 @@ function ProfilesSection() {
       </ul>
       {adding ? (
         <div className="space-y-3 rounded-lg border border-dashed border-neutral-300 dark:border-neutral-700 p-3">
-          <div><Label>Name</Label><Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Production" autoFocus /></div>
-          <div><Label>Base URL</Label><Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://waha.example.com" spellCheck={false} /></div>
-          <div><Label>API key</Label><Input type="password" value={key} onChange={(e) => setKey(e.target.value)} /></div>
+          <div>
+            <Label>Name</Label>
+            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Production" autoFocus />
+          </div>
+          <div>
+            <Label>Base URL</Label>
+            <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://waha.example.com" spellCheck={false} />
+          </div>
+          <div>
+            <Label>API key</Label>
+            <Input type="password" value={key} onChange={(e) => setKey(e.target.value)} />
+          </div>
           {err && <div className="text-xs text-red-600 selectable">{err}</div>}
           <div className="flex gap-2">
-            <Button onClick={add} disabled={busy || !url || !key}>{busy ? <Loader2 size={14} className="animate-spin" /> : "Test & add"}</Button>
-            <Button variant="secondary" onClick={() => setAdding(false)}>Cancel</Button>
+            <Button onClick={add} disabled={busy || !url || !key}>
+              {busy ? <Loader2 size={14} className="animate-spin" /> : "Test & add"}
+            </Button>
+            <Button variant="secondary" onClick={() => setAdding(false)}>
+              Cancel
+            </Button>
           </div>
         </div>
       ) : (
-        <Button variant="secondary" onClick={() => setAdding(true)}><Plus size={14} /> Add server</Button>
+        <Button variant="secondary" onClick={() => setAdding(true)}>
+          <Plus size={14} /> Add server
+        </Button>
       )}
     </>
   );
@@ -300,7 +377,12 @@ function ConnectionSection({ onSaved }: { onSaved: () => void }) {
       </div>
       <div>
         <Label>API key</Label>
-        <Input type="password" placeholder="plain API key (not the sha512: hash)" value={apiKey} onChange={(e) => setApiKey(e.target.value)} />
+        <Input
+          type="password"
+          placeholder="plain API key (not the sha512: hash)"
+          value={apiKey}
+          onChange={(e) => setApiKey(e.target.value)}
+        />
       </div>
       {result && (
         <div
@@ -327,7 +409,8 @@ function ConnectionSection({ onSaved }: { onSaved: () => void }) {
             variant="ghost"
             className="ml-auto text-red-600"
             onClick={async () => {
-              if (!(await confirm({ title: "Remove all servers and keys from this device?", danger: true, confirmLabel: "Confirm" }))) return;
+              if (!(await confirm({ title: "Remove all servers and keys from this device?", danger: true, confirmLabel: "Confirm" })))
+                return;
               await settings.clear();
               setBaseUrl("");
               setApiKey("");
@@ -355,12 +438,26 @@ function MediaSection() {
   };
   return (
     <>
-      <Toggle label="Auto-load images" hint="Photos appear immediately." checked={s.autoLoadImages} onChange={(v) => set({ autoLoadImages: v })} />
-      <Toggle label="Auto-load stickers" hint="Detected from the message type (stickers are webp images)." checked={s.autoLoadStickers} onChange={(v) => set({ autoLoadStickers: v })} />
-      <Toggle label="Auto-load videos" hint="Videos can be large; off shows a blurred frame with the size." checked={s.autoLoadVideos} onChange={(v) => set({ autoLoadVideos: v })} />
+      <Toggle
+        label="Auto-load images"
+        hint="Photos appear immediately."
+        checked={s.autoLoadImages}
+        onChange={(v) => set({ autoLoadImages: v })}
+      />
+      <Toggle
+        label="Auto-load stickers"
+        hint="Detected from the message type (stickers are webp images)."
+        checked={s.autoLoadStickers}
+        onChange={(v) => set({ autoLoadStickers: v })}
+      />
+      <Toggle
+        label="Auto-load videos"
+        hint="Videos can be large; off shows a blurred frame with the size."
+        checked={s.autoLoadVideos}
+        onChange={(v) => set({ autoLoadVideos: v })}
+      />
       <Toggle label="Auto-load voice notes & audio" checked={s.autoLoadAudio} onChange={(v) => set({ autoLoadAudio: v })} />
       <p className="text-xs text-neutral-500">Documents are never downloaded automatically — click to open.</p>
-
     </>
   );
 }
@@ -390,21 +487,32 @@ function StorageSection() {
     <>
       <div className="flex items-center gap-3 text-sm">
         <span className="flex-1 min-w-0">
-          <span className="block font-medium">{stats ? `${formatBytes(stats.bytes)} · ${stats.files} file${stats.files === 1 ? "" : "s"}` : "—"}</span>
+          <span className="block font-medium">
+            {stats ? `${formatBytes(stats.bytes)} · ${stats.files} file${stats.files === 1 ? "" : "s"}` : "—"}
+          </span>
           {stats && (
             <span className="block text-xs text-neutral-500 selectable truncate" title={stats.path}>
               {stats.path}
             </span>
           )}
         </span>
-        <Button size="sm" variant="ghost" className="shrink-0" onClick={refresh} title="Refresh"><RefreshCw size={14} /></Button>
+        <Button size="sm" variant="ghost" className="shrink-0" onClick={refresh} title="Refresh">
+          <RefreshCw size={14} />
+        </Button>
         <Button
           size="sm"
           variant="danger"
           className="shrink-0"
           disabled={busy || !stats?.files}
           onClick={async () => {
-            if (!(await confirm({ title: "Delete all cached media? They will be downloaded again when viewed.", danger: true, confirmLabel: "Confirm" }))) return;
+            if (
+              !(await confirm({
+                title: "Delete all cached media? They will be downloaded again when viewed.",
+                danger: true,
+                confirmLabel: "Confirm",
+              }))
+            )
+              return;
             setBusy(true);
             try {
               await cacheClear();
@@ -446,8 +554,16 @@ function TweaksSection() {
   const qc = useQueryClient();
   const receiptOptions: { value: typeof s.readReceipts; label: string; hint: string }[] = [
     { value: "always", label: "When I open the chat", hint: "Blue ticks as soon as the conversation is on screen (WhatsApp default)." },
-    { value: "on-reply", label: "Only when I reply", hint: "Read the chat silently; ticks turn blue the moment you send a message, file or reaction-free reply." },
-    { value: "manual", label: "Manually, with a button", hint: "Nothing is sent when you open a chat or a status. A ✓✓ button (chat header / status viewer) sends the receipt when you decide." },
+    {
+      value: "on-reply",
+      label: "Only when I reply",
+      hint: "Read the chat silently; ticks turn blue the moment you send a message, file or reaction-free reply.",
+    },
+    {
+      value: "manual",
+      label: "Manually, with a button",
+      hint: "Nothing is sent when you open a chat or a status. A ✓✓ button (chat header / status viewer) sends the receipt when you decide.",
+    },
     { value: "never", label: "Never", hint: "Senders keep grey ticks. Status views are not reported either." },
   ];
   return (
@@ -463,7 +579,13 @@ function TweaksSection() {
         <div className="space-y-1.5">
           {receiptOptions.map((o) => (
             <label key={o.value} className="flex items-start gap-2 cursor-pointer">
-              <input type="radio" name="readReceipts" className="mt-1" checked={s.readReceipts === o.value} onChange={() => s.save({ readReceipts: o.value })} />
+              <input
+                type="radio"
+                name="readReceipts"
+                className="mt-1"
+                checked={s.readReceipts === o.value}
+                onChange={() => s.save({ readReceipts: o.value })}
+              />
               <span>
                 <span className="block text-sm">{o.label}</span>
                 <span className="block text-xs text-neutral-500">{o.hint}</span>
@@ -497,8 +619,21 @@ function AiSection() {
   const [persona, setPersona] = useState(s.aiSystemPrompt);
   const [busy, setBusy] = useState<"test" | "save" | null>(null);
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
-  useEffect(() => { setProvider(s.aiProvider); setBaseUrl(s.aiBaseUrl); setModel(s.aiModel); setFastModel(s.aiFastModel); setKey(s.aiApiKey); setPersona(s.aiSystemPrompt); }, [s.aiProvider, s.aiBaseUrl, s.aiModel, s.aiFastModel, s.aiApiKey, s.aiSystemPrompt]);
-  const dirty = provider !== s.aiProvider || baseUrl.trim() !== s.aiBaseUrl || model.trim() !== s.aiModel || fastModel.trim() !== s.aiFastModel || key.trim() !== s.aiApiKey || persona.trim() !== s.aiSystemPrompt;
+  useEffect(() => {
+    setProvider(s.aiProvider);
+    setBaseUrl(s.aiBaseUrl);
+    setModel(s.aiModel);
+    setFastModel(s.aiFastModel);
+    setKey(s.aiApiKey);
+    setPersona(s.aiSystemPrompt);
+  }, [s.aiProvider, s.aiBaseUrl, s.aiModel, s.aiFastModel, s.aiApiKey, s.aiSystemPrompt]);
+  const dirty =
+    provider !== s.aiProvider ||
+    baseUrl.trim() !== s.aiBaseUrl ||
+    model.trim() !== s.aiModel ||
+    fastModel.trim() !== s.aiFastModel ||
+    key.trim() !== s.aiApiKey ||
+    persona.trim() !== s.aiSystemPrompt;
   const cfg = { provider, baseUrl: baseUrl.trim(), model: model.trim() || DEFAULT_MODELS[provider], apiKey: key.trim() };
 
   return (
@@ -506,38 +641,101 @@ function AiSection() {
       <div>
         <Label>Provider</Label>
         <div className="flex gap-1">
-          {([["anthropic", "Anthropic (Claude)"], ["openai-compatible", "OpenAI-compatible"]] as const).map(([id, label]) => (
-            <Button key={id} size="sm" variant={provider === id ? "primary" : "secondary"} onClick={() => { setProvider(id); if (!model || model === DEFAULT_MODELS[provider]) setModel(DEFAULT_MODELS[id]); }}>{label}</Button>
+          {(
+            [
+              ["anthropic", "Anthropic (Claude)"],
+              ["openai-compatible", "OpenAI-compatible"],
+            ] as const
+          ).map(([id, label]) => (
+            <Button
+              key={id}
+              size="sm"
+              variant={provider === id ? "primary" : "secondary"}
+              onClick={() => {
+                setProvider(id);
+                if (!model || model === DEFAULT_MODELS[provider]) setModel(DEFAULT_MODELS[id]);
+              }}
+            >
+              {label}
+            </Button>
           ))}
         </div>
       </div>
       <div>
-        <Label>{provider === "anthropic" ? "Base URL (optional — leave empty for api.anthropic.com)" : "Base URL (e.g. https://api.tokenrouter.com/v1)"}</Label>
-        <Input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder={provider === "anthropic" ? "https://api.anthropic.com" : "https://…/v1"} spellCheck={false} />
+        <Label>
+          {provider === "anthropic"
+            ? "Base URL (optional — leave empty for api.anthropic.com)"
+            : "Base URL (e.g. https://api.tokenrouter.com/v1)"}
+        </Label>
+        <Input
+          value={baseUrl}
+          onChange={(e) => setBaseUrl(e.target.value)}
+          placeholder={provider === "anthropic" ? "https://api.anthropic.com" : "https://…/v1"}
+          spellCheck={false}
+        />
       </div>
       <div className="grid grid-cols-2 gap-3">
-        <div><Label>Model</Label><Input value={model} onChange={(e) => setModel(e.target.value)} placeholder={provider === "anthropic" ? "claude-opus-5" : "e.g. gpt-4.1-mini, llama3"} spellCheck={false} /></div>
-        <div><Label>API key</Label><Input type="password" value={key} onChange={(e) => setKey(e.target.value)} placeholder="sk-…" /></div>
+        <div>
+          <Label>Model</Label>
+          <Input
+            value={model}
+            onChange={(e) => setModel(e.target.value)}
+            placeholder={provider === "anthropic" ? "claude-opus-5" : "e.g. gpt-4.1-mini, llama3"}
+            spellCheck={false}
+          />
+        </div>
+        <div>
+          <Label>API key</Label>
+          <Input type="password" value={key} onChange={(e) => setKey(e.target.value)} placeholder="sk-…" />
+        </div>
       </div>
       <div>
         <Label>Fast model — used for translate, rewrite and smart replies (optional; empty = same as Model)</Label>
-        <Input value={fastModel} onChange={(e) => setFastModel(e.target.value)} placeholder={provider === "anthropic" ? "claude-haiku-4-5" : "e.g. gpt-4.1-nano, llama3.2"} spellCheck={false} />
-        <p className="text-[11px] text-neutral-500 mt-1">Short edits don't need the strongest model. A small model answers in ~1–2 s; summaries keep using Model above.</p>
+        <Input
+          value={fastModel}
+          onChange={(e) => setFastModel(e.target.value)}
+          placeholder={provider === "anthropic" ? "claude-haiku-4-5" : "e.g. gpt-4.1-nano, llama3.2"}
+          spellCheck={false}
+        />
+        <p className="text-[11px] text-neutral-500 mt-1">
+          Short edits don't need the strongest model. A small model answers in ~1–2 s; summaries keep using Model above.
+        </p>
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
           <Label>My language</Label>
-          <select value={s.aiTranslateTo} onChange={(e) => s.save({ aiTranslateTo: e.target.value })} className="w-full rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-2 text-sm outline-none">
-            {LANGUAGES.map(([c, n]) => <option key={c} value={c}>{n}</option>)}
+          <select
+            value={s.aiTranslateTo}
+            onChange={(e) => s.save({ aiTranslateTo: e.target.value })}
+            className="w-full rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-2 text-sm outline-none"
+          >
+            {LANGUAGES.map(([c, n]) => (
+              <option key={c} value={c}>
+                {n}
+              </option>
+            ))}
           </select>
-          <p className="text-[11px] text-neutral-500 mt-1">The language you read in. Incoming messages are translated into it; summaries and image descriptions are written in it.</p>
+          <p className="text-[11px] text-neutral-500 mt-1">
+            The language you read in. Incoming messages are translated into it; summaries and image descriptions are written in it.
+          </p>
         </div>
         <div>
           <Label>Target language</Label>
-          <select value={s.aiComposeTo} onChange={(e) => s.save({ aiComposeTo: e.target.value })} className="w-full rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-2 text-sm outline-none">
-            {LANGUAGES.map(([c, n]) => <option key={c} value={c}>{n}</option>)}
+          <select
+            value={s.aiComposeTo}
+            onChange={(e) => s.save({ aiComposeTo: e.target.value })}
+            className="w-full rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-2 text-sm outline-none"
+          >
+            {LANGUAGES.map(([c, n]) => (
+              <option key={c} value={c}>
+                {n}
+              </option>
+            ))}
           </select>
-          <p className="text-[11px] text-neutral-500 mt-1">The language the other side reads. The 🌐 button in the composer translates your draft into it. Per-chat overrides: chat menu ⋮ → Auto-translate.</p>
+          <p className="text-[11px] text-neutral-500 mt-1">
+            The language the other side reads. The 🌐 button in the composer translates your draft into it. Per-chat overrides: chat menu ⋮
+            → Auto-translate.
+          </p>
         </div>
       </div>
       <div>
@@ -546,7 +744,9 @@ function AiSection() {
           value={persona}
           onChange={(e) => setPersona(e.target.value)}
           rows={3}
-          placeholder={"e.g. I'm Adam, owner of Toko Wahana (electronics, Bandung). Reply in Indonesian, casual but polite; address customers as \"Kak\". Never promise delivery dates."}
+          placeholder={
+            'e.g. I\'m Adam, owner of Toko Wahana (electronics, Bandung). Reply in Indonesian, casual but polite; address customers as "Kak". Never promise delivery dates.'
+          }
           className="w-full rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-2 text-sm outline-none focus:border-wa-dark resize-y"
         />
       </div>
@@ -558,15 +758,56 @@ function AiSection() {
         onChange={(v) => s.save({ aiAutoLabel: v })}
       />
       {result && (
-        <div className={"flex items-center gap-2 rounded-lg px-3 py-2 text-sm " + (result.ok ? "bg-emerald-50 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300" : "bg-red-50 text-red-800 dark:bg-red-900/30 dark:text-red-300")}>
-          {result.ok ? <CheckCircle2 size={16} /> : <XCircle size={16} />}<span className="selectable break-all">{result.text}</span>
+        <div
+          className={
+            "flex items-center gap-2 rounded-lg px-3 py-2 text-sm " +
+            (result.ok
+              ? "bg-emerald-50 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300"
+              : "bg-red-50 text-red-800 dark:bg-red-900/30 dark:text-red-300")
+          }
+        >
+          {result.ok ? <CheckCircle2 size={16} /> : <XCircle size={16} />}
+          <span className="selectable break-all">{result.text}</span>
         </div>
       )}
       <div className="flex gap-2">
-        <Button variant="secondary" disabled={busy !== null || !cfg.apiKey || !cfg.model || (provider !== "anthropic" && !cfg.baseUrl)} onClick={async () => { setBusy("test"); setResult(null); try { const out = await testAi(cfg); setResult({ ok: true, text: `Model replied: ${out.slice(0, 80)}` }); } catch (e) { setResult({ ok: false, text: errMsg(e) }); } finally { setBusy(null); } }}>
+        <Button
+          variant="secondary"
+          disabled={busy !== null || !cfg.apiKey || !cfg.model || (provider !== "anthropic" && !cfg.baseUrl)}
+          onClick={async () => {
+            setBusy("test");
+            setResult(null);
+            try {
+              const out = await testAi(cfg);
+              setResult({ ok: true, text: `Model replied: ${out.slice(0, 80)}` });
+            } catch (e) {
+              setResult({ ok: false, text: errMsg(e) });
+            } finally {
+              setBusy(null);
+            }
+          }}
+        >
           {busy === "test" && <Loader2 size={14} className="animate-spin" />} Test
         </Button>
-        <Button disabled={busy !== null || !dirty} onClick={async () => { setBusy("save"); try { await s.save({ aiProvider: provider, aiBaseUrl: cfg.baseUrl, aiModel: cfg.model, aiFastModel: fastModel.trim(), aiApiKey: cfg.apiKey, aiSystemPrompt: persona.trim() }); setResult({ ok: true, text: "Saved." }); } finally { setBusy(null); } }}>
+        <Button
+          disabled={busy !== null || !dirty}
+          onClick={async () => {
+            setBusy("save");
+            try {
+              await s.save({
+                aiProvider: provider,
+                aiBaseUrl: cfg.baseUrl,
+                aiModel: cfg.model,
+                aiFastModel: fastModel.trim(),
+                aiApiKey: cfg.apiKey,
+                aiSystemPrompt: persona.trim(),
+              });
+              setResult({ ok: true, text: "Saved." });
+            } finally {
+              setBusy(null);
+            }
+          }}
+        >
           {busy === "save" && <Loader2 size={14} className="animate-spin" />} Save
         </Button>
       </div>
@@ -590,11 +831,34 @@ function QuickRepliesSection() {
         {q.data?.map((r) => (
           <li key={r.id} className="flex items-start gap-2 rounded-lg bg-neutral-50 dark:bg-neutral-800/60 px-3 py-2">
             <span className="min-w-0 flex-1">
-              <span className="block text-sm font-medium">/{r.shortcut} {r.session && <span className="ml-1 text-[10px] rounded-full bg-wa/15 text-wa-dark dark:text-wa px-1.5 py-0.5 font-mono font-normal" title="Only in this session">{r.session}</span>}</span>
+              <span className="block text-sm font-medium">
+                /{r.shortcut}{" "}
+                {r.session && (
+                  <span
+                    className="ml-1 text-[10px] rounded-full bg-wa/15 text-wa-dark dark:text-wa px-1.5 py-0.5 font-mono font-normal"
+                    title="Only in this session"
+                  >
+                    {r.session}
+                  </span>
+                )}
+              </span>
               <span className="block text-xs text-neutral-500 whitespace-pre-wrap selectable">{r.text}</span>
             </span>
-            <button className="text-neutral-400 hover:text-neutral-700" onClick={() => setEditing(r)} title="Edit"><Pencil size={14} /></button>
-            <button className="text-neutral-400 hover:text-red-600" title="Delete" onClick={async () => { if (await confirm({ title: `Delete /${r.shortcut}?`, danger: true, confirmLabel: "Delete" })) { await deleteQuickReply(r.id); refresh(); } }}><Trash2 size={14} /></button>
+            <button className="text-neutral-400 hover:text-neutral-700" onClick={() => setEditing(r)} title="Edit">
+              <Pencil size={14} />
+            </button>
+            <button
+              className="text-neutral-400 hover:text-red-600"
+              title="Delete"
+              onClick={async () => {
+                if (await confirm({ title: `Delete /${r.shortcut}?`, danger: true, confirmLabel: "Delete" })) {
+                  await deleteQuickReply(r.id);
+                  refresh();
+                }
+              }}
+            >
+              <Trash2 size={14} />
+            </button>
           </li>
         ))}
         {q.data?.length === 0 && !editing && <li className="text-sm text-neutral-500">No quick replies yet.</li>}
@@ -602,12 +866,34 @@ function QuickRepliesSection() {
       {editing ? (
         <div className="space-y-2 rounded-lg border border-dashed border-neutral-300 dark:border-neutral-700 p-3">
           <div className="grid grid-cols-2 gap-3">
-            <div><Label>Shortcut</Label><Input value={editing.shortcut ?? ""} onChange={(e) => setEditing({ ...editing, shortcut: e.target.value })} placeholder="thanks" autoFocus /></div>
-            <div><Label>Available in</Label><SessionSelect value={editing.session ?? ""} onChange={(v) => setEditing({ ...editing, session: v || null })} allowAll="All sessions" className="w-full" /></div>
+            <div>
+              <Label>Shortcut</Label>
+              <Input
+                value={editing.shortcut ?? ""}
+                onChange={(e) => setEditing({ ...editing, shortcut: e.target.value })}
+                placeholder="thanks"
+                autoFocus
+              />
+            </div>
+            <div>
+              <Label>Available in</Label>
+              <SessionSelect
+                value={editing.session ?? ""}
+                onChange={(v) => setEditing({ ...editing, session: v || null })}
+                allowAll="All sessions"
+                className="w-full"
+              />
+            </div>
           </div>
           <div>
             <Label>Text</Label>
-            <textarea value={editing.text ?? ""} onChange={(e) => setEditing({ ...editing, text: e.target.value })} rows={3} placeholder="Terima kasih {name}, pesanan kamu sedang diproses." className="w-full rounded-lg border border-neutral-300 dark:border-neutral-700 bg-transparent px-3 py-2 text-sm outline-none" />
+            <textarea
+              value={editing.text ?? ""}
+              onChange={(e) => setEditing({ ...editing, text: e.target.value })}
+              rows={3}
+              placeholder="Terima kasih {name}, pesanan kamu sedang diproses."
+              className="w-full rounded-lg border border-neutral-300 dark:border-neutral-700 bg-transparent px-3 py-2 text-sm outline-none"
+            />
           </div>
           {err && <div className="text-xs text-red-600">{err}</div>}
           <div className="flex gap-2">
@@ -616,7 +902,13 @@ function QuickRepliesSection() {
                 const shortcut = (editing.shortcut ?? "").replace(/^\//, "").trim();
                 if (!shortcut || /\s/.test(shortcut)) return setErr("Shortcut must be one word.");
                 if (!(editing.text ?? "").trim()) return setErr("Text is required.");
-                await saveQuickReply({ id: editing.id ?? Math.random().toString(36).slice(2, 10), profile, session: editing.session ?? null, shortcut, text: editing.text!.trim() });
+                await saveQuickReply({
+                  id: editing.id ?? Math.random().toString(36).slice(2, 10),
+                  profile,
+                  session: editing.session ?? null,
+                  shortcut,
+                  text: editing.text!.trim(),
+                });
                 setEditing(null);
                 setErr(null);
                 refresh();
@@ -624,11 +916,21 @@ function QuickRepliesSection() {
             >
               Save
             </Button>
-            <Button variant="secondary" onClick={() => { setEditing(null); setErr(null); }}>Cancel</Button>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setEditing(null);
+                setErr(null);
+              }}
+            >
+              Cancel
+            </Button>
           </div>
         </div>
       ) : (
-        <Button variant="secondary" onClick={() => setEditing({})}><Plus size={14} /> Add quick reply</Button>
+        <Button variant="secondary" onClick={() => setEditing({})}>
+          <Plus size={14} /> Add quick reply
+        </Button>
       )}
     </>
   );
@@ -662,19 +964,33 @@ function BackupSection() {
     <>
       <div className="space-y-2">
         <div className="text-sm font-medium">Export</div>
-        <p className="text-xs text-neutral-500">Includes: preferences, servers, AI settings, pinned/muted/archived chats, quick replies, schedules (without attachments). Not included: message history, media cache, receipts.</p>
+        <p className="text-xs text-neutral-500">
+          Includes: preferences, servers, AI settings, pinned/muted/archived chats, quick replies, schedules (without attachments). Not
+          included: message history, media cache, receipts.
+        </p>
         <label className="flex items-start gap-2 text-sm cursor-pointer">
           <input type="checkbox" className="mt-1" checked={includeSecrets} onChange={(e) => setIncludeSecrets(e.target.checked)} />
           <span>
             Include API keys (WAHA + AI)
-            <span className="block text-xs text-amber-700 dark:text-amber-300">Keys are written in plain text — keep the file private.</span>
+            <span className="block text-xs text-amber-700 dark:text-amber-300">
+              Keys are written in plain text — keep the file private.
+            </span>
           </span>
         </label>
         <Button
           variant="secondary"
           disabled={busy !== null}
           onClick={async () => {
-            if (includeSecrets && !(await confirm({ title: "Export API keys in plain text?", message: "Anyone with the file can use your WAHA server and AI account.", danger: true, confirmLabel: "Export anyway" }))) return;
+            if (
+              includeSecrets &&
+              !(await confirm({
+                title: "Export API keys in plain text?",
+                message: "Anyone with the file can use your WAHA server and AI account.",
+                danger: true,
+                confirmLabel: "Export anyway",
+              }))
+            )
+              return;
             setBusy("export");
             setMsg(null);
             try {
@@ -712,17 +1028,39 @@ function BackupSection() {
         ) : (
           <div className="rounded-lg border border-neutral-200 dark:border-neutral-700 p-3 space-y-2">
             <div className="text-xs text-neutral-500 selectable truncate">{pending.path}</div>
-            <div className="text-xs text-neutral-500">Exported {new Date(pending.backup.exportedAt).toLocaleString()} · app {pending.backup.appVersion} · {pending.backup.profiles?.length ?? 0} server(s) · {pending.backup.quickReplies?.length ?? 0} quick replies · {pending.backup.schedules?.length ?? 0} schedules{pending.backup.secrets ? " · includes API keys" : ""}</div>
+            <div className="text-xs text-neutral-500">
+              Exported {new Date(pending.backup.exportedAt).toLocaleString()} · app {pending.backup.appVersion} ·{" "}
+              {pending.backup.profiles?.length ?? 0} server(s) · {pending.backup.quickReplies?.length ?? 0} quick replies ·{" "}
+              {pending.backup.schedules?.length ?? 0} schedules{pending.backup.secrets ? " · includes API keys" : ""}
+            </div>
             <div className="grid grid-cols-2 gap-1 text-sm">
-              {([["prefs", "Preferences & AI settings"], ["profiles", "Servers (merged by id)"], ["chatPrefs", "Pinned / muted / archived"], ["quickReplies", "Quick replies"], ["schedules", "Schedules"]] as const).map(([k, label]) => (
-                <label key={k} className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={opts[k]} onChange={(e) => setOpts({ ...opts, [k]: e.target.checked })} /> {label}</label>
+              {(
+                [
+                  ["prefs", "Preferences & AI settings"],
+                  ["profiles", "Servers (merged by id)"],
+                  ["chatPrefs", "Pinned / muted / archived"],
+                  ["quickReplies", "Quick replies"],
+                  ["schedules", "Schedules"],
+                ] as const
+              ).map(([k, label]) => (
+                <label key={k} className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={opts[k]} onChange={(e) => setOpts({ ...opts, [k]: e.target.checked })} /> {label}
+                </label>
               ))}
             </div>
             <div className="flex gap-2">
               <Button
                 disabled={busy !== null}
                 onClick={async () => {
-                  if (!(await confirm({ title: "Restore this backup?", message: "Selected sections are merged into the current configuration. Existing items with the same id are overwritten.", confirmLabel: "Restore" }))) return;
+                  if (
+                    !(await confirm({
+                      title: "Restore this backup?",
+                      message:
+                        "Selected sections are merged into the current configuration. Existing items with the same id are overwritten.",
+                      confirmLabel: "Restore",
+                    }))
+                  )
+                    return;
                   setBusy("import");
                   try {
                     await restoreBackup(pending.backup, opts);
@@ -738,14 +1076,24 @@ function BackupSection() {
               >
                 {busy === "import" ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />} Restore
               </Button>
-              <Button variant="secondary" onClick={() => setPending(null)}>Cancel</Button>
+              <Button variant="secondary" onClick={() => setPending(null)}>
+                Cancel
+              </Button>
             </div>
           </div>
         )}
       </div>
       {msg && (
-        <div className={"flex items-center gap-2 rounded-lg px-3 py-2 text-sm " + (msg.ok ? "bg-emerald-50 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300" : "bg-red-50 text-red-800 dark:bg-red-900/30 dark:text-red-300")}>
-          {msg.ok ? <CheckCircle2 size={16} /> : <XCircle size={16} />}<span className="selectable break-all">{msg.text}</span>
+        <div
+          className={
+            "flex items-center gap-2 rounded-lg px-3 py-2 text-sm " +
+            (msg.ok
+              ? "bg-emerald-50 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300"
+              : "bg-red-50 text-red-800 dark:bg-red-900/30 dark:text-red-300")
+          }
+        >
+          {msg.ok ? <CheckCircle2 size={16} /> : <XCircle size={16} />}
+          <span className="selectable break-all">{msg.text}</span>
         </div>
       )}
     </>
@@ -758,7 +1106,9 @@ function AboutSection() {
   const { data: server } = useServerVersion();
   const [appVersion, setAppVersion] = useState("");
   useEffect(() => {
-    getVersion().then(setAppVersion).catch(() => {});
+    getVersion()
+      .then(setAppVersion)
+      .catch(() => {});
   }, []);
   return (
     <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-1 text-sm">
@@ -778,7 +1128,9 @@ function PersonaPerSession() {
   const save = useSettings((s) => s.save);
   const [open, setOpen] = useState(false);
   const prefix = `${profile}:`;
-  const stored = Object.keys(map).filter((k) => k.startsWith(prefix) && map[k]?.trim()).map((k) => k.slice(prefix.length));
+  const stored = Object.keys(map)
+    .filter((k) => k.startsWith(prefix) && map[k]?.trim())
+    .map((k) => k.slice(prefix.length));
   const names = [...new Set([...(sessions ?? []).map((x) => x.name), ...stored])];
   if (names.length < 2 && stored.length === 0) return null;
   const set = (name: string, text: string) => {
@@ -793,11 +1145,16 @@ function PersonaPerSession() {
       <button className="w-full flex items-center gap-2 px-3 py-2 text-sm" onClick={() => setOpen((o) => !o)}>
         <ChevronDown size={14} className={open ? "" : "-rotate-90"} />
         <span className="font-medium">Persona per session</span>
-        <span className="text-xs text-neutral-500">{overridden ? `${overridden} override${overridden > 1 ? "s" : ""}` : "none — every session uses the persona above"}</span>
+        <span className="text-xs text-neutral-500">
+          {overridden ? `${overridden} override${overridden > 1 ? "s" : ""}` : "none — every session uses the persona above"}
+        </span>
       </button>
       {open && (
         <div className="px-3 pb-3 space-y-3">
-          <p className="text-[11px] text-neutral-500">Running several businesses from one app? Give each session its own "who I am". Empty = use the default persona. Applies to auto-reply, smart replies, the writing assistant and summaries for chats on that session.</p>
+          <p className="text-[11px] text-neutral-500">
+            Running several businesses from one app? Give each session its own "who I am". Empty = use the default persona. Applies to
+            auto-reply, smart replies, the writing assistant and summaries for chats on that session.
+          </p>
           {names.map((n) => (
             <PersonaField key={n} name={n} value={map[personaKey(profile, n)] ?? ""} onSave={(t) => set(n, t)} />
           ))}

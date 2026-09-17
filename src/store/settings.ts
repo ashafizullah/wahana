@@ -146,7 +146,9 @@ export const useSettings = create<SettingsState>((set, get) => ({
     let apiKey = "";
     // Dev convenience: prefill from .env.development.local when nothing is stored yet.
     if (import.meta.env.DEV && profiles.length === 0 && import.meta.env.VITE_WAHA_BASE_URL) {
-      profiles = [{ id: "dev", name: "Dev", baseUrl: import.meta.env.VITE_WAHA_BASE_URL, session: import.meta.env.VITE_WAHA_SESSION ?? "default" }];
+      profiles = [
+        { id: "dev", name: "Dev", baseUrl: import.meta.env.VITE_WAHA_BASE_URL, session: import.meta.env.VITE_WAHA_SESSION ?? "default" },
+      ];
       active = "dev";
       apiKey = import.meta.env.VITE_WAHA_API_KEY ?? "";
     }
@@ -155,7 +157,13 @@ export const useSettings = create<SettingsState>((set, get) => ({
     if (prof && !apiKey) apiKey = await readKey(prof.id);
     // Dev: every cargo rebuild is a new binary, so macOS may deny keychain access until re-approved.
     // Fall back to the dev key when the profile points at the dev server.
-    if (import.meta.env.DEV && prof && !apiKey && import.meta.env.VITE_WAHA_API_KEY && prof.baseUrl.replace(/\/+$/, "") === (import.meta.env.VITE_WAHA_BASE_URL ?? "").replace(/\/+$/, "")) {
+    if (
+      import.meta.env.DEV &&
+      prof &&
+      !apiKey &&
+      import.meta.env.VITE_WAHA_API_KEY &&
+      prof.baseUrl.replace(/\/+$/, "") === (import.meta.env.VITE_WAHA_BASE_URL ?? "").replace(/\/+$/, "")
+    ) {
       apiKey = import.meta.env.VITE_WAHA_API_KEY;
     }
 

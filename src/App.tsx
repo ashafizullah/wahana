@@ -1,5 +1,17 @@
 import { useEffect, useState } from "react";
-import { MessageSquare, Radio, Settings as SettingsIcon, Loader2, Download, X, Activity, CircleDashed, CalendarClock, Megaphone, Bot } from "lucide-react";
+import {
+  MessageSquare,
+  Radio,
+  Settings as SettingsIcon,
+  Loader2,
+  Download,
+  X,
+  Activity,
+  CircleDashed,
+  CalendarClock,
+  Megaphone,
+  Bot,
+} from "lucide-react";
 import { useSettings } from "@/store/settings";
 import { useWahaSocket } from "@/realtime/useWahaSocket";
 import { SettingsScreen } from "@/screens/SettingsScreen";
@@ -79,7 +91,21 @@ export default function App() {
     void hydratePolls();
     void hydrateCalls();
     void hydrateLive();
-  }, [hydrate, hydrateUnread, hydratePushNames, hydrateReactions, hydrateReceipts, hydrateHidden, hydrateRevoked, hydrateDrafts, hydrateChatPrefs, hydratePolls, hydrateCalls, hydrateLive, hydrateWaWeb]);
+  }, [
+    hydrate,
+    hydrateUnread,
+    hydratePushNames,
+    hydrateReactions,
+    hydrateReceipts,
+    hydrateHidden,
+    hydrateRevoked,
+    hydrateDrafts,
+    hydrateChatPrefs,
+    hydratePolls,
+    hydrateCalls,
+    hydrateLive,
+    hydrateWaWeb,
+  ]);
 
   useEffect(() => {
     if (hydrated && !client) setTab("settings");
@@ -90,7 +116,16 @@ export default function App() {
     const onKey = (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey;
       if (!mod) return;
-      const tabs: Record<string, Tab> = { "1": "chats", "2": "status", "3": "scheduler", "4": "broadcast", "5": "autoreply", "6": "sessions", "7": "events", "8": "settings" };
+      const tabs: Record<string, Tab> = {
+        "1": "chats",
+        "2": "status",
+        "3": "scheduler",
+        "4": "broadcast",
+        "5": "autoreply",
+        "6": "sessions",
+        "7": "events",
+        "8": "settings",
+      };
       if (tabs[e.key]) {
         e.preventDefault();
         setTab(tabs[e.key]!);
@@ -179,7 +214,9 @@ export default function App() {
             <Button size="sm" variant="secondary" onClick={updater.install} disabled={updater.progress !== null}>
               Install & restart
             </Button>
-            <button onClick={updater.dismiss} title="Later"><X size={16} /></button>
+            <button onClick={updater.dismiss} title="Later">
+              <X size={16} />
+            </button>
           </div>
         )}
         <div className="flex-1 min-h-0 flex">
@@ -187,7 +224,7 @@ export default function App() {
             {tab === "chats" && <ChatScreen />}
             {tab === "status" && <StatusScreen />}
             {tab === "scheduler" && <SchedulerScreen />}
-          {tab === "broadcast" && <BroadcastScreen />}
+            {tab === "broadcast" && <BroadcastScreen />}
             {tab === "autoreply" && <AutoReplyScreen />}
             {tab === "sessions" && <SessionsScreen />}
             {tab === "events" && <EventsScreen />}

@@ -59,7 +59,9 @@ export function Dialog({ title, onClose, children }: { title: string; onClose: (
       <div className="w-[400px] rounded-xl bg-white dark:bg-neutral-900 shadow-2xl">
         <div className="flex items-center gap-2 p-3 border-b border-neutral-200 dark:border-neutral-800">
           <span className="font-semibold flex-1">{title}</span>
-          <button onClick={onClose}><X size={16} /></button>
+          <button onClick={onClose}>
+            <X size={16} />
+          </button>
         </div>
         <div className="p-4 space-y-3">{children}</div>
       </div>
@@ -100,7 +102,9 @@ export function VoiceRecorder({ onSend, onClose }: { onSend: (blob: Blob, mime: 
   const start = async () => {
     try {
       stream.current = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mime = ["audio/webm;codecs=opus", "audio/ogg;codecs=opus", "audio/mp4", "audio/webm"].find((t) => MediaRecorder.isTypeSupported(t));
+      const mime = ["audio/webm;codecs=opus", "audio/ogg;codecs=opus", "audio/mp4", "audio/webm"].find((t) =>
+        MediaRecorder.isTypeSupported(t),
+      );
       const r = new MediaRecorder(stream.current, mime ? { mimeType: mime } : undefined);
       chunks.current = [];
       r.ondataavailable = (e) => e.data.size && chunks.current.push(e.data);
@@ -120,7 +124,6 @@ export function VoiceRecorder({ onSend, onClose }: { onSend: (blob: Blob, mime: 
   useEffect(() => {
     void start();
     return () => stream.current?.getTracks().forEach((t) => t.stop());
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -136,7 +139,9 @@ export function VoiceRecorder({ onSend, onClose }: { onSend: (blob: Blob, mime: 
   return (
     <div className="flex items-center gap-3 rounded-lg bg-neutral-100 dark:bg-neutral-800 px-3 py-2 text-sm">
       <span className={cn("w-2.5 h-2.5 rounded-full", recording ? "bg-red-500 animate-pulse" : "bg-neutral-400")} />
-      <span className="font-mono">{mm}:{ss}</span>
+      <span className="font-mono">
+        {mm}:{ss}
+      </span>
       {blob && <audio controls src={URL.createObjectURL(blob)} className="h-8 max-w-[220px]" />}
       <span className="flex-1" />
       <ErrorLine err={err} />
@@ -156,7 +161,13 @@ export function VoiceRecorder({ onSend, onClose }: { onSend: (blob: Blob, mime: 
       >
         {busy ? <Loader2 size={12} className="animate-spin" /> : "Send"}
       </Button>
-      <button onClick={() => { rec?.state === "recording" && rec.stop(); onClose(); }} title="Cancel">
+      <button
+        onClick={() => {
+          if (rec?.state === "recording") rec.stop();
+          onClose();
+        }}
+        title="Cancel"
+      >
         <Trash2 size={16} className="text-neutral-500" />
       </button>
     </div>
@@ -165,7 +176,13 @@ export function VoiceRecorder({ onSend, onClose }: { onSend: (blob: Blob, mime: 
 
 // ── Location ─────────────────────────────────────────────────────────────
 
-export function LocationDialog({ onSend, onClose }: { onSend: (lat: number, lng: number, title: string) => Promise<void>; onClose: () => void }) {
+export function LocationDialog({
+  onSend,
+  onClose,
+}: {
+  onSend: (lat: number, lng: number, title: string) => Promise<void>;
+  onClose: () => void;
+}) {
   const [lat, setLat] = useState("");
   const [lng, setLng] = useState("");
   const [title, setTitle] = useState("");
@@ -189,14 +206,28 @@ export function LocationDialog({ onSend, onClose }: { onSend: (lat: number, lng:
         <Input placeholder="-6.2000, 106.8166" onChange={(e) => parsePaste(e.target.value)} />
       </div>
       <div className="grid grid-cols-2 gap-2">
-        <div><Label>Latitude</Label><Input value={lat} onChange={(e) => setLat(e.target.value)} /></div>
-        <div><Label>Longitude</Label><Input value={lng} onChange={(e) => setLng(e.target.value)} /></div>
+        <div>
+          <Label>Latitude</Label>
+          <Input value={lat} onChange={(e) => setLat(e.target.value)} />
+        </div>
+        <div>
+          <Label>Longitude</Label>
+          <Input value={lng} onChange={(e) => setLng(e.target.value)} />
+        </div>
       </div>
-      <div><Label>Title (optional)</Label><Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Office" /></div>
+      <div>
+        <Label>Title (optional)</Label>
+        <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Office" />
+      </div>
       <ErrorLine err={err} />
       <div className="flex justify-end gap-2">
-        <Button variant="secondary" onClick={onClose}>Cancel</Button>
-        <Button disabled={!ok || busy} onClick={() => guard(() => onSend(Number(lat), Number(lng), title), setBusy, setErr).then((ok) => ok && onClose())}>
+        <Button variant="secondary" onClick={onClose}>
+          Cancel
+        </Button>
+        <Button
+          disabled={!ok || busy}
+          onClick={() => guard(() => onSend(Number(lat), Number(lng), title), setBusy, setErr).then((ok) => ok && onClose())}
+        >
           {busy ? <Loader2 size={14} className="animate-spin" /> : "Send"}
         </Button>
       </div>
@@ -206,7 +237,13 @@ export function LocationDialog({ onSend, onClose }: { onSend: (lat: number, lng:
 
 // ── Contact ──────────────────────────────────────────────────────────────
 
-export function ContactDialog({ onSend, onClose }: { onSend: (name: string, phone: string, org: string) => Promise<void>; onClose: () => void }) {
+export function ContactDialog({
+  onSend,
+  onClose,
+}: {
+  onSend: (name: string, phone: string, org: string) => Promise<void>;
+  onClose: () => void;
+}) {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [org, setOrg] = useState("");
@@ -215,13 +252,27 @@ export function ContactDialog({ onSend, onClose }: { onSend: (name: string, phon
   const ok = name.trim() && phone.replace(/\D/g, "").length >= 8;
   return (
     <Dialog title="Send contact" onClose={onClose}>
-      <div><Label>Full name</Label><Input value={name} onChange={(e) => setName(e.target.value)} autoFocus /></div>
-      <div><Label>Phone (with country code)</Label><Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="628123456789" /></div>
-      <div><Label>Organization (optional)</Label><Input value={org} onChange={(e) => setOrg(e.target.value)} /></div>
+      <div>
+        <Label>Full name</Label>
+        <Input value={name} onChange={(e) => setName(e.target.value)} autoFocus />
+      </div>
+      <div>
+        <Label>Phone (with country code)</Label>
+        <Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="628123456789" />
+      </div>
+      <div>
+        <Label>Organization (optional)</Label>
+        <Input value={org} onChange={(e) => setOrg(e.target.value)} />
+      </div>
       <ErrorLine err={err} />
       <div className="flex justify-end gap-2">
-        <Button variant="secondary" onClick={onClose}>Cancel</Button>
-        <Button disabled={!ok || busy} onClick={() => guard(() => onSend(name.trim(), phone, org.trim()), setBusy, setErr).then((ok) => ok && onClose())}>
+        <Button variant="secondary" onClick={onClose}>
+          Cancel
+        </Button>
+        <Button
+          disabled={!ok || busy}
+          onClick={() => guard(() => onSend(name.trim(), phone, org.trim()), setBusy, setErr).then((ok) => ok && onClose())}
+        >
           {busy ? <Loader2 size={14} className="animate-spin" /> : "Send"}
         </Button>
       </div>
@@ -231,7 +282,13 @@ export function ContactDialog({ onSend, onClose }: { onSend: (name: string, phon
 
 // ── Poll ─────────────────────────────────────────────────────────────────
 
-export function PollDialog({ onSend, onClose }: { onSend: (name: string, options: string[], multiple: boolean) => Promise<void>; onClose: () => void }) {
+export function PollDialog({
+  onSend,
+  onClose,
+}: {
+  onSend: (name: string, options: string[], multiple: boolean) => Promise<void>;
+  onClose: () => void;
+}) {
   const [name, setName] = useState("");
   const [options, setOptions] = useState(["", ""]);
   const [multiple, setMultiple] = useState(false);
@@ -241,19 +298,30 @@ export function PollDialog({ onSend, onClose }: { onSend: (name: string, options
   const ok = name.trim() && clean.length >= 2 && clean.length <= 12;
   return (
     <Dialog title="Create poll" onClose={onClose}>
-      <div><Label>Question</Label><Input value={name} onChange={(e) => setName(e.target.value)} autoFocus /></div>
+      <div>
+        <Label>Question</Label>
+        <Input value={name} onChange={(e) => setName(e.target.value)} autoFocus />
+      </div>
       <div className="space-y-1.5">
         <Label>Options (2–12)</Label>
         {options.map((o, i) => (
           <div key={i} className="flex gap-1.5">
-            <Input value={o} onChange={(e) => setOptions((os) => os.map((x, j) => (j === i ? e.target.value : x)))} placeholder={`Option ${i + 1}`} />
+            <Input
+              value={o}
+              onChange={(e) => setOptions((os) => os.map((x, j) => (j === i ? e.target.value : x)))}
+              placeholder={`Option ${i + 1}`}
+            />
             {options.length > 2 && (
-              <button onClick={() => setOptions((os) => os.filter((_, j) => j !== i))}><X size={14} /></button>
+              <button onClick={() => setOptions((os) => os.filter((_, j) => j !== i))}>
+                <X size={14} />
+              </button>
             )}
           </div>
         ))}
         {options.length < 12 && (
-          <Button size="sm" variant="ghost" onClick={() => setOptions((os) => [...os, ""])}><Plus size={12} /> Add option</Button>
+          <Button size="sm" variant="ghost" onClick={() => setOptions((os) => [...os, ""])}>
+            <Plus size={12} /> Add option
+          </Button>
         )}
       </div>
       <label className="flex items-center gap-2 text-sm">
@@ -261,8 +329,13 @@ export function PollDialog({ onSend, onClose }: { onSend: (name: string, options
       </label>
       <ErrorLine err={err} />
       <div className="flex justify-end gap-2">
-        <Button variant="secondary" onClick={onClose}>Cancel</Button>
-        <Button disabled={!ok || busy} onClick={() => guard(() => onSend(name.trim(), clean, multiple), setBusy, setErr).then((ok) => ok && onClose())}>
+        <Button variant="secondary" onClick={onClose}>
+          Cancel
+        </Button>
+        <Button
+          disabled={!ok || busy}
+          onClick={() => guard(() => onSend(name.trim(), clean, multiple), setBusy, setErr).then((ok) => ok && onClose())}
+        >
           {busy ? <Loader2 size={14} className="animate-spin" /> : "Send"}
         </Button>
       </div>

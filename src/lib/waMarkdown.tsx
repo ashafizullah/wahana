@@ -31,15 +31,11 @@ function renderBlocks(text: string, mentions?: MentionResolver): ReactNode[] {
     );
     last = m.index! + m[0].length;
   }
-  if (last < text.length) out.push(...renderLines(text.slice(last), key++, mentions));
+  if (last < text.length) out.push(...renderLines(text.slice(last), key, mentions));
   return out;
 }
 
-type Line =
-  | { t: "p"; s: string }
-  | { t: "ul"; s: string }
-  | { t: "ol"; s: string; n: string }
-  | { t: "q"; s: string };
+type Line = { t: "p"; s: string } | { t: "ul"; s: string } | { t: "ol"; s: string; n: string } | { t: "q"; s: string };
 
 function classify(line: string): Line {
   let m: RegExpMatchArray | null;
@@ -121,7 +117,12 @@ export function renderInline(text: string, depth = 0, mentions?: MentionResolver
   for (const m of text.matchAll(INLINE)) {
     if (m.index! > last) out.push(text.slice(last, m.index));
     const [full, code, bold, italic, strike, url, mention] = m;
-    if (code) out.push(<code key={k++} className="rounded bg-black/10 dark:bg-white/10 px-1 font-mono text-[12px]">{code.slice(1, -1)}</code>);
+    if (code)
+      out.push(
+        <code key={k++} className="rounded bg-black/10 dark:bg-white/10 px-1 font-mono text-[12px]">
+          {code.slice(1, -1)}
+        </code>,
+      );
     else if (bold) out.push(<strong key={k++}>{renderInline(bold.slice(1, -1), depth + 1, mentions)}</strong>);
     else if (italic) out.push(<em key={k++}>{renderInline(italic.slice(1, -1), depth + 1, mentions)}</em>);
     else if (strike) out.push(<s key={k++}>{renderInline(strike.slice(1, -1), depth + 1, mentions)}</s>);
@@ -132,8 +133,7 @@ export function renderInline(text: string, depth = 0, mentions?: MentionResolver
           @{name ?? mention.slice(1)}
         </span>,
       );
-    }
-    else if (url) {
+    } else if (url) {
       // Trailing punctuation is rarely part of the link.
       const trimmed = url.replace(/[.,;:!?)\]]+$/, "");
       const trail = url.slice(trimmed.length);

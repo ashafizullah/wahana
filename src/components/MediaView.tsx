@@ -172,9 +172,7 @@ export function MediaView({ message: m, session, chatId }: { message: WAMessage;
         )}
         title={err ? `Failed: ${err} — click to retry` : "Click to load"}
       >
-        {thumb && (
-          <img src={thumb} alt="" className="absolute inset-0 w-full h-full object-cover blur-md scale-110 opacity-80" />
-        )}
+        {thumb && <img src={thumb} alt="" className="absolute inset-0 w-full h-full object-cover blur-md scale-110 opacity-80" />}
         <span className="relative flex items-center gap-1.5 rounded-full bg-black/60 text-white px-3 py-1.5 text-xs font-medium">
           {loading || !checkedCache ? <Loader2 size={14} className="animate-spin" /> : err ? <Download size={14} /> : <Icon size={14} />}
           {loading || !checkedCache ? "Loading…" : err ? "Retry" : formatBytes(raw.fileLength) || "Load"}
@@ -185,8 +183,7 @@ export function MediaView({ message: m, session, chatId }: { message: WAMessage;
   }
 
   // ── Loaded ───────────────────────────────────────────────────────────
-  const filename =
-    m.media?.filename ?? raw.fileName ?? `${m.id.split("_").pop()}.${(mime.split("/")[1] ?? "bin").replace("jpeg", "jpg")}`;
+  const filename = m.media?.filename ?? raw.fileName ?? `${m.id.split("_").pop()}.${(mime.split("/")[1] ?? "bin").replace("jpeg", "jpg")}`;
   const viewer = open && (kind === "image" || kind === "video") && (
     <Lightbox item={{ blobUrl, kind, filename, caption: m.body || undefined }} onClose={() => setOpen(false)} />
   );

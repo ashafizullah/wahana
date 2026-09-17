@@ -24,25 +24,42 @@ interface RawQuoted {
 
 /** Summarise a quoted message: kind label + text + thumbnail (from the embedded JPEG). */
 export function describeQuoted(q: ReplyTo | WAMessage) {
-  const raw = ("_data" in q && q._data && !("Message" in (q._data as object))
-    ? (q._data as Record<string, RawQuoted>)
-    : ((q as WAMessage)._data as { Message?: Record<string, RawQuoted> } | undefined)?.Message) ?? {};
+  const raw =
+    ("_data" in q && q._data && !("Message" in (q._data as object))
+      ? (q._data as Record<string, RawQuoted>)
+      : ((q as WAMessage)._data as { Message?: Record<string, RawQuoted> } | undefined)?.Message) ?? {};
   const key = Object.keys(raw).find((k) => k !== "messageContextInfo");
   const inner = key ? raw[key] : undefined;
   const thumb = inner?.JPEGThumbnail ? `data:image/jpeg;base64,${inner.JPEGThumbnail}` : null;
   const text = q.body || inner?.caption || inner?.text || "";
   let kind = "";
   switch (key) {
-    case "imageMessage": kind = "📷 Photo"; break;
-    case "videoMessage": kind = "🎬 Video"; break;
-    case "stickerMessage": kind = "🎟️ Sticker"; break;
-    case "audioMessage": kind = "🎤 Voice message"; break;
-    case "documentMessage": kind = `📄 ${inner?.fileName ?? "Document"}`; break;
-    case "locationMessage": kind = "📍 Location"; break;
-    case "contactMessage": kind = "👤 Contact"; break;
+    case "imageMessage":
+      kind = "📷 Photo";
+      break;
+    case "videoMessage":
+      kind = "🎬 Video";
+      break;
+    case "stickerMessage":
+      kind = "🎟️ Sticker";
+      break;
+    case "audioMessage":
+      kind = "🎤 Voice message";
+      break;
+    case "documentMessage":
+      kind = `📄 ${inner?.fileName ?? "Document"}`;
+      break;
+    case "locationMessage":
+      kind = "📍 Location";
+      break;
+    case "contactMessage":
+      kind = "👤 Contact";
+      break;
     case "pollCreationMessage":
     case "pollCreationMessageV2":
-    case "pollCreationMessageV3": kind = `📊 ${inner?.name ?? "Poll"}`; break;
+    case "pollCreationMessageV3":
+      kind = `📊 ${inner?.name ?? "Poll"}`;
+      break;
   }
   return { thumb, text, kind };
 }
@@ -62,7 +79,7 @@ export function QuoteView({
 }) {
   const participant = (("participant" in quote ? quote.participant : null) || ("from" in quote ? quote.from : null) || "") as string;
   const mine = ("fromMe" in quote && quote.fromMe) || myIds.some((id) => id && participant.split("@")[0] === id.split("@")[0]);
-  const who = mine ? "You" : resolveName(participant) ?? participant.split("@")[0];
+  const who = mine ? "You" : (resolveName(participant) ?? participant.split("@")[0]);
   const { thumb, text, kind } = describeQuoted(quote);
   return (
     <div

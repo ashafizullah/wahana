@@ -6,10 +6,24 @@ import { useSettings } from "@/store/settings";
 import { cn } from "@/lib/utils";
 
 /** Popover shown while the composer starts with "/…"; Enter/Tab inserts the expanded template. */
-export function QuickReplyPicker({ query, ctx, onPick, onClose }: { query: string; ctx: { name?: string; phone?: string }; onPick: (text: string) => void; onClose: () => void }) {
+export function QuickReplyPicker({
+  query,
+  ctx,
+  onPick,
+  onClose,
+}: {
+  query: string;
+  ctx: { name?: string; phone?: string };
+  onPick: (text: string) => void;
+  onClose: () => void;
+}) {
   const profile = useSettings((s) => s.activeProfile);
   const session = useSettings((s) => s.session);
-  const { data } = useQuery({ queryKey: ["quick-replies", profile, session], queryFn: () => listQuickReplies(profile, session), enabled: !!profile });
+  const { data } = useQuery({
+    queryKey: ["quick-replies", profile, session],
+    queryFn: () => listQuickReplies(profile, session),
+    enabled: !!profile,
+  });
   const [index, setIndex] = useState(0);
   const list = useMemo(() => {
     const t = query.toLowerCase();
@@ -19,10 +33,17 @@ export function QuickReplyPicker({ query, ctx, onPick, onClose }: { query: strin
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!list.length) return;
-      if (e.key === "ArrowDown") { e.preventDefault(); setIndex((i) => (i + 1) % list.length); }
-      else if (e.key === "ArrowUp") { e.preventDefault(); setIndex((i) => (i - 1 + list.length) % list.length); }
-      else if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); e.stopPropagation(); onPick(expandTemplate(list[index]!.text, ctx)); }
-      else if (e.key === "Escape") onClose();
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setIndex((i) => (i + 1) % list.length);
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setIndex((i) => (i - 1 + list.length) % list.length);
+      } else if (e.key === "Enter" || e.key === "Tab") {
+        e.preventDefault();
+        e.stopPropagation();
+        onPick(expandTemplate(list[index]!.text, ctx));
+      } else if (e.key === "Escape") onClose();
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
@@ -31,7 +52,17 @@ export function QuickReplyPicker({ query, ctx, onPick, onClose }: { query: strin
   return (
     <div className="absolute bottom-full left-0 mb-2 w-96 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-xl py-1 z-30">
       {list.map((r, i) => (
-        <button key={r.id} onMouseDown={(e) => { e.preventDefault(); onPick(expandTemplate(r.text, ctx)); }} className={cn("w-full flex items-start gap-2 px-3 py-1.5 text-left text-sm", i === index ? "bg-neutral-100 dark:bg-neutral-800" : "hover:bg-neutral-50 dark:hover:bg-neutral-800/60")}>
+        <button
+          key={r.id}
+          onMouseDown={(e) => {
+            e.preventDefault();
+            onPick(expandTemplate(r.text, ctx));
+          }}
+          className={cn(
+            "w-full flex items-start gap-2 px-3 py-1.5 text-left text-sm",
+            i === index ? "bg-neutral-100 dark:bg-neutral-800" : "hover:bg-neutral-50 dark:hover:bg-neutral-800/60",
+          )}
+        >
           <Zap size={14} className="text-wa-dark mt-0.5 shrink-0" />
           <span className="min-w-0">
             <span className="block font-medium">/{r.shortcut}</span>

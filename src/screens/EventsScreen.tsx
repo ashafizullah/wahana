@@ -35,7 +35,11 @@ export function EventsScreen() {
   const [open, setOpen] = useState<number | null>(null);
   const list = useMemo(() => {
     const t = filter.trim().toLowerCase();
-    return t ? entries.filter((x) => x.event.event.includes(t) || x.event.session.includes(t) || JSON.stringify(x.event.payload).toLowerCase().includes(t)) : entries;
+    return t
+      ? entries.filter(
+          (x) => x.event.event.includes(t) || x.event.session.includes(t) || JSON.stringify(x.event.payload).toLowerCase().includes(t),
+        )
+      : entries;
   }, [entries, filter]);
 
   return (
@@ -53,15 +57,24 @@ export function EventsScreen() {
         <Button size="sm" variant="secondary" onClick={() => setPaused(!paused)}>
           {paused ? <Play size={12} /> : <Pause size={12} />} {paused ? "Resume" : "Pause"}
         </Button>
-        <Button size="sm" variant="ghost" onClick={clear} title="Clear"><Trash2 size={14} /></Button>
+        <Button size="sm" variant="ghost" onClick={clear} title="Clear">
+          <Trash2 size={14} />
+        </Button>
       </div>
       <div className="flex-1 overflow-y-auto font-mono text-xs">
-        {list.length === 0 && <p className="p-6 text-neutral-500 font-sans text-sm">Waiting for events… Anything WAHA sends over the WebSocket will show up here.</p>}
+        {list.length === 0 && (
+          <p className="p-6 text-neutral-500 font-sans text-sm">
+            Waiting for events… Anything WAHA sends over the WebSocket will show up here.
+          </p>
+        )}
         {list.map((x) => (
           <div key={x.seq} className="border-b border-neutral-100 dark:border-neutral-800">
             <button
               onClick={() => setOpen(open === x.seq ? null : x.seq)}
-              className={cn("w-full flex items-center gap-3 px-4 py-1.5 text-left hover:bg-neutral-50 dark:hover:bg-neutral-900", open === x.seq && "bg-neutral-50 dark:bg-neutral-900")}
+              className={cn(
+                "w-full flex items-center gap-3 px-4 py-1.5 text-left hover:bg-neutral-50 dark:hover:bg-neutral-900",
+                open === x.seq && "bg-neutral-50 dark:bg-neutral-900",
+              )}
             >
               <span className="text-neutral-400 shrink-0">{new Date(x.at).toLocaleTimeString([], { hour12: false })}</span>
               <Badge tone={TONES[x.event.event] ?? "neutral"}>{x.event.event}</Badge>

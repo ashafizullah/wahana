@@ -59,7 +59,8 @@ function isPrivateHost(url: string) {
   } catch {
     return true;
   }
-  if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local") || host.endsWith(".internal") || !host.includes(".")) return true;
+  if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local") || host.endsWith(".internal") || !host.includes("."))
+    return true;
   if (host === "::1" || host.startsWith("fe80:") || host.startsWith("fc") || host.startsWith("fd")) return true;
   const m = host.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
   if (m) {
@@ -90,7 +91,13 @@ function meta(html: string, name: string) {
   return v ? decode(v) : undefined;
 }
 function decode(s: string) {
-  return s.replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)));
+  return s
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)));
 }
 
 export function fetchPreview(url: string): Promise<Preview | null> {
@@ -109,7 +116,8 @@ export function fetchPreview(url: string): Promise<Preview | null> {
         clearTimeout(t);
         if (!res.ok || !(res.headers.get("content-type") ?? "").includes("html")) return null;
         const html = (await res.text()).slice(0, 300_000);
-        const title = meta(html, "og:title") ?? meta(html, "twitter:title") ?? decode(html.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1] ?? "").trim();
+        const title =
+          meta(html, "og:title") ?? meta(html, "twitter:title") ?? decode(html.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1] ?? "").trim();
         const description = meta(html, "og:description") ?? meta(html, "twitter:description") ?? meta(html, "description");
         let image: string | null = null;
         const img = meta(html, "og:image") ?? meta(html, "twitter:image");
@@ -165,7 +173,9 @@ export function LinkPreviewCard({ message: m }: { message: WAMessage }) {
       {preview.image ? (
         <img src={preview.image} alt="" className="w-20 shrink-0 object-cover" />
       ) : (
-        <div className="w-14 shrink-0 grid place-items-center text-neutral-400"><Globe size={18} /></div>
+        <div className="w-14 shrink-0 grid place-items-center text-neutral-400">
+          <Globe size={18} />
+        </div>
       )}
       <div className="min-w-0 py-1.5 pr-2">
         {preview.title && <div className="text-xs font-semibold line-clamp-2 break-words">{preview.title}</div>}

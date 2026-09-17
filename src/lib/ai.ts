@@ -17,9 +17,26 @@ export const DEFAULT_MODELS: Record<AiProvider, string> = { anthropic: "claude-o
 export const AI_TIMEOUT_MS = 60_000;
 
 export const LANGUAGES = [
-  ["id", "Indonesian"], ["en", "English"], ["ms", "Malay"], ["ar", "Arabic"], ["zh", "Chinese (Simplified)"], ["zh-TW", "Chinese (Traditional)"],
-  ["ja", "Japanese"], ["ko", "Korean"], ["hi", "Hindi"], ["es", "Spanish"], ["fr", "French"], ["de", "German"], ["pt", "Portuguese"],
-  ["ru", "Russian"], ["it", "Italian"], ["tr", "Turkish"], ["vi", "Vietnamese"], ["th", "Thai"], ["nl", "Dutch"], ["jv", "Javanese"],
+  ["id", "Indonesian"],
+  ["en", "English"],
+  ["ms", "Malay"],
+  ["ar", "Arabic"],
+  ["zh", "Chinese (Simplified)"],
+  ["zh-TW", "Chinese (Traditional)"],
+  ["ja", "Japanese"],
+  ["ko", "Korean"],
+  ["hi", "Hindi"],
+  ["es", "Spanish"],
+  ["fr", "French"],
+  ["de", "German"],
+  ["pt", "Portuguese"],
+  ["ru", "Russian"],
+  ["it", "Italian"],
+  ["tr", "Turkish"],
+  ["vi", "Vietnamese"],
+  ["th", "Thai"],
+  ["nl", "Dutch"],
+  ["jv", "Javanese"],
 ] as const;
 export const langName = (code: string) => LANGUAGES.find(([c]) => c === code)?.[1] ?? code;
 
@@ -53,7 +70,11 @@ export function personaPreamble(session?: string) {
  * One-shot completion: system + user → text. Routed to the configured provider.
  * `persona` (default true) prepends Settings → AI → Persona; `fast` picks the fast model when one is set.
  */
-export async function complete(system: string, user: string, opts: { maxTokens?: number; cfg?: AiConfig; persona?: boolean; fast?: boolean; session?: string } = {}): Promise<string> {
+export async function complete(
+  system: string,
+  user: string,
+  opts: { maxTokens?: number; cfg?: AiConfig; persona?: boolean; fast?: boolean; session?: string } = {},
+): Promise<string> {
   const c = opts.cfg ?? config(opts.fast);
   if (!c.apiKey) throw new Error("AI API key is not set (Settings → AI).");
   const maxTokens = opts.maxTokens ?? 4096;
@@ -68,15 +89,22 @@ export async function complete(system: string, user: string, opts: { maxTokens?:
       maxRetries: 1,
       timeout: AI_TIMEOUT_MS,
     });
-    const res = await client.messages.create({
-      model: c.model,
-      max_tokens: maxTokens,
-      system,
-      messages: [{ role: "user", content: user }],
-      output_config: { effort: "low" },
-    }, { signal: AbortSignal.timeout(AI_TIMEOUT_MS) });
+    const res = await client.messages.create(
+      {
+        model: c.model,
+        max_tokens: maxTokens,
+        system,
+        messages: [{ role: "user", content: user }],
+        output_config: { effort: "low" },
+      },
+      { signal: AbortSignal.timeout(AI_TIMEOUT_MS) },
+    );
     if (res.stop_reason === "refusal") throw new Error("The model declined this request.");
-    return res.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("").trim();
+    return res.content
+      .filter((b): b is Anthropic.TextBlock => b.type === "text")
+      .map((b) => b.text)
+      .join("")
+      .trim();
   }
 
   // OpenAI-compatible chat completions (routers, Ollama, etc.)
@@ -85,7 +113,15 @@ export async function complete(system: string, user: string, opts: { maxTokens?:
   const res = await tauriFetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${c.apiKey}` },
-    body: JSON.stringify({ model: c.model, max_tokens: maxTokens, temperature: 0.2, messages: [{ role: "system", content: system }, { role: "user", content: user }] }),
+    body: JSON.stringify({
+      model: c.model,
+      max_tokens: maxTokens,
+      temperature: 0.2,
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: user },
+      ],
+    }),
     signal: AbortSignal.timeout(AI_TIMEOUT_MS),
   });
   const text = await res.text();
@@ -141,16 +177,22 @@ export function summarizeChat(text: string, opts: { chatName: string; isGroup: b
   if (text.length > MAX_TRANSCRIPT_CHARS) {
     // Keep the most recent part; cut at a line boundary.
     const tail = text.slice(-MAX_TRANSCRIPT_CHARS);
-    text = `[earlier messages omitted — transcript truncated to the most recent ${MAX_TRANSCRIPT_CHARS.toLocaleString()} characters]\n` + tail.slice(tail.indexOf("\n") + 1);
+    text =
+      `[earlier messages omitted — transcript truncated to the most recent ${MAX_TRANSCRIPT_CHARS.toLocaleString()} characters]\n` +
+      tail.slice(tail.indexOf("\n") + 1);
   }
   const system = `You summarize WhatsApp conversations for the user, who appears in the transcript as "You". This is a ${opts.isGroup ? "group chat" : "private chat"} named "${opts.chatName}".
 Write in ${langName(opts.language)}. Format with WhatsApp markup only: *bold* for section titles, "- " bullets, no Markdown headings (#), no tables, no code blocks.
-${opts.question ? `Answer the user's question using only the transcript. If the transcript does not contain the answer, say so briefly.` : `Sections (omit a section if empty):
+${
+  opts.question
+    ? `Answer the user's question using only the transcript. If the transcript does not contain the answer, say so briefly.`
+    : `Sections (omit a section if empty):
 *Ringkasan* / *Summary* — 2–4 sentences on what the conversation was about.
 *Keputusan* / *Decisions* — things agreed or concluded.
 *Tugas & tenggat* / *Action items* — who has to do what, with dates/amounts if mentioned.
 *Pertanyaan terbuka* / *Open questions* — things still waiting for an answer, especially ones addressed to You.
-Use the section titles in the output language. Attribute statements to people by name. Be concise; keep the facts, drop the small talk. Media appears as [photo], [voice], etc. — mention it only when relevant.`}`;
+Use the section titles in the output language. Attribute statements to people by name. Be concise; keep the facts, drop the small talk. Media appears as [photo], [voice], etc. — mention it only when relevant.`
+}`;
   const user = opts.question ? `Question: ${opts.question}\n\nTranscript:\n${text}` : `Transcript:\n${text}`;
   return complete(system, user, { maxTokens: 2048 });
 }
@@ -173,7 +215,7 @@ const REWRITE_INSTRUCTIONS: Record<RewriteMode, string> = {
   friendly: "Rewrite so it sounds warm and friendly without becoming long. Keep the meaning.",
   shorter: "Rewrite as briefly as possible while keeping every piece of information.",
   longer: "Expand with a little more context and courtesy so it reads complete; do not invent facts.",
-  bullets: "Restructure as a short list using \"- \" bullets, one point per line; keep a one-line lead-in if needed.",
+  bullets: 'Restructure as a short list using "- " bullets, one point per line; keep a one-line lead-in if needed.',
 };
 
 /** Rewrite a draft in the composer. Keeps the draft's language and WhatsApp formatting. */
@@ -195,11 +237,20 @@ Return exactly 3 suggestions as a JSON array of strings and nothing else. Each s
   } catch {
     /* fall through */
   }
-  return raw.split("\n").map((l) => l.replace(/^\s*(?:[-*\d.)]+\s*)?/, "").trim()).filter(Boolean).slice(0, 3);
+  return raw
+    .split("\n")
+    .map((l) => l.replace(/^\s*(?:[-*\d.)]+\s*)?/, "").trim())
+    .filter(Boolean)
+    .slice(0, 3);
 }
 
 /** Vision completion: system + text + one image (base64) → text. Uses the main model (vision-capable), never the fast one. */
-export async function completeWithImage(system: string, user: string, image: { data: string; mediaType: string }, opts: { maxTokens?: number } = {}): Promise<string> {
+export async function completeWithImage(
+  system: string,
+  user: string,
+  image: { data: string; mediaType: string },
+  opts: { maxTokens?: number } = {},
+): Promise<string> {
   const c = config();
   if (!c.apiKey) throw new Error("AI API key is not set (Settings → AI).");
   const maxTokens = opts.maxTokens ?? 2048;
@@ -214,21 +265,37 @@ export async function completeWithImage(system: string, user: string, image: { d
       maxRetries: 1,
       timeout: AI_TIMEOUT_MS,
     });
-    const res = await client.messages.create({
-      model: c.model,
-      max_tokens: maxTokens,
-      system,
-      messages: [{
-        role: "user",
-        content: [
-          { type: "image", source: { type: "base64", media_type: image.mediaType as "image/jpeg" | "image/png" | "image/gif" | "image/webp", data: image.data } },
-          { type: "text", text: user },
+    const res = await client.messages.create(
+      {
+        model: c.model,
+        max_tokens: maxTokens,
+        system,
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "image",
+                source: {
+                  type: "base64",
+                  media_type: image.mediaType as "image/jpeg" | "image/png" | "image/gif" | "image/webp",
+                  data: image.data,
+                },
+              },
+              { type: "text", text: user },
+            ],
+          },
         ],
-      }],
-      output_config: { effort: "low" },
-    }, { signal: AbortSignal.timeout(AI_TIMEOUT_MS) });
+        output_config: { effort: "low" },
+      },
+      { signal: AbortSignal.timeout(AI_TIMEOUT_MS) },
+    );
     if (res.stop_reason === "refusal") throw new Error("The model declined this request.");
-    return res.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("").trim();
+    return res.content
+      .filter((b): b is Anthropic.TextBlock => b.type === "text")
+      .map((b) => b.text)
+      .join("")
+      .trim();
   }
 
   const base = c.baseUrl.replace(/\/+$/, "");
@@ -242,7 +309,13 @@ export async function completeWithImage(system: string, user: string, image: { d
       temperature: 0.2,
       messages: [
         { role: "system", content: system },
-        { role: "user", content: [{ type: "image_url", image_url: { url: `data:${image.mediaType};base64,${image.data}` } }, { type: "text", text: user }] },
+        {
+          role: "user",
+          content: [
+            { type: "image_url", image_url: { url: `data:${image.mediaType};base64,${image.data}` } },
+            { type: "text", text: user },
+          ],
+        },
       ],
     }),
     signal: AbortSignal.timeout(AI_TIMEOUT_MS),
@@ -265,9 +338,10 @@ export async function completeWithImage(system: string, user: string, image: { d
 
 /** Describe an image or extract its text. `language` = output language for descriptions (OCR keeps the source text as-is). */
 export function analyzeImage(image: { data: string; mediaType: string }, kind: "describe" | "ocr", language: string, caption?: string) {
-  const system = kind === "ocr"
-    ? "Extract all text from the image exactly as written, preserving line breaks, numbers, and layout order (top to bottom, left to right). Output only the text — no commentary. If the image contains no readable text, reply with exactly: (no text found)"
-    : `Describe this image from a WhatsApp chat in ${langName(language)}: what it shows, any people/objects/scene, and any visible text (quote it). Be concise (2–5 sentences); if it is a screenshot, receipt, invoice or document, summarize its key content and figures instead.`;
+  const system =
+    kind === "ocr"
+      ? "Extract all text from the image exactly as written, preserving line breaks, numbers, and layout order (top to bottom, left to right). Output only the text — no commentary. If the image contains no readable text, reply with exactly: (no text found)"
+      : `Describe this image from a WhatsApp chat in ${langName(language)}: what it shows, any people/objects/scene, and any visible text (quote it). Be concise (2–5 sentences); if it is a screenshot, receipt, invoice or document, summarize its key content and figures instead.`;
   const user = caption ? `The sender's caption: "${caption}"` : kind === "ocr" ? "Extract the text." : "Describe the image.";
   return completeWithImage(system, user, image, { maxTokens: 2048 });
 }
@@ -307,7 +381,12 @@ Include: tasks, promises, deadlines, meetings/appointments, payments due, things
   const raw = await complete(system, `Transcript (oldest first):\n${text}`, { maxTokens: 1500 });
   return parseJsonArray<ExtractedTask>(raw)
     .filter((t) => t && typeof t.title === "string" && t.title.trim())
-    .map((t) => ({ title: t.title.trim(), who: t.who || undefined, due: t.due && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(t.due) ? t.due.slice(0, 16) : null, detail: t.detail || undefined }));
+    .map((t) => ({
+      title: t.title.trim(),
+      who: t.who || undefined,
+      due: t.due && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(t.due) ? t.due.slice(0, 16) : null,
+      detail: t.detail || undefined,
+    }));
 }
 
 export interface LabelSuggestion {
@@ -320,7 +399,10 @@ export interface LabelSuggestion {
 }
 
 /** Pick which of the existing labels fit a chat (and optionally propose a new one). */
-export async function suggestLabels(text: string, opts: { chatName: string; existing: string[]; language: string }): Promise<LabelSuggestion> {
+export async function suggestLabels(
+  text: string,
+  opts: { chatName: string; existing: string[]; language: string },
+): Promise<LabelSuggestion> {
   const system = `You classify a WhatsApp chat named "${opts.chatName}" for the user ("You") using their own label set.
 Existing labels: ${opts.existing.length ? opts.existing.map((l) => JSON.stringify(l)).join(", ") : "(none)"}.
 Return a JSON object only: {"labels": string[] (subset of existing labels that clearly apply, may be empty), "suggestNew": string|undefined (a short new label name only when no existing one fits and a category is obvious, e.g. "Lead", "Complaint", "Supplier", "Spam", "Family"), "reason": string (one sentence in ${langName(opts.language)})}.`;
@@ -331,7 +413,10 @@ Return a JSON object only: {"labels": string[] (subset of existing labels that c
     const lower = new Map(opts.existing.map((l) => [l.toLowerCase(), l]));
     return {
       labels: (Array.isArray(v.labels) ? v.labels : []).map((l) => lower.get(String(l).toLowerCase())).filter((x): x is string => !!x),
-      suggestNew: typeof v.suggestNew === "string" && v.suggestNew.trim() && !lower.has(v.suggestNew.trim().toLowerCase()) ? v.suggestNew.trim() : undefined,
+      suggestNew:
+        typeof v.suggestNew === "string" && v.suggestNew.trim() && !lower.has(v.suggestNew.trim().toLowerCase())
+          ? v.suggestNew.trim()
+          : undefined,
       reason: typeof v.reason === "string" ? v.reason : "",
     };
   } catch {
@@ -348,13 +433,16 @@ export type ContentKind = "broadcast" | "status" | "group";
  */
 export function generateContent(brief: string, opts: { kind: ContentKind; language: string; session?: string; current?: string }) {
   const shape = {
-    broadcast: "a broadcast sent one-to-one to many customers. Address the reader directly; you may use the placeholder {name} once for their name. 3–8 short lines.",
+    broadcast:
+      "a broadcast sent one-to-one to many customers. Address the reader directly; you may use the placeholder {name} once for their name. 3–8 short lines.",
     status: "a WhatsApp status update (story). Punchy, 1–4 lines, works without context.",
     group: "an announcement to a group's members. Clear, 3–8 short lines.",
   }[opts.kind];
   const system = `You write WhatsApp messages for the user. Write ${shape}
 Write in ${langName(opts.language)} unless the brief is clearly in another language. Use WhatsApp formatting only (*bold* for the key phrase, "- " bullets, line breaks); a few fitting emoji are welcome, no hashtags, no Markdown headings.
 Never invent prices, dates, addresses or promises that are not in the brief or the persona — leave a clearly marked placeholder like [tanggal] instead. Output only the message text.`;
-  const user = opts.current?.trim() ? `Brief:\n${brief}\n\nThe user's current draft, to improve or replace as the brief asks:\n${opts.current}` : `Brief:\n${brief}`;
+  const user = opts.current?.trim()
+    ? `Brief:\n${brief}\n\nThe user's current draft, to improve or replace as the brief asks:\n${opts.current}`
+    : `Brief:\n${brief}`;
   return complete(system, user, { maxTokens: 800, session: opts.session });
 }

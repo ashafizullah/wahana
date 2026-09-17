@@ -26,7 +26,11 @@ interface Pending extends ConfirmOptions {
   resolve: (v: string | false) => void;
 }
 
-const useConfirmStore = create<{ pending: Pending | null; open: (o: ConfirmOptions) => Promise<string | false>; close: (v: string | false) => void }>((set, get) => ({
+const useConfirmStore = create<{
+  pending: Pending | null;
+  open: (o: ConfirmOptions) => Promise<string | false>;
+  close: (v: string | false) => void;
+}>((set, get) => ({
   pending: null,
   open: (o) =>
     new Promise((resolve) => {
@@ -57,7 +61,10 @@ export function ConfirmHost() {
   }, [pending, close]);
   if (!pending) return null;
   return (
-    <div className="fixed inset-0 z-[60] bg-black/50 grid place-items-center" onMouseDown={(e) => e.target === e.currentTarget && close(false)}>
+    <div
+      className="fixed inset-0 z-[60] bg-black/50 grid place-items-center"
+      onMouseDown={(e) => e.target === e.currentTarget && close(false)}
+    >
       <div className="w-[380px] rounded-xl bg-white dark:bg-neutral-900 shadow-2xl">
         <div className="flex items-start gap-3 p-4">
           {pending.danger && <AlertTriangle size={20} className="text-red-600 shrink-0 mt-0.5" />}
@@ -65,9 +72,13 @@ export function ConfirmHost() {
             <div className="font-semibold">{pending.title}</div>
             {pending.message && <div className="text-sm text-neutral-600 dark:text-neutral-300 mt-1 selectable">{pending.message}</div>}
           </div>
-          <button onClick={() => close(false)} className="text-neutral-400 hover:text-neutral-700"><X size={16} /></button>
+          <button onClick={() => close(false)} className="text-neutral-400 hover:text-neutral-700">
+            <X size={16} />
+          </button>
         </div>
-        <div className={cn("p-3 border-t border-neutral-100 dark:border-neutral-800 flex gap-2", pending.choices ? "flex-col" : "justify-end")}>
+        <div
+          className={cn("p-3 border-t border-neutral-100 dark:border-neutral-800 flex gap-2", pending.choices ? "flex-col" : "justify-end")}
+        >
           {pending.choices ? (
             <>
               {pending.choices.map((c) => (
@@ -78,12 +89,18 @@ export function ConfirmHost() {
                   </span>
                 </Button>
               ))}
-              <Button variant="ghost" className="w-full" onClick={() => close(false)}>{pending.cancelLabel ?? "Cancel"}</Button>
+              <Button variant="ghost" className="w-full" onClick={() => close(false)}>
+                {pending.cancelLabel ?? "Cancel"}
+              </Button>
             </>
           ) : (
             <>
-              <Button variant="secondary" onClick={() => close(false)}>{pending.cancelLabel ?? "Cancel"}</Button>
-              <Button variant={pending.danger ? "danger" : "primary"} onClick={() => close("ok")} autoFocus>{pending.confirmLabel ?? "OK"}</Button>
+              <Button variant="secondary" onClick={() => close(false)}>
+                {pending.cancelLabel ?? "Cancel"}
+              </Button>
+              <Button variant={pending.danger ? "danger" : "primary"} onClick={() => close("ok")} autoFocus>
+                {pending.confirmLabel ?? "OK"}
+              </Button>
             </>
           )}
         </div>

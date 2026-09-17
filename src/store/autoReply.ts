@@ -45,7 +45,9 @@ export interface AutoReplyLog {
 }
 
 export const listRules = async (profile: string) =>
-  (await db()).select<AutoReplyRule[]>("SELECT * FROM auto_reply_rules WHERE profile = $1 ORDER BY priority ASC, created_at ASC", [profile]);
+  (await db()).select<AutoReplyRule[]>("SELECT * FROM auto_reply_rules WHERE profile = $1 ORDER BY priority ASC, created_at ASC", [
+    profile,
+  ]);
 
 export const activeRules = async (profile: string, session: string) =>
   (await db()).select<AutoReplyRule[]>(
@@ -54,14 +56,38 @@ export const activeRules = async (profile: string, session: string) =>
   );
 
 export async function upsertRule(r: Omit<AutoReplyRule, "created_at" | "replies" | "last_run"> & { created_at?: number }) {
-  await (await db()).execute(
+  await (
+    await db()
+  ).execute(
     `INSERT INTO auto_reply_rules (id, profile, session, name, enabled, priority, scope, chat_ids, hours_from, hours_to, weekdays, match_kind, pattern, reply_kind, text, ai_instructions, ai_context, cooldown_min, quote, mark_seen, created_at)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
      ON CONFLICT(id) DO UPDATE SET session=excluded.session, name=excluded.name, enabled=excluded.enabled, priority=excluded.priority, scope=excluded.scope,
        chat_ids=excluded.chat_ids, hours_from=excluded.hours_from, hours_to=excluded.hours_to, weekdays=excluded.weekdays, match_kind=excluded.match_kind,
        pattern=excluded.pattern, reply_kind=excluded.reply_kind, text=excluded.text, ai_instructions=excluded.ai_instructions, ai_context=excluded.ai_context,
        cooldown_min=excluded.cooldown_min, quote=excluded.quote, mark_seen=excluded.mark_seen`,
-    [r.id, r.profile, r.session, r.name, r.enabled, r.priority, r.scope, r.chat_ids, r.hours_from, r.hours_to, r.weekdays, r.match_kind, r.pattern, r.reply_kind, r.text, r.ai_instructions, r.ai_context, r.cooldown_min, r.quote, r.mark_seen, r.created_at ?? Math.floor(Date.now() / 1000)],
+    [
+      r.id,
+      r.profile,
+      r.session,
+      r.name,
+      r.enabled,
+      r.priority,
+      r.scope,
+      r.chat_ids,
+      r.hours_from,
+      r.hours_to,
+      r.weekdays,
+      r.match_kind,
+      r.pattern,
+      r.reply_kind,
+      r.text,
+      r.ai_instructions,
+      r.ai_context,
+      r.cooldown_min,
+      r.quote,
+      r.mark_seen,
+      r.created_at ?? Math.floor(Date.now() / 1000),
+    ],
   );
 }
 
@@ -85,7 +111,9 @@ export const clearLog = async (profile: string) =>
 
 /** Unix time of the last successful reply by this rule in this chat (for cooldowns). */
 export async function lastReplyAt(ruleId: string, chatId: string): Promise<number | null> {
-  const rows = await (await db()).select<{ at: number }[]>(
+  const rows = await (
+    await db()
+  ).select<{ at: number }[]>(
     "SELECT at FROM auto_reply_log WHERE rule_id = $1 AND chat_id = $2 AND status = 'sent' ORDER BY at DESC LIMIT 1",
     [ruleId, chatId],
   );
@@ -94,7 +122,9 @@ export async function lastReplyAt(ruleId: string, chatId: string): Promise<numbe
 
 /** Replies sent by any rule to this chat since `since` (unix) — the loop guard. */
 export async function repliesSince(session: string, chatId: string, since: number): Promise<number> {
-  const rows = await (await db()).select<{ n: number }[]>(
+  const rows = await (
+    await db()
+  ).select<{ n: number }[]>(
     "SELECT COUNT(*) AS n FROM auto_reply_log WHERE session = $1 AND chat_id = $2 AND status = 'sent' AND at >= $3",
     [session, chatId, since],
   );
@@ -105,7 +135,9 @@ export async function repliesSince(session: string, chatId: string, since: numbe
 export async function repliesToday(profile: string): Promise<number> {
   const midnight = new Date();
   midnight.setHours(0, 0, 0, 0);
-  const rows = await (await db()).select<{ n: number }[]>(
+  const rows = await (
+    await db()
+  ).select<{ n: number }[]>(
     "SELECT COUNT(*) AS n FROM auto_reply_log l JOIN auto_reply_rules r ON r.id = l.rule_id WHERE r.profile = $1 AND l.status = 'sent' AND l.at >= $2",
     [profile, Math.floor(midnight.getTime() / 1000)],
   );
@@ -119,7 +151,8 @@ export async function logReply(entry: Omit<AutoReplyLog, "id" | "at">) {
     "INSERT INTO auto_reply_log (rule_id, session, chat_id, chat_name, incoming, reply, status, error, at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)",
     [entry.rule_id, entry.session, entry.chat_id, entry.chat_name, entry.incoming, entry.reply, entry.status, entry.error, now],
   );
-  if (entry.status === "sent") await d.execute("UPDATE auto_reply_rules SET replies = replies + 1, last_run = $2 WHERE id = $1", [entry.rule_id, now]);
+  if (entry.status === "sent")
+    await d.execute("UPDATE auto_reply_rules SET replies = replies + 1, last_run = $2 WHERE id = $1", [entry.rule_id, now]);
 }
 
 // ── Matching (pure, so the UI can preview it) ──────────────────────────────
@@ -138,7 +171,13 @@ export function inWindow(r: Pick<AutoReplyRule, "hours_from" | "hours_to" | "wee
   // A window that wraps past midnight (18:00–08:00) belongs to the day it started on:
   // Saturday 01:00 is still "Friday night" for the weekday filter.
   const day = wraps && cur < to! ? (now.getDay() + 6) % 7 : now.getDay();
-  const days = r.weekdays ? r.weekdays.split(",").map((x) => x.trim()).filter(Boolean).map(Number) : [];
+  const days = r.weekdays
+    ? r.weekdays
+        .split(",")
+        .map((x) => x.trim())
+        .filter(Boolean)
+        .map(Number)
+    : [];
   if (days.length && !days.includes(day)) return false;
   if (from === null || to === null || from === to) return true;
   return wraps ? cur >= from || cur < to : cur >= from && cur < to;
@@ -147,11 +186,18 @@ export function inWindow(r: Pick<AutoReplyRule, "hours_from" | "hours_to" | "wee
 export function scopeMatches(r: Pick<AutoReplyRule, "scope" | "chat_ids">, chatId: string) {
   if (isChannel(chatId) || chatId === "status@broadcast") return false;
   switch (r.scope) {
-    case "all": return true;
-    case "dm": return !isGroup(chatId);
-    case "groups": return isGroup(chatId);
+    case "all":
+      return true;
+    case "dm":
+      return !isGroup(chatId);
+    case "groups":
+      return isGroup(chatId);
     case "chats": {
-      try { return (JSON.parse(r.chat_ids ?? "[]") as string[]).includes(chatId); } catch { return false; }
+      try {
+        return (JSON.parse(r.chat_ids ?? "[]") as string[]).includes(chatId);
+      } catch {
+        return false;
+      }
     }
   }
 }
@@ -160,8 +206,17 @@ export function textMatches(r: Pick<AutoReplyRule, "match_kind" | "pattern">, bo
   const p = (r.pattern ?? "").trim();
   if (r.match_kind === "any" || !p) return true;
   const text = body.toLowerCase();
-  if (r.match_kind === "keywords") return p.split(",").map((k) => k.trim().toLowerCase()).filter(Boolean).some((k) => text.includes(k));
-  try { return new RegExp(p, "i").test(body); } catch { return false; }
+  if (r.match_kind === "keywords")
+    return p
+      .split(",")
+      .map((k) => k.trim().toLowerCase())
+      .filter(Boolean)
+      .some((k) => text.includes(k));
+  try {
+    return new RegExp(p, "i").test(body);
+  } catch {
+    return false;
+  }
 }
 
 export function ruleMatches(r: AutoReplyRule, chatId: string, body: string, now = new Date()) {

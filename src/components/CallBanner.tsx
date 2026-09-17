@@ -28,7 +28,9 @@ export function CallBanner() {
       >
         <PhoneOff size={12} /> Reject
       </Button>
-      <button onClick={dismiss} title="Dismiss"><X size={16} /></button>
+      <button onClick={dismiss} title="Dismiss">
+        <X size={16} />
+      </button>
     </div>
   );
 }

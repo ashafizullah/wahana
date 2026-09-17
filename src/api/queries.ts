@@ -117,13 +117,7 @@ export function useSendText(session: string, chatId: string) {
 export function useSessionAction() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({
-      action,
-      name,
-    }: {
-      action: "start" | "stop" | "restart" | "logout" | "delete" | "create";
-      name: string;
-    }) => {
+    mutationFn: async ({ action, name }: { action: "start" | "stop" | "restart" | "logout" | "delete" | "create"; name: string }) => {
       const c = requireClient();
       switch (action) {
         case "start":

@@ -43,9 +43,14 @@ export function useBroadcastRunner() {
           }
           const c = useSettings.getState().client;
           if (!c) break;
-          const ctx = { name: item.name ?? item.chat_id.split("@")[0], phone: item.chat_id.endsWith("@c.us") ? `+${item.chat_id.split("@")[0]}` : "" };
+          const ctx = {
+            name: item.name ?? item.chat_id.split("@")[0],
+            phone: item.chat_id.endsWith("@c.us") ? `+${item.chat_id.split("@")[0]}` : "",
+          };
           const text = b.text ? expandTemplate(b.text, ctx) : "";
-          const file = b.media_b64 ? { mimetype: b.media_mime ?? "application/octet-stream", filename: b.media_name ?? "file", data: b.media_b64 } : null;
+          const file = b.media_b64
+            ? { mimetype: b.media_mime ?? "application/octet-stream", filename: b.media_name ?? "file", data: b.media_b64 }
+            : null;
           try {
             let res: { id?: string } | undefined;
             if (b.kind === "image" && file) res = await c.sendImage(b.session, item.chat_id, file, text || undefined);
@@ -62,7 +67,10 @@ export function useBroadcastRunner() {
               errorStreak.current[b.id] = 0;
               await setBroadcastStatus(b.id, "paused");
               if (useSettings.getState().notifications)
-                sendNotification({ title: "Broadcast paused", body: `${b.name ?? b.id}: ${streak} recipients failed in a row. Check the session and resume.` });
+                sendNotification({
+                  title: "Broadcast paused",
+                  body: `${b.name ?? b.id}: ${streak} recipients failed in a row. Check the session and resume.`,
+                });
             }
           }
           const wait = b.delay_min + Math.random() * Math.max(0, b.delay_max - b.delay_min);

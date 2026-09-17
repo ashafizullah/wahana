@@ -20,10 +20,18 @@ let flush: ReturnType<typeof setTimeout> | undefined;
 function slim(m: WAMessage): WAMessage {
   const data = m._data as { Info?: unknown; Message?: Record<string, unknown> } | undefined;
   const msg = data?.Message ? { ...data.Message } : undefined;
-  if (msg) for (const k of Object.keys(msg)) {
-    const v = msg[k] as Record<string, unknown> | undefined;
-    if (v && typeof v === "object" && "JPEGThumbnail" in v && typeof v.JPEGThumbnail === "string" && (v.JPEGThumbnail as string).length > 12_000) msg[k] = { ...v, JPEGThumbnail: undefined };
-  }
+  if (msg)
+    for (const k of Object.keys(msg)) {
+      const v = msg[k] as Record<string, unknown> | undefined;
+      if (
+        v &&
+        typeof v === "object" &&
+        "JPEGThumbnail" in v &&
+        typeof v.JPEGThumbnail === "string" &&
+        (v.JPEGThumbnail as string).length > 12_000
+      )
+        msg[k] = { ...v, JPEGThumbnail: undefined };
+    }
   return { ...m, _data: data ? ({ Info: data.Info, Message: msg } as never) : m._data };
 }
 

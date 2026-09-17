@@ -14,10 +14,15 @@ export interface QuickReply {
 export const listQuickReplies = async (profile: string, session?: string) =>
   session === undefined
     ? (await db()).select<QuickReply[]>("SELECT * FROM quick_replies WHERE profile = $1 ORDER BY shortcut", [profile])
-    : (await db()).select<QuickReply[]>("SELECT * FROM quick_replies WHERE profile = $1 AND (session IS NULL OR session = $2) ORDER BY shortcut", [profile, session]);
+    : (await db()).select<QuickReply[]>(
+        "SELECT * FROM quick_replies WHERE profile = $1 AND (session IS NULL OR session = $2) ORDER BY shortcut",
+        [profile, session],
+      );
 
 export async function saveQuickReply(r: Omit<QuickReply, "created_at">) {
-  await (await db()).execute(
+  await (
+    await db()
+  ).execute(
     "INSERT INTO quick_replies (id, profile, session, shortcut, text, created_at) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT(id) DO UPDATE SET session=excluded.session, shortcut=excluded.shortcut, text=excluded.text",
     [r.id, r.profile, r.session || null, r.shortcut.replace(/^\//, "").trim().toLowerCase(), r.text, Math.floor(Date.now() / 1000)],
   );

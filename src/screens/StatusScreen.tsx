@@ -1,7 +1,21 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { confirm } from "@/components/Confirm";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, Loader2, Plus, Trash2, X, Type, Image as ImageIcon, RefreshCw, Pause, Play, CheckCheck, Search } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Loader2,
+  Plus,
+  Trash2,
+  X,
+  Type,
+  Image as ImageIcon,
+  RefreshCw,
+  Pause,
+  Play,
+  CheckCheck,
+  Search,
+} from "lucide-react";
 import { useStatusSeen } from "@/store/statusSeen";
 import { requireClient, useSettings } from "@/store/settings";
 import { useNameResolver } from "@/realtime/useNames";
@@ -25,13 +39,23 @@ interface Story {
 }
 
 function toStory(m: WAMessage): Story {
-  const msg = (m._data as { Message?: Record<string, { JPEGThumbnail?: string; caption?: string; text?: string; backgroundArgb?: number }> } | undefined)?.Message ?? {};
+  const msg =
+    (
+      m._data as
+        { Message?: Record<string, { JPEGThumbnail?: string; caption?: string; text?: string; backgroundArgb?: number }> } | undefined
+    )?.Message ?? {};
   const k = Object.keys(msg).find((x) => x !== "messageContextInfo") ?? "";
   const inner = msg[k] ?? {};
   const kind = k === "videoMessage" ? "video" : k === "imageMessage" ? "image" : "text";
   const argb = inner.backgroundArgb;
   const bg = argb ? `#${(argb & 0xffffff).toString(16).padStart(6, "0")}` : undefined;
-  return { m, kind, thumb: inner.JPEGThumbnail ? `data:image/jpeg;base64,${inner.JPEGThumbnail}` : null, text: m.body || inner.caption || inner.text || "", bg };
+  return {
+    m,
+    kind,
+    thumb: inner.JPEGThumbnail ? `data:image/jpeg;base64,${inner.JPEGThumbnail}` : null,
+    text: m.body || inner.caption || inner.text || "",
+    bg,
+  };
 }
 
 /** Status (stories) from contacts in the last 24h, plus posting your own. */
@@ -71,7 +95,7 @@ export function StatusScreen() {
     return [...by.entries()]
       .map(([id, stories]) => {
         const sorted = stories.sort((a, b) => a.m.timestamp - b.m.timestamp);
-        const name = id === "me" ? "My status" : resolveName(id) ?? displayId(id);
+        const name = id === "me" ? "My status" : (resolveName(id) ?? displayId(id));
         const unseen = id === "me" ? 0 : sorted.filter((st) => !seen[st.m.id]).length;
         return { id, stories: sorted, name, unseen, latest: sorted[sorted.length - 1]!.m.timestamp };
       })
@@ -94,9 +118,21 @@ export function StatusScreen() {
       <div className="w-80 shrink-0 flex flex-col border-r border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900">
         <div className="shrink-0 border-b border-neutral-200 dark:border-neutral-800">
           <div className="h-14 flex items-center gap-2 px-4">
-            <span className="font-semibold flex-1 flex items-center gap-2">Status <span className="text-[10px] rounded-full bg-wa/15 text-wa-dark dark:text-wa px-1.5 py-0.5 font-mono font-normal" title="Session — switch it in Chats">{session}</span></span>
-            <Button size="sm" variant="ghost" onClick={() => q.refetch()} title="Refresh"><RefreshCw size={14} className={cn(q.isFetching && "animate-spin")} /></Button>
-            <Button size="sm" onClick={() => setCompose(true)} title="Post a status"><Plus size={14} /></Button>
+            <span className="font-semibold flex-1 flex items-center gap-2">
+              Status{" "}
+              <span
+                className="text-[10px] rounded-full bg-wa/15 text-wa-dark dark:text-wa px-1.5 py-0.5 font-mono font-normal"
+                title="Session — switch it in Chats"
+              >
+                {session}
+              </span>
+            </span>
+            <Button size="sm" variant="ghost" onClick={() => q.refetch()} title="Refresh">
+              <RefreshCw size={14} className={cn(q.isFetching && "animate-spin")} />
+            </Button>
+            <Button size="sm" onClick={() => setCompose(true)} title="Post a status">
+              <Plus size={14} />
+            </Button>
           </div>
           <div className="relative px-3 pb-3">
             <Search size={14} className="absolute left-5.5 top-2.5 text-neutral-400" />
@@ -119,23 +155,29 @@ export function StatusScreen() {
             const firstViewed = g.id !== "me" && !unseen && (i === 0 || groups[i - 1]!.id === "me" || !!groups[i - 1]!.unseen);
             return (
               <div key={g.id}>
-              {firstViewed && <div className="px-4 pt-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-neutral-400">Viewed</div>}
-              <button
-                onClick={() => setSelected(g.id)}
-                className={cn("w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-neutral-100 dark:hover:bg-neutral-800", selected === g.id && "bg-neutral-100 dark:bg-neutral-800")}
-              >
-                <div className="relative">
-                  <div className={cn("rounded-full p-[2px] ring-2", unseen ? "ring-wa" : "ring-neutral-300 dark:ring-neutral-600")}>
-                    <Avatar src={last.thumb} name={name} size={40} />
+                {firstViewed && (
+                  <div className="px-4 pt-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-neutral-400">Viewed</div>
+                )}
+                <button
+                  onClick={() => setSelected(g.id)}
+                  className={cn(
+                    "w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-neutral-100 dark:hover:bg-neutral-800",
+                    selected === g.id && "bg-neutral-100 dark:bg-neutral-800",
+                  )}
+                >
+                  <div className="relative">
+                    <div className={cn("rounded-full p-[2px] ring-2", unseen ? "ring-wa" : "ring-neutral-300 dark:ring-neutral-600")}>
+                      <Avatar src={last.thumb} name={name} size={40} />
+                    </div>
                   </div>
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="font-medium truncate">{name}</div>
-                  <div className={cn("text-xs", unseen ? "text-neutral-800 dark:text-neutral-100 font-medium" : "text-neutral-500")}>
-                    {unseen ? `${unseen} new · ` : ""}{g.stories.length} update{g.stories.length === 1 ? "" : "s"} · {formatTime(last.m.timestamp)}
+                  <div className="min-w-0 flex-1">
+                    <div className="font-medium truncate">{name}</div>
+                    <div className={cn("text-xs", unseen ? "text-neutral-800 dark:text-neutral-100 font-medium" : "text-neutral-500")}>
+                      {unseen ? `${unseen} new · ` : ""}
+                      {g.stories.length} update{g.stories.length === 1 ? "" : "s"} · {formatTime(last.m.timestamp)}
+                    </div>
                   </div>
-                </div>
-              </button>
+                </button>
               </div>
             );
           })}
@@ -164,7 +206,16 @@ export function StatusScreen() {
       ) : (
         <div className="flex-1 grid place-items-center text-neutral-500 text-sm">Select a contact to view their status</div>
       )}
-      {compose && <ComposeStatus session={session} onClose={() => setCompose(false)} onPosted={() => { setCompose(false); setTimeout(() => q.refetch(), 1500); }} />}
+      {compose && (
+        <ComposeStatus
+          session={session}
+          onClose={() => setCompose(false)}
+          onPosted={() => {
+            setCompose(false);
+            setTimeout(() => q.refetch(), 1500);
+          }}
+        />
+      )}
     </>
   );
 }
@@ -275,19 +326,43 @@ function StoryViewer({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "ArrowLeft") { if (i > 0) setI(i - 1); else onPrevContact?.(); setPaused(false); }
-      if (e.key === "ArrowRight") { if (i < stories.length - 1) setI(i + 1); else onNextContact?.(); setPaused(false); }
-      if (e.key === " ") { e.preventDefault(); setPaused((p) => !p); }
+      if (e.key === "ArrowLeft") {
+        if (i > 0) setI(i - 1);
+        else onPrevContact?.();
+        setPaused(false);
+      }
+      if (e.key === "ArrowRight") {
+        if (i < stories.length - 1) setI(i + 1);
+        else onNextContact?.();
+        setPaused(false);
+      }
+      if (e.key === " ") {
+        e.preventDefault();
+        setPaused((p) => !p);
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [stories.length, i, onNextContact, onPrevContact]);
 
   return (
-    <div className="flex-1 min-w-0 flex flex-col bg-neutral-950 text-white" onClick={(e) => { if ((e.target as HTMLElement).closest("button,video,a")) return; setPaused((p) => !p); }}>
+    <div
+      className="flex-1 min-w-0 flex flex-col bg-neutral-950 text-white"
+      onClick={(e) => {
+        if ((e.target as HTMLElement).closest("button,video,a")) return;
+        setPaused((p) => !p);
+      }}
+    >
       <div className="flex gap-1 px-4 pt-3">
         {stories.map((s, j) => (
-          <button key={s.m.id} onClick={() => { setI(j); setPaused(false); }} className="h-1 flex-1 rounded-full bg-white/30 overflow-hidden">
+          <button
+            key={s.m.id}
+            onClick={() => {
+              setI(j);
+              setPaused(false);
+            }}
+            className="h-1 flex-1 rounded-full bg-white/30 overflow-hidden"
+          >
             <div className="h-full bg-white" style={{ width: j < i ? "100%" : j === i ? `${Math.round(progress * 100)}%` : "0%" }} />
           </button>
         ))}
@@ -296,13 +371,19 @@ function StoryViewer({
         <Avatar name={name} size={36} />
         <div className="min-w-0 flex-1">
           <div className="font-medium truncate">{name}</div>
-          <div className="text-xs text-white/60">{new Date(story.m.timestamp * 1000).toLocaleString([], { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })} · {i + 1}/{stories.length}</div>
+          <div className="text-xs text-white/60">
+            {new Date(story.m.timestamp * 1000).toLocaleString([], { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}{" "}
+            · {i + 1}/{stories.length}
+          </div>
         </div>
         {!mine && readMode === "manual" && (
           <button
             onClick={() => reportView(story)}
             disabled={!!reported[story.m.id]}
-            className={cn("flex items-center gap-1 rounded-full px-2.5 py-1 text-xs", reported[story.m.id] ? "text-sky-400" : "bg-wa text-wa-teal hover:bg-wa/90")}
+            className={cn(
+              "flex items-center gap-1 rounded-full px-2.5 py-1 text-xs",
+              reported[story.m.id] ? "text-sky-400" : "bg-wa text-wa-teal hover:bg-wa/90",
+            )}
             title={reported[story.m.id] ? "Marked as viewed" : "Let the sender know you viewed this status"}
           >
             <CheckCheck size={14} /> {reported[story.m.id] ? "Viewed" : "Mark viewed"}
@@ -334,10 +415,35 @@ function StoryViewer({
         )}
       </div>
       <div className="relative flex-1 min-h-0 flex items-center justify-center p-4 overflow-hidden">
-        <button onClick={() => { if (i > 0) setI(i - 1); else onPrevContact?.(); setPaused(false); }} disabled={i === 0 && !onPrevContact} className="absolute left-3 top-1/2 -translate-y-1/2 p-2 rounded-full bg-white/10 hover:bg-white/20 disabled:opacity-20" title={i === 0 ? "Previous contact" : "Previous"}><ChevronLeft /></button>
-        <button onClick={() => { if (i < stories.length - 1) setI(i + 1); else onNextContact?.(); setPaused(false); }} disabled={i >= stories.length - 1 && !onNextContact} className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-full bg-white/10 hover:bg-white/20 disabled:opacity-20" title={i >= stories.length - 1 ? "Next contact" : "Next"}><ChevronRight /></button>
+        <button
+          onClick={() => {
+            if (i > 0) setI(i - 1);
+            else onPrevContact?.();
+            setPaused(false);
+          }}
+          disabled={i === 0 && !onPrevContact}
+          className="absolute left-3 top-1/2 -translate-y-1/2 p-2 rounded-full bg-white/10 hover:bg-white/20 disabled:opacity-20"
+          title={i === 0 ? "Previous contact" : "Previous"}
+        >
+          <ChevronLeft />
+        </button>
+        <button
+          onClick={() => {
+            if (i < stories.length - 1) setI(i + 1);
+            else onNextContact?.();
+            setPaused(false);
+          }}
+          disabled={i >= stories.length - 1 && !onNextContact}
+          className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-full bg-white/10 hover:bg-white/20 disabled:opacity-20"
+          title={i >= stories.length - 1 ? "Next contact" : "Next"}
+        >
+          <ChevronRight />
+        </button>
         {story.kind === "text" ? (
-          <div className="h-full max-h-full aspect-[9/16] max-w-full rounded-2xl flex items-center justify-center p-8 text-center text-2xl font-medium" style={{ background: story.bg ?? "#128c7e" }}>
+          <div
+            className="h-full max-h-full aspect-[9/16] max-w-full rounded-2xl flex items-center justify-center p-8 text-center text-2xl font-medium"
+            style={{ background: story.bg ?? "#128c7e" }}
+          >
             <WaMarkdown text={story.text} />
           </div>
         ) : loading ? (
@@ -364,7 +470,9 @@ function StoryViewer({
         ) : null}
       </div>
       {story.kind !== "text" && story.text && (
-        <div className="px-6 py-3 text-center text-sm bg-black/40 selectable"><WaMarkdown text={story.text} /></div>
+        <div className="px-6 py-3 text-center text-sm bg-black/40 selectable">
+          <WaMarkdown text={story.text} />
+        </div>
       )}
     </div>
   );
@@ -412,13 +520,21 @@ function ComposeStatus({ session, onClose, onPosted }: { session: string; onClos
     <div className="fixed inset-0 z-50 bg-black/40 grid place-items-center" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="w-[420px] rounded-xl bg-white dark:bg-neutral-900 shadow-2xl">
         <div className="flex items-center gap-2 p-3 border-b border-neutral-200 dark:border-neutral-800">
-          <span className="font-semibold flex-1">New status <span className="text-xs font-normal text-neutral-500">· posted from {session}</span></span>
-          <button onClick={onClose}><X size={16} /></button>
+          <span className="font-semibold flex-1">
+            New status <span className="text-xs font-normal text-neutral-500">· posted from {session}</span>
+          </span>
+          <button onClick={onClose}>
+            <X size={16} />
+          </button>
         </div>
         <div className="p-4 space-y-3">
           <div className="flex gap-1">
-            <Button size="sm" variant={mode === "text" ? "primary" : "secondary"} onClick={() => setMode("text")}><Type size={12} /> Text</Button>
-            <Button size="sm" variant={mode === "media" ? "primary" : "secondary"} onClick={() => setMode("media")}><ImageIcon size={12} /> Photo / video</Button>
+            <Button size="sm" variant={mode === "text" ? "primary" : "secondary"} onClick={() => setMode("text")}>
+              <Type size={12} /> Text
+            </Button>
+            <Button size="sm" variant={mode === "media" ? "primary" : "secondary"} onClick={() => setMode("media")}>
+              <ImageIcon size={12} /> Photo / video
+            </Button>
           </div>
           {mode === "text" ? (
             <>
@@ -435,16 +551,31 @@ function ComposeStatus({ session, onClose, onPosted }: { session: string; onClos
               <div className="flex gap-1.5 flex-wrap items-center">
                 <GenerateButton kind="status" text={text} onResult={setText} session={session} />
                 {COLORS.map((c) => (
-                  <button key={c} onClick={() => setBg(c)} className={cn("w-6 h-6 rounded-full border-2", bg === c ? "border-neutral-900 dark:border-white" : "border-transparent")} style={{ background: c }} />
+                  <button
+                    key={c}
+                    onClick={() => setBg(c)}
+                    className={cn(
+                      "w-6 h-6 rounded-full border-2",
+                      bg === c ? "border-neutral-900 dark:border-white" : "border-transparent",
+                    )}
+                    style={{ background: c }}
+                  />
                 ))}
               </div>
             </>
           ) : (
             <>
               <input ref={fileRef} type="file" accept="image/*,video/*" hidden onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
-              <button onClick={() => fileRef.current?.click()} className="w-full rounded-xl border-2 border-dashed border-neutral-300 dark:border-neutral-700 min-h-40 grid place-items-center overflow-hidden">
+              <button
+                onClick={() => fileRef.current?.click()}
+                className="w-full rounded-xl border-2 border-dashed border-neutral-300 dark:border-neutral-700 min-h-40 grid place-items-center overflow-hidden"
+              >
                 {preview ? (
-                  file!.type.startsWith("video/") ? <video src={preview} className="max-h-60" /> : <img src={preview} alt="" className="max-h-60 object-contain" />
+                  file!.type.startsWith("video/") ? (
+                    <video src={preview} className="max-h-60" />
+                  ) : (
+                    <img src={preview} alt="" className="max-h-60 object-contain" />
+                  )
                 ) : (
                   <span className="text-sm text-neutral-500">Choose a photo or video</span>
                 )}
@@ -454,7 +585,9 @@ function ComposeStatus({ session, onClose, onPosted }: { session: string; onClos
           )}
           {err && <div className="text-xs text-red-600 selectable">{err}</div>}
           <div className="flex justify-end gap-2">
-            <Button variant="secondary" onClick={onClose}>Cancel</Button>
+            <Button variant="secondary" onClick={onClose}>
+              Cancel
+            </Button>
             <Button disabled={busy || (mode === "text" ? !text.trim() : !file)} onClick={post}>
               {busy ? <Loader2 size={14} className="animate-spin" /> : "Post"}
             </Button>

@@ -1,8 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- A message bubble that changed state in place (e.g. deleted for everyone while on screen) could crash with a hook-order error.
+
+### Changed
+
+- ESLint (typescript-eslint + react-hooks) and Prettier run in `npm run check` and in CI; the whole tree is formatted once.
+- Shared helpers replace repeated snippets: `errMsg`, `convKey`, `ViewMessage`, `mediaOpts`, `useLatest`/`useEvent`/`useDismiss`, and a `Popover`/`MenuItem` dropdown that closes on outside click and Escape.
+
 ## 0.4.2 — 2026-09-15
 
 ### Fixed
+
 - Broadcasts created under one server profile no longer run through another profile's connection after switching servers.
 - Scrolling up in a chat could page the same history range twice and show duplicate messages.
 - The selected chat is cleared when switching sessions; drafts no longer leak between sessions.
@@ -18,6 +30,7 @@
 - The WebSocket refetches chats and messages after a reconnect, and reconnects when the network returns or the window is used again after a long idle.
 
 ### Added
+
 - "Draft with AI" in the broadcast and status composers: a short brief becomes a ready-to-send message in your persona's voice.
 - Optional automatic labelling of new direct chats with your existing labels (Settings → AI, off by default).
 - Daily cap on auto-replies (default 300, editable in the Auto-reply header) as a spend guard for AI replies.
@@ -26,6 +39,7 @@
 - Unit tests (`npm test`) and a CI workflow that type-checks, tests, builds, and runs clippy/rustfmt on pull requests.
 
 ### Changed
+
 - The message list is virtualised: only the bubbles near the viewport are in the DOM, so long scroll-backs no longer accumulate thousands of live bubbles and images.
 - `ChatScreen.tsx` split into list / bubble / composer modules; Rust shell split into keychain, media-cache and WhatsApp Web modules (no behaviour change).
 - Old schedule runs, auto-reply log rows and finished broadcasts are pruned after 90 days.
@@ -36,20 +50,25 @@
 - Media cache eviction runs on a background thread and only after a batch of new writes.
 
 ## 0.4.1 — 2026-09-14
+
 - Fix WhatsApp Web never loading on Windows (WebView2 nested user-data folder) and the settings-page scroll freeze it caused.
 - Forced exit fallback when quitting from the tray with a stuck event loop.
 
 ## 0.4.0 — 2026-09-14
+
 - Multi-business: session picker for schedules and broadcasts, persona and quick replies per session.
 - Auto-reply rules (fixed text or AI) with preview, cooldown, log and kill switch.
 - WhatsApp Web split view: several accounts side by side.
 
 ## 0.3.0 — 2026-09-14
+
 - Embedded WhatsApp Web sessions in the session picker with OS notifications, downloads and external links.
 
 ## 0.2.0 — 2026-09-13
+
 - AI: translation, summaries and Q&A, writing assistant, smart replies, persona, image description / OCR, task extraction, label suggestions.
 - Settings backup / restore, per-chat auto-translate.
 
 ## 0.1.0 — 2026-09-13
+
 - Initial release: chats, groups, status, scheduler, broadcast, quick replies, labels, exports, webhooks.

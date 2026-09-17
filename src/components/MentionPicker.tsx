@@ -13,7 +13,17 @@ export interface MentionCandidate {
  * Popover listing group participants while typing "@…"; arrow keys + Enter/Tab pick.
  * Inserts "@<phone>" (what WhatsApp expects in the text) and reports the id for `mentions`.
  */
-export function MentionPicker({ query, candidates, onPick, onClose }: { query: string; candidates: MentionCandidate[]; onPick: (c: MentionCandidate) => void; onClose: () => void }) {
+export function MentionPicker({
+  query,
+  candidates,
+  onPick,
+  onClose,
+}: {
+  query: string;
+  candidates: MentionCandidate[];
+  onPick: (c: MentionCandidate) => void;
+  onClose: () => void;
+}) {
   const [index, setIndex] = useState(0);
   const list = useMemo(() => {
     const t = query.toLowerCase();
@@ -24,10 +34,17 @@ export function MentionPicker({ query, candidates, onPick, onClose }: { query: s
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!list.length) return;
-      if (e.key === "ArrowDown") { e.preventDefault(); setIndex((i) => (i + 1) % list.length); }
-      else if (e.key === "ArrowUp") { e.preventDefault(); setIndex((i) => (i - 1 + list.length) % list.length); }
-      else if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); e.stopPropagation(); onPick(list[index]!); }
-      else if (e.key === "Escape") onClose();
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setIndex((i) => (i + 1) % list.length);
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setIndex((i) => (i - 1 + list.length) % list.length);
+      } else if (e.key === "Enter" || e.key === "Tab") {
+        e.preventDefault();
+        e.stopPropagation();
+        onPick(list[index]!);
+      } else if (e.key === "Escape") onClose();
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
@@ -39,8 +56,14 @@ export function MentionPicker({ query, candidates, onPick, onClose }: { query: s
       {list.map((c, i) => (
         <button
           key={c.id}
-          onMouseDown={(e) => { e.preventDefault(); onPick(c); }}
-          className={cn("w-full flex items-center gap-2 px-3 py-1.5 text-left text-sm", i === index ? "bg-neutral-100 dark:bg-neutral-800" : "hover:bg-neutral-50 dark:hover:bg-neutral-800/60")}
+          onMouseDown={(e) => {
+            e.preventDefault();
+            onPick(c);
+          }}
+          className={cn(
+            "w-full flex items-center gap-2 px-3 py-1.5 text-left text-sm",
+            i === index ? "bg-neutral-100 dark:bg-neutral-800" : "hover:bg-neutral-50 dark:hover:bg-neutral-800/60",
+          )}
         >
           <Avatar name={c.name} size={24} />
           <span className="min-w-0 flex-1">

@@ -79,9 +79,7 @@ export function SessionsScreen() {
               onAction={(a) => run(a, s.name)}
             />
           ))}
-          {sessions?.length === 0 && (
-            <p className="text-sm text-neutral-500">No sessions yet. Create one below.</p>
-          )}
+          {sessions?.length === 0 && <p className="text-sm text-neutral-500">No sessions yet. Create one below.</p>}
         </div>
 
         <form
@@ -91,11 +89,7 @@ export function SessionsScreen() {
             if (newName.trim()) run("create", newName.trim());
           }}
         >
-          <Input
-            placeholder="new session name (e.g. default)"
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-          />
+          <Input placeholder="new session name (e.g. default)" value={newName} onChange={(e) => setNewName(e.target.value)} />
           <Button type="submit" disabled={!newName.trim() || act.isPending}>
             <Plus size={16} /> Create & start
           </Button>
@@ -150,7 +144,8 @@ function SessionCard({
             </Button>
           )}
           <Button size="sm" variant="secondary" onClick={() => setWebhooks(true)} title={`Webhooks (${hookCount})`}>
-            <Webhook size={14} />{hookCount > 0 && <span className="text-[10px]">{hookCount}</span>}
+            <Webhook size={14} />
+            {hookCount > 0 && <span className="text-[10px]">{hookCount}</span>}
           </Button>
           {!active && (
             <Button size="sm" variant="secondary" onClick={onSelect}>
@@ -253,9 +248,7 @@ function QrLogin({ session }: { session: string }) {
               Get code
             </Button>
           </form>
-          {code && (
-            <p className="text-lg font-mono tracking-widest selectable">{code}</p>
-          )}
+          {code && <p className="text-lg font-mono tracking-widest selectable">{code}</p>}
         </div>
       </div>
     </div>

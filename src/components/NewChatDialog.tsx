@@ -15,16 +15,62 @@ export function NewChatDialog({ session, onPick, onClose }: { session: string; o
   return (
     <Dialog title="New" onClose={onClose}>
       <div className="flex gap-1 -mt-1">
-        {([["contacts", "Contact", UserPlus], ["group", "New group", Users], ["join", "Join link", LinkIcon], ["channels", "Channels", Megaphone]] as const).map(([id, label, Icon]) => (
-          <button key={id} onClick={() => setTab(id)} className={cn("flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium", tab === id ? "bg-wa-dark text-white" : "bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300")}>
+        {(
+          [
+            ["contacts", "Contact", UserPlus],
+            ["group", "New group", Users],
+            ["join", "Join link", LinkIcon],
+            ["channels", "Channels", Megaphone],
+          ] as const
+        ).map(([id, label, Icon]) => (
+          <button
+            key={id}
+            onClick={() => setTab(id)}
+            className={cn(
+              "flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium",
+              tab === id ? "bg-wa-dark text-white" : "bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300",
+            )}
+          >
             <Icon size={12} /> {label}
           </button>
         ))}
       </div>
-      {tab === "contacts" && <ContactsTab session={session} onPick={(id) => { onPick(id); onClose(); }} />}
-      {tab === "group" && <NewGroupTab session={session} onCreated={(id) => { onPick(id); onClose(); }} />}
-      {tab === "join" && <JoinTab session={session} onJoined={(id) => { onPick(id); onClose(); }} />}
-      {tab === "channels" && <ChannelsTab session={session} onOpen={(id) => { onPick(id); onClose(); }} />}
+      {tab === "contacts" && (
+        <ContactsTab
+          session={session}
+          onPick={(id) => {
+            onPick(id);
+            onClose();
+          }}
+        />
+      )}
+      {tab === "group" && (
+        <NewGroupTab
+          session={session}
+          onCreated={(id) => {
+            onPick(id);
+            onClose();
+          }}
+        />
+      )}
+      {tab === "join" && (
+        <JoinTab
+          session={session}
+          onJoined={(id) => {
+            onPick(id);
+            onClose();
+          }}
+        />
+      )}
+      {tab === "channels" && (
+        <ChannelsTab
+          session={session}
+          onOpen={(id) => {
+            onPick(id);
+            onClose();
+          }}
+        />
+      )}
     </Dialog>
   );
 }
@@ -35,7 +81,10 @@ function useContactList(session: string, q: string) {
     const term = q.trim().toLowerCase();
     return (contacts ?? [])
       .filter((c) => c.name || c.pushname)
-      .filter((c) => !term || (c.name ?? "").toLowerCase().includes(term) || (c.pushname ?? "").toLowerCase().includes(term) || c.id.includes(term))
+      .filter(
+        (c) =>
+          !term || (c.name ?? "").toLowerCase().includes(term) || (c.pushname ?? "").toLowerCase().includes(term) || c.id.includes(term),
+      )
       .sort((a, b) => (a.name || a.pushname || "").localeCompare(b.name || b.pushname || ""))
       .slice(0, 300);
   }, [contacts, q]);
@@ -67,9 +116,22 @@ function ContactsTab({ session, onPick }: { session: string; onPick: (id: string
 
   return (
     <>
-      <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); void check(); }}>
-        <Input placeholder="Phone with country code, e.g. 628123456789" value={phone} onChange={(e) => setPhone(e.target.value)} autoFocus />
-        <Button type="submit" disabled={busy || phone.replace(/\D/g, "").length < 8}>{busy ? <Loader2 size={14} className="animate-spin" /> : <UserPlus size={14} />}</Button>
+      <form
+        className="flex gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void check();
+        }}
+      >
+        <Input
+          placeholder="Phone with country code, e.g. 628123456789"
+          value={phone}
+          onChange={(e) => setPhone(e.target.value)}
+          autoFocus
+        />
+        <Button type="submit" disabled={busy || phone.replace(/\D/g, "").length < 8}>
+          {busy ? <Loader2 size={14} className="animate-spin" /> : <UserPlus size={14} />}
+        </Button>
       </form>
       {err && <div className="text-xs text-red-600 selectable">{err}</div>}
       <div className="relative">
@@ -81,11 +143,18 @@ function ContactsTab({ session, onPick }: { session: string; onPick: (id: string
         {list.map((c) => {
           const name = c.name || c.pushname || displayId(c.id);
           return (
-            <button key={c.id} onClick={() => onPick(c.id)} className="w-full flex items-center gap-2 px-2 py-1.5 text-left text-sm hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-lg">
+            <button
+              key={c.id}
+              onClick={() => onPick(c.id)}
+              className="w-full flex items-center gap-2 px-2 py-1.5 text-left text-sm hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-lg"
+            >
               <Avatar name={name} size={30} />
               <span className="min-w-0">
                 <span className="block truncate">{name}</span>
-                <span className="block text-[11px] text-neutral-500 truncate">{c.pushname && c.name ? `~${c.pushname} · ` : ""}{displayId(c.id)}</span>
+                <span className="block text-[11px] text-neutral-500 truncate">
+                  {c.pushname && c.name ? `~${c.pushname} · ` : ""}
+                  {displayId(c.id)}
+                </span>
               </span>
             </button>
           );
@@ -108,7 +177,10 @@ function NewGroupTab({ session, onCreated }: { session: string; onCreated: (id: 
 
   return (
     <>
-      <div><Label>Group name</Label><Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Team Wahana" autoFocus maxLength={100} /></div>
+      <div>
+        <Label>Group name</Label>
+        <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Team Wahana" autoFocus maxLength={100} />
+      </div>
       <div>
         <Label>Participants · {picked.size} selected</Label>
         <Input placeholder="Search contacts" value={q} onChange={(e) => setQ(e.target.value)} />
@@ -117,8 +189,22 @@ function NewGroupTab({ session, onCreated }: { session: string; onCreated: (id: 
             const on = picked.has(c.id);
             const nm = c.name || c.pushname || displayId(c.id);
             return (
-              <label key={c.id} className="flex items-center gap-2 px-2 py-1.5 text-sm cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800/60">
-                <input type="checkbox" checked={on} onChange={() => setPicked((p) => { const n = new Set(p); if (on) n.delete(c.id); else n.add(c.id); return n; })} />
+              <label
+                key={c.id}
+                className="flex items-center gap-2 px-2 py-1.5 text-sm cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800/60"
+              >
+                <input
+                  type="checkbox"
+                  checked={on}
+                  onChange={() =>
+                    setPicked((p) => {
+                      const n = new Set(p);
+                      if (on) n.delete(c.id);
+                      else n.add(c.id);
+                      return n;
+                    })
+                  }
+                />
                 <Avatar name={nm} size={24} />
                 <span className="flex-1 truncate">{nm}</span>
                 <span className="text-[11px] text-neutral-500">{displayId(c.id)}</span>
@@ -126,7 +212,9 @@ function NewGroupTab({ session, onCreated }: { session: string; onCreated: (id: 
             );
           })}
         </div>
-        <p className="text-[11px] text-neutral-500 mt-1">Only contacts with a phone id can be added at creation; others can join via invite link later.</p>
+        <p className="text-[11px] text-neutral-500 mt-1">
+          Only contacts with a phone id can be added at creation; others can join via invite link later.
+        </p>
       </div>
       {err && <div className="text-xs text-red-600 selectable">{err}</div>}
       <div className="flex justify-end">
@@ -168,14 +256,19 @@ function JoinTab({ session, onJoined }: { session: string; onJoined: (id: string
   });
   return (
     <>
-      <div><Label>Invite link or code</Label><Input value={code} onChange={(e) => setCode(e.target.value)} placeholder="https://chat.whatsapp.com/…" autoFocus /></div>
+      <div>
+        <Label>Invite link or code</Label>
+        <Input value={code} onChange={(e) => setCode(e.target.value)} placeholder="https://chat.whatsapp.com/…" autoFocus />
+      </div>
       {info.isLoading && <Loader2 className="animate-spin text-neutral-400" />}
       {info.data && (
         <div className="flex items-center gap-3 rounded-lg bg-neutral-50 dark:bg-neutral-800/60 p-3">
           <Avatar name={info.data.Name} size={40} />
           <span className="min-w-0">
             <span className="block font-medium truncate">{info.data.Name}</span>
-            <span className="block text-xs text-neutral-500">{info.data.ParticipantCount ?? info.data.Participants?.length ?? "?"} participants</span>
+            <span className="block text-xs text-neutral-500">
+              {info.data.ParticipantCount ?? info.data.Participants?.length ?? "?"} participants
+            </span>
           </span>
         </div>
       )}
@@ -212,12 +305,15 @@ function ChannelsTab({ session, onOpen }: { session: string; onOpen: (id: string
   const mine = useQuery({ queryKey: ["channels", session], queryFn: () => requireClient().channels(session) });
   const search = useQuery({
     queryKey: ["channel-search", session, q.trim()],
-    queryFn: () => requireClient().searchChannels(session, q.trim()).then((r) => r.channels ?? []),
+    queryFn: () =>
+      requireClient()
+        .searchChannels(session, q.trim())
+        .then((r) => r.channels ?? []),
     enabled: q.trim().length >= 2,
     retry: 0,
   });
   const followed = new Set((mine.data ?? []).map((c) => c.id));
-  const list = q.trim().length >= 2 ? search.data ?? [] : mine.data ?? [];
+  const list = q.trim().length >= 2 ? (search.data ?? []) : (mine.data ?? []);
 
   const toggle = async (id: string, isFollowed: boolean) => {
     setBusy(id);
@@ -235,26 +331,59 @@ function ChannelsTab({ session, onOpen }: { session: string; onOpen: (id: string
     <>
       <div className="relative">
         <Search size={14} className="absolute left-2.5 top-2.5 text-neutral-400" />
-        <Input className="pl-8" placeholder="Search channels (min 2 letters) — empty shows followed" value={q} onChange={(e) => setQ(e.target.value)} autoFocus />
+        <Input
+          className="pl-8"
+          placeholder="Search channels (min 2 letters) — empty shows followed"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          autoFocus
+        />
       </div>
       <div className="max-h-[45vh] overflow-y-auto -mx-2">
         {(mine.isLoading || search.isLoading) && <Loader2 className="animate-spin text-neutral-400 m-2" />}
         {list.map((c) => {
           const isFollowed = followed.has(c.id);
           return (
-            <div key={c.id} className="flex items-center gap-2 px-2 py-1.5 text-sm rounded-lg hover:bg-neutral-100 dark:hover:bg-neutral-800">
-              <Avatar src={(c as { preview?: string; picture?: string }).preview || (c as { picture?: string }).picture || undefined} name={c.name} size={32} />
-              <button className="min-w-0 flex-1 text-left" onClick={() => isFollowed && onOpen(c.id)} title={isFollowed ? "Open" : "Follow to open"}>
-                <span className="block truncate font-medium">{c.name} {(c as { verified?: boolean }).verified && <Check size={12} className="inline text-sky-500" />}</span>
-                <span className="block text-[11px] text-neutral-500 truncate">{(c as { description?: string }).description ?? ""}{(c as { subscribersCount?: number }).subscribersCount ? ` · ${(c as { subscribersCount?: number }).subscribersCount} followers` : ""}</span>
+            <div
+              key={c.id}
+              className="flex items-center gap-2 px-2 py-1.5 text-sm rounded-lg hover:bg-neutral-100 dark:hover:bg-neutral-800"
+            >
+              <Avatar
+                src={(c as { preview?: string; picture?: string }).preview || (c as { picture?: string }).picture || undefined}
+                name={c.name}
+                size={32}
+              />
+              <button
+                className="min-w-0 flex-1 text-left"
+                onClick={() => isFollowed && onOpen(c.id)}
+                title={isFollowed ? "Open" : "Follow to open"}
+              >
+                <span className="block truncate font-medium">
+                  {c.name} {(c as { verified?: boolean }).verified && <Check size={12} className="inline text-sky-500" />}
+                </span>
+                <span className="block text-[11px] text-neutral-500 truncate">
+                  {(c as { description?: string }).description ?? ""}
+                  {(c as { subscribersCount?: number }).subscribersCount
+                    ? ` · ${(c as { subscribersCount?: number }).subscribersCount} followers`
+                    : ""}
+                </span>
               </button>
-              <Button size="sm" variant={isFollowed ? "secondary" : "primary"} disabled={busy === c.id} onClick={() => toggle(c.id, isFollowed)}>
+              <Button
+                size="sm"
+                variant={isFollowed ? "secondary" : "primary"}
+                disabled={busy === c.id}
+                onClick={() => toggle(c.id, isFollowed)}
+              >
                 {busy === c.id ? <Loader2 size={12} className="animate-spin" /> : isFollowed ? "Unfollow" : "Follow"}
               </Button>
             </div>
           );
         })}
-        {!mine.isLoading && list.length === 0 && <p className="text-xs text-neutral-500 px-2 py-3">{q.trim().length >= 2 ? "No channels found." : "You don't follow any channels yet — search above."}</p>}
+        {!mine.isLoading && list.length === 0 && (
+          <p className="text-xs text-neutral-500 px-2 py-3">
+            {q.trim().length >= 2 ? "No channels found." : "You don't follow any channels yet — search above."}
+          </p>
+        )}
       </div>
     </>
   );

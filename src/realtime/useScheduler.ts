@@ -13,7 +13,9 @@ const TICK_MS = 20_000;
 async function execute(s: Schedule) {
   const client = useSettings.getState().client;
   if (!client) throw new Error("not connected");
-  const file = s.media_b64 ? { mimetype: s.media_mime ?? "application/octet-stream", filename: s.media_name ?? "file", data: s.media_b64 } : null;
+  const file = s.media_b64
+    ? { mimetype: s.media_mime ?? "application/octet-stream", filename: s.media_name ?? "file", data: s.media_b64 }
+    : null;
   const text = s.text ?? "";
   if (s.target_type === "status") {
     if (s.kind === "image" && file) return client.postImageStatus(s.session, file, text || undefined);
@@ -58,7 +60,11 @@ export function useScheduler() {
           } catch (e) {
             const msg = errMsg(e);
             await recordRun(s, "error", { error: msg });
-            if (useSettings.getState().notifications) sendNotification({ title: "Scheduled message failed", body: `${s.target_name ?? s.target_id ?? "status"}: ${msg}`.slice(0, 200) });
+            if (useSettings.getState().notifications)
+              sendNotification({
+                title: "Scheduled message failed",
+                body: `${s.target_name ?? s.target_id ?? "status"}: ${msg}`.slice(0, 200),
+              });
           }
         }
         if (due.length) qc.invalidateQueries({ queryKey: ["schedules"] });

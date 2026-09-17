@@ -8,7 +8,15 @@ import type { MentionResolver } from "@/lib/waMarkdown";
 import { cn, isGroup } from "@/lib/utils";
 import { mediaKind } from "@/store/settings";
 
-const fmt = (ms: number) => new Date(ms).toLocaleString([], { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+const fmt = (ms: number) =>
+  new Date(ms).toLocaleString([], {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
 
 export function MessageInfoModal({
   message: m,
@@ -24,7 +32,20 @@ export function MessageInfoModal({
   const receipt = useReceipts((s) => s.byMsg[bareId(m.id)]);
   const [raw, setRaw] = useState(false);
   const group = isGroup(chatId);
-  const info = (m._data as { Info?: { Type?: string; MediaType?: string; PushName?: string; Edit?: string; IsFromMe?: boolean } ; Message?: Record<string, { contextInfo?: { isForwarded?: boolean; forwardingScore?: number }; fileLength?: number | string; mimetype?: string; seconds?: number }> } | undefined);
+  const info = m._data as
+    | {
+        Info?: { Type?: string; MediaType?: string; PushName?: string; Edit?: string; IsFromMe?: boolean };
+        Message?: Record<
+          string,
+          {
+            contextInfo?: { isForwarded?: boolean; forwardingScore?: number };
+            fileLength?: number | string;
+            mimetype?: string;
+            seconds?: number;
+          }
+        >;
+      }
+    | undefined;
   const inner = info?.Message ? Object.values(info.Message).find((v) => v && typeof v === "object") : undefined;
   const forwarded = !!inner?.contextInfo?.isForwarded;
 
@@ -36,7 +57,8 @@ export function MessageInfoModal({
     if (m.fromMe) {
       rows.push({ label: "Delivered", at: lv[2], icon: CheckCheck, reached: m.ack >= 2 });
       rows.push({ label: "Read", at: lv[3], icon: CheckCheck, reached: m.ack >= 3, tone: "text-sky-500" });
-      if (mediaKind(m) === "audio" || m.ack >= 4) rows.push({ label: "Played", at: lv[4], icon: CheckCheck, reached: m.ack >= 4, tone: "text-sky-500" });
+      if (mediaKind(m) === "audio" || m.ack >= 4)
+        rows.push({ label: "Played", at: lv[4], icon: CheckCheck, reached: m.ack >= 4, tone: "text-sky-500" });
     }
     return rows;
   }, [m, receipt]);
@@ -49,7 +71,9 @@ export function MessageInfoModal({
         <div className="flex items-center gap-2 p-3 border-b border-neutral-200 dark:border-neutral-800">
           <Info size={16} className="text-wa-dark" />
           <span className="font-semibold flex-1">Message info</span>
-          <button onClick={onClose}><X size={16} /></button>
+          <button onClick={onClose}>
+            <X size={16} />
+          </button>
         </div>
         <div className="flex-1 overflow-y-auto p-4 space-y-4 text-sm">
           <div className="rounded-lg bg-neutral-50 dark:bg-neutral-800/60 p-3 text-xs selectable line-clamp-4 break-words">
@@ -69,7 +93,8 @@ export function MessageInfoModal({
           </ul>
           {m.fromMe && m.ack >= 2 && !receipt?.levels[2] && (
             <p className="text-[11px] text-neutral-500">
-              Delivery/read times are captured live from WhatsApp events; for messages sent before Wahana was running only the status is known.
+              Delivery/read times are captured live from WhatsApp events; for messages sent before Wahana was running only the status is
+              known.
             </p>
           )}
 
@@ -95,9 +120,19 @@ export function MessageInfoModal({
           )}
 
           <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs">
-            <dt className="text-neutral-500">Status</dt><dd className="selectable">{m.ackName ?? m.ack}</dd>
-            <dt className="text-neutral-500">From</dt><dd className="selectable">{m.fromMe ? "You" : (resolveName(m.participant || m.from) ?? m.from)}{info?.Info?.PushName ? ` (~${info.Info.PushName})` : ""}</dd>
-            <dt className="text-neutral-500">Type</dt><dd className="selectable">{info?.Info?.MediaType || info?.Info?.Type || (m.hasMedia ? mediaKind(m) : "text")}{forwarded ? " · forwarded" : ""}{info?.Info?.Edit ? ` · ${info.Info.Edit.toLowerCase()}` : ""}</dd>
+            <dt className="text-neutral-500">Status</dt>
+            <dd className="selectable">{m.ackName ?? m.ack}</dd>
+            <dt className="text-neutral-500">From</dt>
+            <dd className="selectable">
+              {m.fromMe ? "You" : (resolveName(m.participant || m.from) ?? m.from)}
+              {info?.Info?.PushName ? ` (~${info.Info.PushName})` : ""}
+            </dd>
+            <dt className="text-neutral-500">Type</dt>
+            <dd className="selectable">
+              {info?.Info?.MediaType || info?.Info?.Type || (m.hasMedia ? mediaKind(m) : "text")}
+              {forwarded ? " · forwarded" : ""}
+              {info?.Info?.Edit ? ` · ${info.Info.Edit.toLowerCase()}` : ""}
+            </dd>
             {m.hasMedia && (
               <>
                 <dt className="text-neutral-500">Media</dt>
@@ -108,7 +143,8 @@ export function MessageInfoModal({
                 </dd>
               </>
             )}
-            <dt className="text-neutral-500">Message ID</dt><dd className="selectable break-all font-mono text-[10px]">{m.id}</dd>
+            <dt className="text-neutral-500">Message ID</dt>
+            <dd className="selectable break-all font-mono text-[10px]">{m.id}</dd>
           </dl>
 
           <button onClick={() => setRaw((v) => !v)} className="flex items-center gap-1 text-xs text-neutral-500 hover:text-neutral-800">
@@ -124,4 +160,3 @@ export function MessageInfoModal({
     </div>
   );
 }
-

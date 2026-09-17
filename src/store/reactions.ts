@@ -12,7 +12,7 @@ let storePromise: Promise<Store> | null = null;
 const store = () => (storePromise ??= load(STORE_FILE, { autoSave: true, defaults: {} }));
 let flushTimer: ReturnType<typeof setTimeout> | undefined;
 
-export const bareId = (id: string) => (id.includes("_") ? id.split("_")[2] ?? id : id);
+export const bareId = (id: string) => (id.includes("_") ? (id.split("_")[2] ?? id) : id);
 const digits = (id: string) => id.split("@")[0]!.split(":")[0]!;
 
 export interface ReactionEvent {

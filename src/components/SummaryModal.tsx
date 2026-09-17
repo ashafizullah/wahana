@@ -25,7 +25,8 @@ const lastResult = new Map<string, Result>();
 const lastTasks = new Map<string, { scope: ScopeId; count: number; tasks: ExtractedTask[] }>();
 
 const pad = (n: number) => String(n).padStart(2, "0");
-const toLocalInput = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+const toLocalInput = (d: Date) =>
+  `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 /** Default reminder time: the due time if it's still ahead, else tomorrow 09:00. */
 function defaultWhen(due?: string | null) {
   if (due) {
@@ -111,7 +112,12 @@ export function SummaryModal({
     setBusy(true);
     setErr(null);
     try {
-      const text = await summarizeChat(transcript(selected.msgs, resolve), { chatName, isGroup: isGroup(chatId), language: lang, question: question.trim() || undefined });
+      const text = await summarizeChat(transcript(selected.msgs, resolve), {
+        chatName,
+        isGroup: isGroup(chatId),
+        language: lang,
+        question: question.trim() || undefined,
+      });
       const r: Result = { scope, question: question.trim(), count: selected.msgs.length, text };
       lastResult.set(key, r);
       setResult(r);
@@ -152,14 +158,28 @@ export function SummaryModal({
           <Sparkles size={16} className="text-wa-dark" />
           <span className="font-semibold truncate">{chatName}</span>
           <div className="ml-2 flex rounded-lg bg-neutral-100 dark:bg-neutral-800 p-0.5 text-xs">
-            {([["summary", "Summary", Sparkles], ["tasks", "Tasks & dates", ListChecks]] as const).map(([id, label, Icon]) => (
-              <button key={id} onClick={() => setMode(id)} className={"inline-flex items-center gap-1 rounded-md px-2 py-1 " + (mode === id ? "bg-white dark:bg-neutral-900 shadow font-medium" : "text-neutral-500")}>
+            {(
+              [
+                ["summary", "Summary", Sparkles],
+                ["tasks", "Tasks & dates", ListChecks],
+              ] as const
+            ).map(([id, label, Icon]) => (
+              <button
+                key={id}
+                onClick={() => setMode(id)}
+                className={
+                  "inline-flex items-center gap-1 rounded-md px-2 py-1 " +
+                  (mode === id ? "bg-white dark:bg-neutral-900 shadow font-medium" : "text-neutral-500")
+                }
+              >
                 <Icon size={12} /> {label}
               </button>
             ))}
           </div>
           <span className="flex-1" />
-          <button onClick={onClose}><X size={16} /></button>
+          <button onClick={onClose}>
+            <X size={16} />
+          </button>
         </div>
 
         <div className="p-3 space-y-2 border-b border-neutral-200 dark:border-neutral-800">
@@ -181,16 +201,31 @@ export function SummaryModal({
             ))}
           </div>
           <div className="flex items-center gap-2">
-            {mode === "tasks" && <span className="flex-1 text-xs text-neutral-500">Finds promises, deadlines, meetings and bills — then turn any of them into a scheduled reminder.</span>}
-            {mode === "summary" && <input
-              value={question}
-              onChange={(e) => setQuestion(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && !busy && void run()}
-              placeholder="Optional question, e.g. “What did they decide about the deadline?”"
-              className="flex-1 rounded-lg border border-neutral-300 dark:border-neutral-700 bg-transparent px-2.5 py-1.5 text-sm outline-none focus:border-wa-dark"
-            />}
-            <select value={lang} onChange={(e) => setLang(e.target.value)} className="rounded-lg border border-neutral-300 dark:border-neutral-700 bg-transparent px-2 py-1.5 text-xs outline-none" title="Output language">
-              {LANGUAGES.map(([c, n]) => <option key={c} value={c}>{n}</option>)}
+            {mode === "tasks" && (
+              <span className="flex-1 text-xs text-neutral-500">
+                Finds promises, deadlines, meetings and bills — then turn any of them into a scheduled reminder.
+              </span>
+            )}
+            {mode === "summary" && (
+              <input
+                value={question}
+                onChange={(e) => setQuestion(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && !busy && void run()}
+                placeholder="Optional question, e.g. “What did they decide about the deadline?”"
+                className="flex-1 rounded-lg border border-neutral-300 dark:border-neutral-700 bg-transparent px-2.5 py-1.5 text-sm outline-none focus:border-wa-dark"
+              />
+            )}
+            <select
+              value={lang}
+              onChange={(e) => setLang(e.target.value)}
+              className="rounded-lg border border-neutral-300 dark:border-neutral-700 bg-transparent px-2 py-1.5 text-xs outline-none"
+              title="Output language"
+            >
+              {LANGUAGES.map(([c, n]) => (
+                <option key={c} value={c}>
+                  {n}
+                </option>
+              ))}
             </select>
             {mode === "summary" ? (
               <Button onClick={run} disabled={!ready || busy || !selected.msgs.length} title={ready ? "" : "Set up AI in Settings first"}>
@@ -198,8 +233,13 @@ export function SummaryModal({
                 {question.trim() ? "Ask" : "Summarize"}
               </Button>
             ) : (
-              <Button onClick={runTasks} disabled={!ready || tasksBusy || !selected.msgs.length} title={ready ? "" : "Set up AI in Settings first"}>
-                {tasksBusy ? <Loader2 size={14} className="animate-spin" /> : tasks ? <RefreshCw size={14} /> : <ListChecks size={14} />} Find tasks
+              <Button
+                onClick={runTasks}
+                disabled={!ready || tasksBusy || !selected.msgs.length}
+                title={ready ? "" : "Set up AI in Settings first"}
+              >
+                {tasksBusy ? <Loader2 size={14} className="animate-spin" /> : tasks ? <RefreshCw size={14} /> : <ListChecks size={14} />}{" "}
+                Find tasks
               </Button>
             )}
           </div>
@@ -209,7 +249,14 @@ export function SummaryModal({
               <button
                 className="underline disabled:opacity-50"
                 disabled={loadingOlder}
-                onClick={async () => { setLoadingOlder(true); try { await onLoadOlder(); } finally { setLoadingOlder(false); } }}
+                onClick={async () => {
+                  setLoadingOlder(true);
+                  try {
+                    await onLoadOlder();
+                  } finally {
+                    setLoadingOlder(false);
+                  }
+                }}
               >
                 {loadingOlder ? "Loading…" : "Load older"}
               </button>
@@ -220,31 +267,49 @@ export function SummaryModal({
         <div className="flex-1 overflow-y-auto p-4 text-sm">
           {!ready && <div className="text-neutral-500">Set up an AI provider in Settings → AI to use summaries.</div>}
           {err && <div className="rounded-lg bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 px-3 py-2 mb-2">{err}</div>}
-          {mode === "tasks" && ready && (
-            tasksBusy && !tasks ? <div className="flex items-center gap-2 text-neutral-500"><Loader2 size={14} className="animate-spin" /> Reading {selected.msgs.length} messages…</div>
-            : !tasks ? <div className="text-neutral-500">Pick a range and press Find tasks.</div>
-            : tasks.tasks.length === 0 ? <div className="text-neutral-500">No tasks or dates found in {tasks.count} messages.</div>
-            : (
+          {mode === "tasks" &&
+            ready &&
+            (tasksBusy && !tasks ? (
+              <div className="flex items-center gap-2 text-neutral-500">
+                <Loader2 size={14} className="animate-spin" /> Reading {selected.msgs.length} messages…
+              </div>
+            ) : !tasks ? (
+              <div className="text-neutral-500">Pick a range and press Find tasks.</div>
+            ) : tasks.tasks.length === 0 ? (
+              <div className="text-neutral-500">No tasks or dates found in {tasks.count} messages.</div>
+            ) : (
               <ul className={"space-y-2 " + (tasksBusy ? "opacity-50" : "")}>
                 {tasks.tasks.map((t, i) => (
                   <TaskRow key={i} task={t} session={session} chatId={chatId} chatName={chatName} profile={profile} meId={me?.id} />
                 ))}
               </ul>
-            )
+            ))}
+          {mode === "summary" && busy && !result && (
+            <div className="flex items-center gap-2 text-neutral-500">
+              <Loader2 size={14} className="animate-spin" /> Reading {selected.msgs.length} messages…
+            </div>
           )}
-          {mode === "summary" && busy && !result && <div className="flex items-center gap-2 text-neutral-500"><Loader2 size={14} className="animate-spin" /> Reading {selected.msgs.length} messages…</div>}
           {mode === "summary" && result && (
             <div className={busy ? "opacity-50" : ""}>
               <div className="flex items-center gap-2 text-[11px] text-neutral-500 mb-2">
-                <span>{result.count} messages{result.question ? ` · “${result.question}”` : ""}</span>
-                <button onClick={copy} className="ml-auto inline-flex items-center gap-1 hover:text-neutral-800 dark:hover:text-neutral-200">
+                <span>
+                  {result.count} messages{result.question ? ` · “${result.question}”` : ""}
+                </span>
+                <button
+                  onClick={copy}
+                  className="ml-auto inline-flex items-center gap-1 hover:text-neutral-800 dark:hover:text-neutral-200"
+                >
                   {copied ? <Check size={12} /> : <Copy size={12} />} {copied ? "Copied" : "Copy"}
                 </button>
               </div>
-              <div className="whitespace-pre-wrap break-words leading-relaxed"><WaMarkdown text={result.text} /></div>
+              <div className="whitespace-pre-wrap break-words leading-relaxed">
+                <WaMarkdown text={result.text} />
+              </div>
             </div>
           )}
-          {mode === "summary" && !result && !busy && ready && <div className="text-neutral-500">Pick a range and press Summarize, or type a question about this chat.</div>}
+          {mode === "summary" && !result && !busy && ready && (
+            <div className="text-neutral-500">Pick a range and press Summarize, or type a question about this chat.</div>
+          )}
         </div>
       </div>
     </div>
@@ -252,19 +317,41 @@ export function SummaryModal({
 }
 
 /** One extracted task with a reminder time and two ways to schedule it (to myself, or into this chat). */
-function TaskRow({ task, session, chatId, chatName, profile, meId }: { task: ExtractedTask; session: string; chatId: string; chatName: string; profile: string; meId?: string }) {
+function TaskRow({
+  task,
+  session,
+  chatId,
+  chatName,
+  profile,
+  meId,
+}: {
+  task: ExtractedTask;
+  session: string;
+  chatId: string;
+  chatName: string;
+  profile: string;
+  meId?: string;
+}) {
   const [when, setWhen] = useState(() => defaultWhen(task.due));
   const [done, setDone] = useState<"me" | "chat" | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const schedule = async (to: "me" | "chat") => {
     const at = Math.floor(new Date(when).getTime() / 1000);
-    if (!at || at <= Date.now() / 1000) { setErr("Pick a time in the future."); return; }
-    if (to === "me" && !meId) { setErr("Your own number is unknown for this session."); return; }
+    if (!at || at <= Date.now() / 1000) {
+      setErr("Pick a time in the future.");
+      return;
+    }
+    if (to === "me" && !meId) {
+      setErr("Your own number is unknown for this session.");
+      return;
+    }
     setBusy(true);
     setErr(null);
     try {
-      const line = [task.title, task.who && task.who !== "You" ? `(${task.who})` : "", task.detail ? `— ${task.detail}` : ""].filter(Boolean).join(" ");
+      const line = [task.title, task.who && task.who !== "You" ? `(${task.who})` : "", task.detail ? `— ${task.detail}` : ""]
+        .filter(Boolean)
+        .join(" ");
       await upsertSchedule({
         id: Math.random().toString(36).slice(2, 12),
         profile,
@@ -295,15 +382,38 @@ function TaskRow({ task, session, chatId, chatName, profile, meId }: { task: Ext
       {(task.who || task.detail) && <div className="text-xs text-neutral-500">{[task.who, task.detail].filter(Boolean).join(" · ")}</div>}
       <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs">
         <AlarmClock size={12} className="text-neutral-400" />
-        <input type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} className="rounded-md border border-neutral-300 dark:border-neutral-700 bg-transparent px-1.5 py-0.5 outline-none" />
+        <input
+          type="datetime-local"
+          value={when}
+          onChange={(e) => setWhen(e.target.value)}
+          className="rounded-md border border-neutral-300 dark:border-neutral-700 bg-transparent px-1.5 py-0.5 outline-none"
+        />
         {!task.due && <span className="text-neutral-400">(no date in chat)</span>}
         <span className="flex-1" />
         {done ? (
-          <span className="inline-flex items-center gap-1 text-wa-dark"><Check size={12} /> Scheduled {done === "me" ? "to me" : "to chat"} · edit in Scheduler</span>
+          <span className="inline-flex items-center gap-1 text-wa-dark">
+            <Check size={12} /> Scheduled {done === "me" ? "to me" : "to chat"} · edit in Scheduler
+          </span>
         ) : (
           <>
-            <Button size="sm" variant="secondary" disabled={busy} onClick={() => void schedule("me")} title="Message to my own number at that time"><AlarmClock size={12} /> Remind me</Button>
-            <Button size="sm" variant="secondary" disabled={busy} onClick={() => void schedule("chat")} title="Message into this chat at that time"><Send size={12} /> Send to chat</Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={busy}
+              onClick={() => void schedule("me")}
+              title="Message to my own number at that time"
+            >
+              <AlarmClock size={12} /> Remind me
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={busy}
+              onClick={() => void schedule("chat")}
+              title="Message into this chat at that time"
+            >
+              <Send size={12} /> Send to chat
+            </Button>
           </>
         )}
       </div>

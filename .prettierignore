@@ -1,0 +1,8 @@
+dist
+node_modules
+src-tauri/target
+src-tauri/gen
+src/api/schema.d.ts
+package-lock.json
+spec
+src-tauri

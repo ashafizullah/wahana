@@ -56,7 +56,9 @@ export function ProfileModal({ session, onClose }: { session: string; onClose: (
         <div className="flex items-center gap-2 p-3 border-b border-neutral-200 dark:border-neutral-800">
           <Pencil size={16} className="text-wa-dark" />
           <span className="font-semibold flex-1">My profile · {session}</span>
-          <button onClick={onClose}><X size={16} /></button>
+          <button onClick={onClose}>
+            <X size={16} />
+          </button>
         </div>
         <div className="p-5 space-y-5">
           {profile.isLoading && <Loader2 className="animate-spin text-neutral-400" />}
@@ -85,7 +87,12 @@ export function ProfileModal({ session, onClose }: { session: string; onClose: (
                       if (!f) return;
                       await run(
                         "picture",
-                        async () => requireClient().setProfilePicture(session, { mimetype: f.type || "image/jpeg", filename: f.name, data: await fileToBase64(f) }),
+                        async () =>
+                          requireClient().setProfilePicture(session, {
+                            mimetype: f.type || "image/jpeg",
+                            filename: f.name,
+                            data: await fileToBase64(f),
+                          }),
                         "Photo updated",
                       );
                     }}
@@ -96,7 +103,8 @@ export function ProfileModal({ session, onClose }: { session: string; onClose: (
                     className="text-xs text-red-600 flex items-center gap-1 hover:underline"
                     disabled={busy === "delpic"}
                     onClick={async () => {
-                      if (await confirm({ title: "Remove your profile photo?", danger: true, confirmLabel: "Confirm" })) void run("delpic", () => requireClient().deleteProfilePicture(session), "Photo removed");
+                      if (await confirm({ title: "Remove your profile photo?", danger: true, confirmLabel: "Confirm" }))
+                        void run("delpic", () => requireClient().deleteProfilePicture(session), "Photo removed");
                     }}
                   >
                     <Trash2 size={12} /> Remove photo
@@ -109,7 +117,10 @@ export function ProfileModal({ session, onClose }: { session: string; onClose: (
                 <Label>Name</Label>
                 <div className="flex gap-2">
                   <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={25} />
-                  <Button disabled={!nameDirty || !name.trim() || busy === "name"} onClick={() => run("name", () => requireClient().setProfileName(session, name.trim()), "Name updated")}>
+                  <Button
+                    disabled={!nameDirty || !name.trim() || busy === "name"}
+                    onClick={() => run("name", () => requireClient().setProfileName(session, name.trim()), "Name updated")}
+                  >
                     {busy === "name" ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
                   </Button>
                 </div>
@@ -119,16 +130,28 @@ export function ProfileModal({ session, onClose }: { session: string; onClose: (
               <div>
                 <Label>About</Label>
                 <div className="flex gap-2">
-                  <Input value={status} onChange={(e) => setStatus(e.target.value)} maxLength={139} placeholder="Hey there! I am using WhatsApp." />
-                  <Button disabled={!statusDirty || busy === "status"} onClick={() => run("status", () => requireClient().setProfileStatus(session, status.trim()), "About updated")}>
+                  <Input
+                    value={status}
+                    onChange={(e) => setStatus(e.target.value)}
+                    maxLength={139}
+                    placeholder="Hey there! I am using WhatsApp."
+                  />
+                  <Button
+                    disabled={!statusDirty || busy === "status"}
+                    onClick={() => run("status", () => requireClient().setProfileStatus(session, status.trim()), "About updated")}
+                  >
                     {busy === "status" ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
                   </Button>
                 </div>
-                <div className="text-[11px] text-neutral-400 mt-1">{status.length}/139 · current value may not be readable on this engine</div>
+                <div className="text-[11px] text-neutral-400 mt-1">
+                  {status.length}/139 · current value may not be readable on this engine
+                </div>
               </div>
 
               {msg && (
-                <div className={"text-xs selectable " + (msg.ok ? "text-emerald-700 dark:text-emerald-300" : "text-red-600")}>{msg.text}</div>
+                <div className={"text-xs selectable " + (msg.ok ? "text-emerald-700 dark:text-emerald-300" : "text-red-600")}>
+                  {msg.text}
+                </div>
               )}
             </>
           )}

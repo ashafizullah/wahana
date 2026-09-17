@@ -18,19 +18,43 @@ export interface Backup {
   activeProfile: string;
   /** Only when the user opted in — plain text. */
   secrets?: Record<string, string>;
-  chatPrefs: { pinned: Record<string, number>; muted: Record<string, 1>; archived: Record<string, 1>; autoTranslate?: Record<string, { in?: string; out?: string }> };
+  chatPrefs: {
+    pinned: Record<string, number>;
+    muted: Record<string, 1>;
+    archived: Record<string, 1>;
+    autoTranslate?: Record<string, { in?: string; out?: string }>;
+  };
   quickReplies: QuickReply[];
   schedules: Omit<Schedule, "media_b64">[];
 }
 
 const PREF_KEYS: (keyof Prefs)[] = [
-  "notifications", "autoLoadImages", "autoLoadStickers", "autoLoadVideos", "autoLoadAudio", "cacheLimitMb", "linkPreviews",
-  "sendTyping", "readReceipts", "aiProvider", "aiBaseUrl", "aiModel", "aiFastModel", "aiTranslateTo", "aiComposeTo", "aiSystemPrompt", "autoReplyPaused", "aiPersonaBySession",
+  "notifications",
+  "autoLoadImages",
+  "autoLoadStickers",
+  "autoLoadVideos",
+  "autoLoadAudio",
+  "cacheLimitMb",
+  "linkPreviews",
+  "sendTyping",
+  "readReceipts",
+  "aiProvider",
+  "aiBaseUrl",
+  "aiModel",
+  "aiFastModel",
+  "aiTranslateTo",
+  "aiComposeTo",
+  "aiSystemPrompt",
+  "autoReplyPaused",
+  "aiPersonaBySession",
 ];
 
 export async function exportBackup(includeSecrets: boolean): Promise<string | null> {
   const s = useSettings.getState();
-  const path = await save({ defaultPath: `wahana-backup-${new Date().toISOString().slice(0, 10)}.json`, filters: [{ name: "JSON", extensions: ["json"] }] });
+  const path = await save({
+    defaultPath: `wahana-backup-${new Date().toISOString().slice(0, 10)}.json`,
+    filters: [{ name: "JSON", extensions: ["json"] }],
+  });
   if (!path) return null;
   const chatPrefsStore = await load("chat-prefs.json", { autoSave: true, defaults: {} });
   const d = await db();
@@ -98,7 +122,7 @@ export async function restoreBackup(b: Backup, opts: RestoreOptions) {
     const merged = [...s.profiles.filter((p) => !b.profiles.some((x) => x.id === p.id)), ...b.profiles];
     await store.set("profiles", merged);
     if (b.secrets) for (const [id, key] of Object.entries(b.secrets)) await setSecret(id, key);
-    await store.set("activeProfile", merged.some((p) => p.id === b.activeProfile) ? b.activeProfile : merged[0]?.id ?? "");
+    await store.set("activeProfile", merged.some((p) => p.id === b.activeProfile) ? b.activeProfile : (merged[0]?.id ?? ""));
     await s.hydrate();
   } else if (b.secrets?.ai) {
     await setSecret("ai", b.secrets.ai);
@@ -130,7 +154,23 @@ export async function restoreBackup(b: Backup, opts: RestoreOptions) {
         `INSERT INTO schedules (id, profile, session, target_type, target_id, target_name, kind, text, media_mime, media_name, next_run, repeat, weekdays, enabled, created_at)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
          ON CONFLICT(id) DO UPDATE SET session=excluded.session, target_type=excluded.target_type, target_id=excluded.target_id, target_name=excluded.target_name, kind=excluded.kind, text=excluded.text, next_run=excluded.next_run, repeat=excluded.repeat, weekdays=excluded.weekdays, enabled=excluded.enabled`,
-        [sc.id, sc.profile, sc.session, sc.target_type, sc.target_id, sc.target_name, kind, sc.text, null, null, sc.next_run, sc.repeat, sc.weekdays, enabled, sc.created_at],
+        [
+          sc.id,
+          sc.profile,
+          sc.session,
+          sc.target_type,
+          sc.target_id,
+          sc.target_name,
+          kind,
+          sc.text,
+          null,
+          null,
+          sc.next_run,
+          sc.repeat,
+          sc.weekdays,
+          enabled,
+          sc.created_at,
+        ],
       );
     }
   }

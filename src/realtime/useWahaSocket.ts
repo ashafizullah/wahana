@@ -20,7 +20,23 @@ import { pushPresence } from "@/realtime/usePresence";
 
 export type SocketState = "idle" | "connecting" | "open" | "closed";
 
-const EVENTS = ["session.status", "message.any", "message.waiting", "message.ack", "message.ack.group", "message.reaction", "message.revoked", "message.edited", "presence.update", "engine.event", "poll.vote", "chat.archive", "call.received", "call.accepted", "call.rejected"];
+const EVENTS = [
+  "session.status",
+  "message.any",
+  "message.waiting",
+  "message.ack",
+  "message.ack.group",
+  "message.reaction",
+  "message.revoked",
+  "message.edited",
+  "presence.update",
+  "engine.event",
+  "poll.vote",
+  "chat.archive",
+  "call.received",
+  "call.accepted",
+  "call.rejected",
+];
 
 /**
  * Keeps a single WebSocket to WAHA's /ws endpoint and pushes events into the
@@ -108,7 +124,10 @@ export function useWahaSocket() {
     const handle = (e: WahaEvent) => {
       // Raw engine events are only used to detect undecryptable messages; keep receipts out of the log.
       if (e.event === "engine.event") {
-        const p = e.payload as { event?: string; data?: { Info?: { Chat?: string; Sender?: string; SenderAlt?: string; ID?: string; Timestamp?: string; IsFromMe?: boolean } } };
+        const p = e.payload as {
+          event?: string;
+          data?: { Info?: { Chat?: string; Sender?: string; SenderAlt?: string; ID?: string; Timestamp?: string; IsFromMe?: boolean } };
+        };
         if (p.event === "events.UndecryptableMessage" && p.data?.Info) {
           useEventLog.getState().push(e);
           const i = p.data.Info;
@@ -169,7 +188,10 @@ export function useWahaSocket() {
             const multi = (qc.getQueryData<{ name: string }[]>(qk.sessions)?.length ?? 0) > 1;
             void notifyIncoming(m, multi ? e.session : undefined);
           }
-          if (!m.fromMe && !seenBefore) window.dispatchEvent(new CustomEvent<IncomingMessage>("wahana:incoming", { detail: { session: e.session, chatId, message: m } }));
+          if (!m.fromMe && !seenBefore)
+            window.dispatchEvent(
+              new CustomEvent<IncomingMessage>("wahana:incoming", { detail: { session: e.session, chatId, message: m } }),
+            );
           break;
         }
         case "message.ack.group": {
@@ -245,7 +267,7 @@ export function useWahaSocket() {
       document.removeEventListener("visibilitychange", onVisibility);
       ws?.close();
     };
-  }, [client, qc]);
+  }, [client, qc, notifRef]);
 
   return state;
 }

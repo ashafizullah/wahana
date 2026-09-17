@@ -11,7 +11,13 @@ const MAX = 300;
 let seq = 0;
 
 /** Ring buffer of recent WebSocket events for the Events tab. */
-export const useEventLog = create<{ entries: LogEntry[]; paused: boolean; push: (e: WahaEvent) => void; clear: () => void; setPaused: (p: boolean) => void }>((set, get) => ({
+export const useEventLog = create<{
+  entries: LogEntry[];
+  paused: boolean;
+  push: (e: WahaEvent) => void;
+  clear: () => void;
+  setPaused: (p: boolean) => void;
+}>((set, get) => ({
   entries: [],
   paused: false,
   push(event) {

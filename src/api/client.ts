@@ -64,11 +64,7 @@ export class WahaClient {
     return this.cfg.apiKey;
   }
 
-  private async request<T>(
-    method: string,
-    path: string,
-    opts: { query?: Query; body?: unknown; raw?: boolean } = {},
-  ): Promise<T> {
+  private async request<T>(method: string, path: string, opts: { query?: Query; body?: unknown; raw?: boolean } = {}): Promise<T> {
     const url = `${this.baseUrl}${path}${qs(opts.query)}`;
     const res = await tauriFetch(url, {
       method,
@@ -205,9 +201,7 @@ export class WahaClient {
     });
   }
   chatPicture(session: string, chatId: string) {
-    return this.get<{ url: string | null }>(
-      `/api/${enc(session)}/chats/${enc(chatId)}/picture`,
-    );
+    return this.get<{ url: string | null }>(`/api/${enc(session)}/chats/${enc(chatId)}/picture`);
   }
   messages(
     session: string,
@@ -237,32 +231,19 @@ export class WahaClient {
   }
   /** Single message; with downloadMedia the server fetches the media and fills `media.url`. */
   getMessage(session: string, chatId: string, messageId: string, downloadMedia = true) {
-    return this.get<WAMessage>(
-      `/api/${enc(session)}/chats/${enc(chatId)}/messages/${enc(messageId)}`,
-      { downloadMedia },
-    );
+    return this.get<WAMessage>(`/api/${enc(session)}/chats/${enc(chatId)}/messages/${enc(messageId)}`, { downloadMedia });
   }
   markRead(session: string, chatId: string) {
-    return this.post<{ ids?: string[] }>(
-      `/api/${enc(session)}/chats/${enc(chatId)}/messages/read`,
-    );
+    return this.post<{ ids?: string[] }>(`/api/${enc(session)}/chats/${enc(chatId)}/messages/read`);
   }
   deleteMessage(session: string, chatId: string, messageId: string) {
-    return this.del<void>(
-      `/api/${enc(session)}/chats/${enc(chatId)}/messages/${enc(messageId)}`,
-    );
+    return this.del<void>(`/api/${enc(session)}/chats/${enc(chatId)}/messages/${enc(messageId)}`);
   }
   editMessage(session: string, chatId: string, messageId: string, text: string) {
-    return this.put<void>(
-      `/api/${enc(session)}/chats/${enc(chatId)}/messages/${enc(messageId)}`,
-      { text },
-    );
+    return this.put<void>(`/api/${enc(session)}/chats/${enc(chatId)}/messages/${enc(messageId)}`, { text });
   }
   pinMessage(session: string, chatId: string, messageId: string, durationSeconds = 604_800) {
-    return this.post<void>(
-      `/api/${enc(session)}/chats/${enc(chatId)}/messages/${enc(messageId)}/pin`,
-      { duration: durationSeconds },
-    );
+    return this.post<void>(`/api/${enc(session)}/chats/${enc(chatId)}/messages/${enc(messageId)}/pin`, { duration: durationSeconds });
   }
   unpinMessage(session: string, chatId: string, messageId: string) {
     return this.post<void>(`/api/${enc(session)}/chats/${enc(chatId)}/messages/${enc(messageId)}/unpin`);
@@ -292,33 +273,17 @@ export class WahaClient {
       throw e;
     }
   }
-  sendImage(
-    session: string,
-    chatId: string,
-    file: { mimetype: string; filename: string; data: string },
-    caption?: string,
-  ) {
+  sendImage(session: string, chatId: string, file: { mimetype: string; filename: string; data: string }, caption?: string) {
     return this.post<WAMessage>("/api/sendImage", { session, chatId, file, caption });
   }
-  sendFile(
-    session: string,
-    chatId: string,
-    file: { mimetype: string; filename: string; data: string },
-    caption?: string,
-  ) {
+  sendFile(session: string, chatId: string, file: { mimetype: string; filename: string; data: string }, caption?: string) {
     return this.post<WAMessage>("/api/sendFile", { session, chatId, file, caption });
   }
   /** `convert` lets the server transcode (ffmpeg) to the opus/ogg WhatsApp expects. */
   sendVoice(session: string, chatId: string, file: { mimetype: string; data: string; filename?: string }, convert = true) {
     return this.post<WAMessage>("/api/sendVoice", { session, chatId, file, convert });
   }
-  sendVideo(
-    session: string,
-    chatId: string,
-    file: { mimetype: string; filename: string; data: string },
-    caption?: string,
-    convert = true,
-  ) {
+  sendVideo(session: string, chatId: string, file: { mimetype: string; filename: string; data: string }, caption?: string, convert = true) {
     return this.post<WAMessage>("/api/sendVideo", { session, chatId, file, caption, convert, asNote: false });
   }
   sendLocation(session: string, chatId: string, latitude: number, longitude: number, title: string) {
@@ -374,10 +339,7 @@ export class WahaClient {
     });
   }
   checkExists(session: string, phone: string) {
-    return this.get<{ numberExists: boolean; chatId?: string }>(
-      "/api/contacts/check-exists",
-      { session, phone },
-    );
+    return this.get<{ numberExists: boolean; chatId?: string }>("/api/contacts/check-exists", { session, phone });
   }
   groups(session: string) {
     return this.get<GroupInfo[]>(`/api/${enc(session)}/groups`);
@@ -481,7 +443,10 @@ export class WahaClient {
     return this.get<Channel>(`/api/${enc(session)}/channels/${enc(id)}`);
   }
   searchChannels(session: string, text: string, limit = 30) {
-    return this.post<{ page?: { startCursor?: string; endCursor?: string }; channels: Channel[] }>(`/api/${enc(session)}/channels/search/by-text`, { text, categories: [], limit, startCursor: "" });
+    return this.post<{ page?: { startCursor?: string; endCursor?: string }; channels: Channel[] }>(
+      `/api/${enc(session)}/channels/search/by-text`,
+      { text, categories: [], limit, startCursor: "" },
+    );
   }
   followChannel(session: string, id: string) {
     return this.post<void>(`/api/${enc(session)}/channels/${enc(id)}/follow`);
@@ -504,7 +469,10 @@ export class WahaClient {
     return this.put<void>(`/api/${enc(session)}/contacts/${enc(chatId)}`, { firstName, lastName });
   }
   createGroup(session: string, name: string, participantIds: string[]) {
-    return this.post<GowsGroup & { id?: string }>(`/api/${enc(session)}/groups`, { name, participants: participantIds.map((id) => ({ id })) });
+    return this.post<GowsGroup & { id?: string }>(`/api/${enc(session)}/groups`, {
+      name,
+      participants: participantIds.map((id) => ({ id })),
+    });
   }
   joinGroup(session: string, codeOrUrl: string) {
     return this.post<{ id: string }>(`/api/${enc(session)}/groups/join`, { code: codeOrUrl });
@@ -525,7 +493,9 @@ export class WahaClient {
     return this.put<void>(`/api/${enc(session)}/groups/${enc(id)}/settings/security/info-admin-only`, { adminsOnly });
   }
   setGroupMembershipApproval(session: string, id: string, required: boolean) {
-    return this.put<void>(`/api/${enc(session)}/groups/${enc(id)}/settings/security/membership-approval`, { newMembersApprovalRequired: required });
+    return this.put<void>(`/api/${enc(session)}/groups/${enc(id)}/settings/security/membership-approval`, {
+      newMembersApprovalRequired: required,
+    });
   }
 
   // ── Session config (webhooks) ─────────────────────────────────────────

@@ -47,7 +47,9 @@ export const useWaWeb = create<State>((set, get) => ({
   active: null,
   panes: [],
   async hydrate() {
-    invoke<boolean>("wa_web_isolation_supported").then((isolated) => set({ isolated })).catch(console.error);
+    invoke<boolean>("wa_web_isolation_supported")
+      .then((isolated) => set({ isolated }))
+      .catch(console.error);
     const s = await store();
     const sessions = (await s.get<WaWebSession[]>("sessions")) ?? [];
     const has = (id: string) => sessions.some((x) => x.id === id);
@@ -78,7 +80,7 @@ export const useWaWeb = create<State>((set, get) => ({
     await invoke("wa_web_remove", { id }).catch(console.error);
     set((st) => {
       const panes = st.panes.filter((p) => p !== id);
-      const active = st.active === id ? panes[0] ?? null : st.active;
+      const active = st.active === id ? (panes[0] ?? null) : st.active;
       const next = { sessions: st.sessions.filter((s) => s.id !== id), active, panes };
       persist(next);
       return next;
@@ -103,7 +105,7 @@ export const useWaWeb = create<State>((set, get) => ({
   hidePane(id) {
     set((st) => {
       const panes = st.panes.filter((p) => p !== id);
-      const active = st.active === id ? panes[0] ?? null : st.active;
+      const active = st.active === id ? (panes[0] ?? null) : st.active;
       const next = pick({ ...st, panes, active });
       persist(next);
       return next;

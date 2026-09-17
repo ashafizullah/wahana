@@ -25,7 +25,9 @@ export function WhatsAppWebScreen({ header }: { header: React.ReactNode }) {
     <div className="flex-1 min-w-0 flex flex-col bg-white dark:bg-neutral-900">
       <div className="flex items-center gap-2 p-2 border-b border-neutral-200 dark:border-neutral-800">
         <div className="w-[300px] shrink-0">{header}</div>
-        <span className="text-xs text-neutral-500 flex items-center gap-1 ml-2"><Columns2 size={14} /> {shown.length} side by side</span>
+        <span className="text-xs text-neutral-500 flex items-center gap-1 ml-2">
+          <Columns2 size={14} /> {shown.length} side by side
+        </span>
         <label className="ml-auto flex items-center gap-1 text-xs text-neutral-600 dark:text-neutral-300">
           <Plus size={14} />
           <select
@@ -39,7 +41,11 @@ export function WhatsAppWebScreen({ header }: { header: React.ReactNode }) {
             title="Show another WhatsApp Web session next to these"
           >
             <option value="">Add to view…</option>
-            {hidden.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            {hidden.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
             <option value="new">＋ New WhatsApp Web session</option>
           </select>
         </label>
@@ -48,7 +54,9 @@ export function WhatsAppWebScreen({ header }: { header: React.ReactNode }) {
         {shown.map((s, i) => (
           <WaWebPane key={s.id} session={s} isActive={s.id === active} index={i} count={shown.length} />
         ))}
-        {shown.length === 0 && <div className="flex-1 grid place-items-center text-sm text-neutral-500">No WhatsApp Web session in view — add one above.</div>}
+        {shown.length === 0 && (
+          <div className="flex-1 grid place-items-center text-sm text-neutral-500">No WhatsApp Web session in view — add one above.</div>
+        )}
       </div>
     </div>
   );
@@ -105,16 +113,27 @@ function WaWebPane({ session, isActive, index, count }: { session: WaWebSession;
       window.removeEventListener(SYNC_EVENT, sync);
       invoke("wa_web_hide", { id: session.id }).catch(console.error);
     };
-  }, [session.id]);
+  }, [session.id, nameRef]);
   // Reordering swaps equal-sized placeholders, which no ResizeObserver notices; a rename
   // re-syncs so the webview learns its new notification suffix.
-  useEffect(() => { syncRef.current(); }, [index, count, session.name]);
+  useEffect(() => {
+    syncRef.current();
+  }, [index, count, session.name]);
 
   return (
     <div className="flex-1 min-w-0 flex flex-col" onMouseDown={() => !isActive && setActive(session.id)}>
-      <div className={cn("flex items-center gap-1 px-2 py-1 border-b border-neutral-200 dark:border-neutral-800 text-xs", isActive ? "bg-wa/10" : "bg-neutral-50 dark:bg-neutral-900")}>
-        <button disabled={index === 0} title="Move left" onClick={() => movePane(session.id, -1)} className="disabled:opacity-30"><ChevronLeft size={14} /></button>
-        <button disabled={index === count - 1} title="Move right" onClick={() => movePane(session.id, 1)} className="disabled:opacity-30"><ChevronRight size={14} /></button>
+      <div
+        className={cn(
+          "flex items-center gap-1 px-2 py-1 border-b border-neutral-200 dark:border-neutral-800 text-xs",
+          isActive ? "bg-wa/10" : "bg-neutral-50 dark:bg-neutral-900",
+        )}
+      >
+        <button disabled={index === 0} title="Move left" onClick={() => movePane(session.id, -1)} className="disabled:opacity-30">
+          <ChevronLeft size={14} />
+        </button>
+        <button disabled={index === count - 1} title="Move right" onClick={() => movePane(session.id, 1)} className="disabled:opacity-30">
+          <ChevronRight size={14} />
+        </button>
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
@@ -130,7 +149,14 @@ function WaWebPane({ session, isActive, index, count }: { session: WaWebSession;
           onClick={async () => {
             // Native webviews sit above React: hide every pane while the dialog is up.
             await hideAllPanes();
-            if (await confirm({ title: `Remove “${session.name}”?`, message: "Its WhatsApp Web login and local data are deleted.", danger: true, confirmLabel: "Remove" })) {
+            if (
+              await confirm({
+                title: `Remove “${session.name}”?`,
+                message: "Its WhatsApp Web login and local data are deleted.",
+                danger: true,
+                confirmLabel: "Remove",
+              })
+            ) {
               await remove(session.id); // this pane unmounts; don't re-sync it or the webview comes back
               syncOtherPanes();
             } else {
@@ -140,14 +166,20 @@ function WaWebPane({ session, isActive, index, count }: { session: WaWebSession;
         >
           <Trash2 size={13} />
         </Button>
-        <Button variant="ghost" size="sm" title="Hide from view (stays logged in)" onClick={() => hidePane(session.id)}><X size={13} /></Button>
+        <Button variant="ghost" size="sm" title="Hide from view (stays logged in)" onClick={() => hidePane(session.id)}>
+          <X size={13} />
+        </Button>
       </div>
       <div ref={ref} className="flex-1 min-h-0 grid place-items-center text-neutral-500">
         {error ? (
           <div className="max-w-md p-4 text-center text-sm space-y-2">
             <p className="text-red-600 selectable">Couldn't open WhatsApp Web: {error}</p>
-            <p className="text-xs">Details are in <span className="selectable">waweb.log</span> in the app's data folder.</p>
-            <Button size="sm" variant="secondary" onClick={() => syncRef.current()}>Retry</Button>
+            <p className="text-xs">
+              Details are in <span className="selectable">waweb.log</span> in the app's data folder.
+            </p>
+            <Button size="sm" variant="secondary" onClick={() => syncRef.current()}>
+              Retry
+            </Button>
           </div>
         ) : (
           <Loader2 className="animate-spin" />

@@ -45,7 +45,10 @@ export function useAutoLabel() {
         if (usable.length < 2) return; // a lone "hi" is not enough to classify
         const chats = qc.getQueryData<{ id: string; name?: string | null }[]>(qk.chats(session));
         const chatName = chats?.find((x) => x.id === chatId)?.name || displayId(chatId);
-        const s = await suggestLabels(transcript(usable, () => undefined), { chatName, existing: labels.map((l) => l.name), language: useSettings.getState().aiTranslateTo });
+        const s = await suggestLabels(
+          transcript(usable, () => undefined),
+          { chatName, existing: labels.map((l) => l.name), language: useSettings.getState().aiTranslateTo },
+        );
         const ids = labels.filter((l) => s.labels.includes(l.name)).map((l) => l.id);
         if (!ids.length) return;
         await c.setChatLabels(session, chatId, ids);

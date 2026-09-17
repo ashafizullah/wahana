@@ -38,10 +38,7 @@ export function Lightbox({ item, onClose }: { item: LightboxItem; onClose: () =>
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 bg-black/90 flex flex-col"
-      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
-    >
+    <div className="fixed inset-0 z-50 bg-black/90 flex flex-col" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="flex items-center gap-2 p-3 text-white">
         <span className="text-sm truncate flex-1 opacity-80 selectable">{item.filename}</span>
         {item.kind === "image" && (
@@ -50,17 +47,20 @@ export function Lightbox({ item, onClose }: { item: LightboxItem; onClose: () =>
           </button>
         )}
         <button className="p-2 rounded hover:bg-white/10" onClick={saveToDisk} title="Save to disk" disabled={saving === "busy"}>
-          {saving === "busy" ? <Loader2 size={18} className="animate-spin" /> : saving === "done" ? <Check size={18} /> : <Download size={18} />}
+          {saving === "busy" ? (
+            <Loader2 size={18} className="animate-spin" />
+          ) : saving === "done" ? (
+            <Check size={18} />
+          ) : (
+            <Download size={18} />
+          )}
         </button>
         <button className="p-2 rounded hover:bg-white/10" onClick={onClose} title="Close (Esc)">
           <X size={18} />
         </button>
       </div>
       <div
-        className={cn(
-          "flex-1 min-h-0 flex items-center justify-center p-4",
-          zoom ? "overflow-auto" : "overflow-hidden",
-        )}
+        className={cn("flex-1 min-h-0 flex items-center justify-center p-4", zoom ? "overflow-auto" : "overflow-hidden")}
         onMouseDown={(e) => e.target === e.currentTarget && onClose()}
       >
         {item.kind === "image" ? (

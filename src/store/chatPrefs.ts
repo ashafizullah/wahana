@@ -66,11 +66,15 @@ export const useChatPrefs = create<State>((set) => ({
 
 function schedule() {
   clearTimeout(flush);
-  flush = setTimeout(() => void store().then(async (s) => {
-    const st = useChatPrefs.getState();
-    await s.set("pinned", st.pinned);
-    await s.set("muted", st.muted);
-    await s.set("archived", st.archived);
-    await s.set("autoTranslate", st.autoTranslate);
-  }), 500);
+  flush = setTimeout(
+    () =>
+      void store().then(async (s) => {
+        const st = useChatPrefs.getState();
+        await s.set("pinned", st.pinned);
+        await s.set("muted", st.muted);
+        await s.set("archived", st.archived);
+        await s.set("autoTranslate", st.autoTranslate);
+      }),
+    500,
+  );
 }

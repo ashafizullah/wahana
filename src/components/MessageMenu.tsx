@@ -1,5 +1,20 @@
 import { useEffect, useRef, useState } from "react";
-import { Reply, SmilePlus, Pencil, Trash2, Copy, Forward, Pin, Loader2, X, Search, Info, Languages, ScanText, ImageIcon } from "lucide-react";
+import {
+  Reply,
+  SmilePlus,
+  Pencil,
+  Trash2,
+  Copy,
+  Forward,
+  Pin,
+  Loader2,
+  X,
+  Search,
+  Info,
+  Languages,
+  ScanText,
+  ImageIcon,
+} from "lucide-react";
 import { aiConfigured, translate, langName, LANGUAGES, analyzeImage } from "@/lib/ai";
 import { useTranslations } from "@/store/translations";
 import { useImageNotes, type ImageNoteKind } from "@/store/imageNotes";
@@ -114,7 +129,16 @@ export function MessageMenu({
 
   const remove = async () => {
     const choices = [
-      ...(m.fromMe ? [{ id: "everyone", label: "Delete for everyone", hint: "Removes it from the chat for all participants (own messages, recent only).", danger: true }] : []),
+      ...(m.fromMe
+        ? [
+            {
+              id: "everyone",
+              label: "Delete for everyone",
+              hint: "Removes it from the chat for all participants (own messages, recent only).",
+              danger: true,
+            },
+          ]
+        : []),
       { id: "me", label: "Delete for me", hint: "Hides it in Wahana only; it stays on your phone and for others." },
     ];
     const choice = await confirm({ title: "Delete message?", choices });
@@ -122,10 +146,16 @@ export function MessageMenu({
     if (choice === "everyone") {
       await run("delete", async () => {
         await requireClient().deleteMessage(session, chatId, m.id);
-        useRevoked.getState().add({ id: m.id, chat: convKey(session, chatId), timestamp: m.timestamp, fromMe: true, participant: m.participant, from: m.from });
+        useRevoked.getState().add({
+          id: m.id,
+          chat: convKey(session, chatId),
+          timestamp: m.timestamp,
+          fromMe: true,
+          participant: m.participant,
+          from: m.from,
+        });
       });
-    }
-    else {
+    } else {
       useHidden.getState().hide(m.id);
       onClose();
     }
@@ -134,13 +164,7 @@ export function MessageMenu({
   const pinned = Boolean((m._data as { Info?: { Pinned?: boolean } } | undefined)?.Info?.Pinned);
 
   if (forward) {
-    return (
-      <ForwardDialog
-        session={session}
-        messageId={m.id}
-        onClose={onClose}
-      />
-    );
+    return <ForwardDialog session={session} messageId={m.id} onClose={onClose} />;
   }
 
   return (
@@ -166,20 +190,43 @@ export function MessageMenu({
           </button>
         ))}
       </div>
-      <Item icon={Reply} label="Reply" onClick={() => { onReply(); onClose(); }} />
-      <Item icon={Info} label="Info" onClick={() => { onInfo(); onClose(); }} />
+      <Item
+        icon={Reply}
+        label="Reply"
+        onClick={() => {
+          onReply();
+          onClose();
+        }}
+      />
+      <Item
+        icon={Info}
+        label="Info"
+        onClick={() => {
+          onInfo();
+          onClose();
+        }}
+      />
       {m.body && (
         <div className="relative" onMouseEnter={() => setLangMenu(true)} onMouseLeave={() => setLangMenu(false)}>
           <Item
             icon={Languages}
-            label={aiConfigured() ? `Translate to ${langName(useSettings.getState().aiTranslateTo)} ›` : "Translate (set up AI in Settings)"}
+            label={
+              aiConfigured() ? `Translate to ${langName(useSettings.getState().aiTranslateTo)} ›` : "Translate (set up AI in Settings)"
+            }
             onClick={() => aiConfigured() && runTranslate(useSettings.getState().aiTranslateTo)}
           />
           {langMenu && aiConfigured() && (
             <div className="absolute left-full top-0 ml-0.5 w-48 max-h-72 overflow-y-auto rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-xl py-1 z-50">
               <div className="px-3 py-1 text-[10px] text-neutral-500">Source language is detected automatically</div>
               {LANGUAGES.map(([code, name]) => (
-                <button key={code} onClick={() => runTranslate(code)} className={cn("w-full px-3 py-1 text-left text-xs hover:bg-neutral-100 dark:hover:bg-neutral-800", code === useSettings.getState().aiTranslateTo && "font-semibold text-wa-dark")}>
+                <button
+                  key={code}
+                  onClick={() => runTranslate(code)}
+                  className={cn(
+                    "w-full px-3 py-1 text-left text-xs hover:bg-neutral-100 dark:hover:bg-neutral-800",
+                    code === useSettings.getState().aiTranslateTo && "font-semibold text-wa-dark",
+                  )}
+                >
                   {name}
                 </button>
               ))}
@@ -219,9 +266,7 @@ export function MessageMenu({
         label={pinned ? "Unpin" : "Pin (7 days)"}
         onClick={() =>
           run("pin", () =>
-            pinned
-              ? requireClient().unpinMessage(session, chatId, m.id)
-              : requireClient().pinMessage(session, chatId, m.id),
+            pinned ? requireClient().unpinMessage(session, chatId, m.id) : requireClient().pinMessage(session, chatId, m.id),
           )
         }
       />
@@ -229,7 +274,10 @@ export function MessageMenu({
         <Item
           icon={Pencil}
           label={Date.now() / 1000 - m.timestamp > 15 * 60 ? "Edit (older than 15 min)" : m.hasMedia ? "Edit caption" : "Edit"}
-          onClick={() => { onEdit(); onClose(); }}
+          onClick={() => {
+            onEdit();
+            onClose();
+          }}
         />
       )}
       <Item icon={Trash2} label="Delete…" danger onClick={() => void remove()} />
@@ -242,17 +290,7 @@ export function MessageMenu({
   );
 }
 
-function Item({
-  icon: Icon,
-  label,
-  onClick,
-  danger,
-}: {
-  icon: typeof Reply;
-  label: string;
-  onClick: () => void;
-  danger?: boolean;
-}) {
+function Item({ icon: Icon, label, onClick, danger }: { icon: typeof Reply; label: string; onClick: () => void; danger?: boolean }) {
   return (
     <button
       onClick={onClick}
@@ -297,7 +335,9 @@ function ForwardDialog({ session, messageId, onClose }: { session: string; messa
       <div className="w-[380px] max-h-[70vh] flex flex-col rounded-xl bg-white dark:bg-neutral-900 shadow-2xl">
         <div className="flex items-center gap-2 p-3 border-b border-neutral-200 dark:border-neutral-800">
           <span className="font-semibold flex-1">Forward to…</span>
-          <button onClick={onClose}><X size={16} /></button>
+          <button onClick={onClose}>
+            <X size={16} />
+          </button>
         </div>
         <div className="p-2 relative">
           <Search size={14} className="absolute left-4 top-4.5 text-neutral-400" />
@@ -311,7 +351,12 @@ function ForwardDialog({ session, messageId, onClose }: { session: string; messa
               <div key={c.id} className="flex items-center gap-2 px-3 py-1.5">
                 <Avatar src={c.picture} name={name} size={30} />
                 <span className="flex-1 truncate text-sm">{name}</span>
-                <Button size="sm" variant={done.has(c.id) ? "secondary" : "primary"} disabled={busy === c.id || done.has(c.id)} onClick={() => send(c.id)}>
+                <Button
+                  size="sm"
+                  variant={done.has(c.id) ? "secondary" : "primary"}
+                  disabled={busy === c.id || done.has(c.id)}
+                  onClick={() => send(c.id)}
+                >
                   {busy === c.id ? <Loader2 size={12} className="animate-spin" /> : done.has(c.id) ? "Sent" : "Send"}
                 </Button>
               </div>

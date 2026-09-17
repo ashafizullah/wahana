@@ -26,7 +26,9 @@ export class ErrorBoundary extends Component<Props, State> {
       return (
         <div className="rounded-lg border border-red-300 bg-red-50 dark:bg-red-900/20 dark:border-red-800 px-3 py-1.5 text-xs text-red-700 dark:text-red-300 selectable">
           Couldn't render this {this.props.label ?? "item"}: {error.message}
-          <button className="ml-2 underline" onClick={() => this.setState({ error: null })}>retry</button>
+          <button className="ml-2 underline" onClick={() => this.setState({ error: null })}>
+            retry
+          </button>
         </div>
       );
     }

@@ -19,7 +19,6 @@ export function useUpdater(): UpdaterState {
 
   useEffect(() => {
     if (import.meta.env.DEV) return; // dev builds have no matching release
-    let timer: ReturnType<typeof setInterval> | undefined;
     const run = async () => {
       try {
         const u = await check();
@@ -29,7 +28,7 @@ export function useUpdater(): UpdaterState {
       }
     };
     void run();
-    timer = setInterval(run, 6 * 60 * 60 * 1000);
+    const timer = setInterval(run, 6 * 60 * 60 * 1000);
     return () => clearInterval(timer);
   }, []);
 

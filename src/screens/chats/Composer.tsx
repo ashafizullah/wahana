@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useChats, useSendText, qk } from "@/api/queries";
 import { requireClient, useSettings } from "@/store/settings";
 import { Button, MenuItem, Popover } from "@/components/ui";
@@ -17,7 +17,6 @@ import type { MentionResolver } from "@/lib/waMarkdown";
 import type { ViewMessage, WAMessage } from "@/api/types";
 import { cn, displayId, fileToBase64, isGroup, errMsg, convKey } from "@/lib/utils";
 import { useQueryClient } from "@tanstack/react-query";
-
 
 export function TranslateDraftButton({ text, onResult }: { text: string; onResult: (t: string) => void }) {
   const target = useSettings((s) => s.aiComposeTo);
@@ -45,7 +44,11 @@ export function TranslateDraftButton({ text, onResult }: { text: string; onResul
       >
         {busy ? <Spinner size={18} className="animate-spin" /> : <Languages size={18} />}
       </Button>
-      {err && <div className="absolute bottom-full left-0 mb-1 w-64 rounded-lg bg-red-600 text-white text-xs px-2 py-1 shadow z-30 selectable">{err}</div>}
+      {err && (
+        <div className="absolute bottom-full left-0 mb-1 w-64 rounded-lg bg-red-600 text-white text-xs px-2 py-1 shadow z-30 selectable">
+          {err}
+        </div>
+      )}
     </div>
   );
 }
@@ -57,7 +60,9 @@ export function WriteAssistButton({ text, onResult }: { text: string; onResult: 
   const [err, setErr] = useState<string | null>(null);
   const [undo, setUndo] = useState<string | null>(null);
   const ready = aiConfigured();
-  useEffect(() => { if (!text) setUndo(null); }, [text]); // draft sent or cleared → nothing to undo
+  useEffect(() => {
+    if (!text) setUndo(null);
+  }, [text]); // draft sent or cleared → nothing to undo
   const run = async (mode: RewriteMode) => {
     setOpen(false);
     setBusy(mode);
@@ -65,7 +70,10 @@ export function WriteAssistButton({ text, onResult }: { text: string; onResult: 
     try {
       const before = text;
       const out = await rewriteDraft(text, mode);
-      if (out) { setUndo(before); onResult(out); }
+      if (out) {
+        setUndo(before);
+        onResult(out);
+      }
     } catch (e) {
       setErr(errMsg(e));
       setTimeout(() => setErr(null), 4000);
@@ -93,7 +101,13 @@ export function WriteAssistButton({ text, onResult }: { text: string; onResult: 
       >
         {undo && (
           <>
-            <MenuItem onClick={() => { onResult(undo); setUndo(null); setOpen(false); }}>
+            <MenuItem
+              onClick={() => {
+                onResult(undo);
+                setUndo(null);
+                setOpen(false);
+              }}
+            >
               <Undo2 size={14} /> Undo last rewrite
             </MenuItem>
             <div className="my-1 border-t border-neutral-200 dark:border-neutral-800" />
@@ -105,19 +119,38 @@ export function WriteAssistButton({ text, onResult }: { text: string; onResult: 
           </MenuItem>
         ))}
       </Popover>
-      {err && <div className="absolute bottom-full left-0 mb-1 w-64 rounded-lg bg-red-600 text-white text-xs px-2 py-1 shadow z-30 selectable">{err}</div>}
+      {err && (
+        <div className="absolute bottom-full left-0 mb-1 w-64 rounded-lg bg-red-600 text-white text-xs px-2 py-1 shadow z-30 selectable">
+          {err}
+        </div>
+      )}
     </div>
   );
 }
 
 /** Suggested replies above the composer. Manual trigger (one request per click); cleared when a new message arrives. */
-export function SmartReplies({ chatId, chatName, recent, resolveName, onPick }: { chatId: string; chatName: string; recent: WAMessage[]; resolveName: MentionResolver; onPick: (t: string) => void }) {
+export function SmartReplies({
+  chatId,
+  chatName,
+  recent,
+  resolveName,
+  onPick,
+}: {
+  chatId: string;
+  chatName: string;
+  recent: WAMessage[];
+  resolveName: MentionResolver;
+  onPick: (t: string) => void;
+}) {
   const [items, setItems] = useState<string[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const last = recent[recent.length - 1];
   const lastId = last?.id;
-  useEffect(() => { setItems(null); setErr(null); }, [chatId, lastId]);
+  useEffect(() => {
+    setItems(null);
+    setErr(null);
+  }, [chatId, lastId]);
   if (!aiConfigured() || !last || last.fromMe) return null;
   const run = async () => {
     setBusy(true);
@@ -134,28 +167,41 @@ export function SmartReplies({ chatId, chatName, recent, resolveName, onPick }: 
   return (
     <div className="flex flex-wrap items-center gap-1.5 text-xs">
       {items === null ? (
-        <button onClick={run} disabled={busy} className="inline-flex items-center gap-1 rounded-full border border-dashed border-neutral-300 dark:border-neutral-700 px-2.5 py-1 text-neutral-500 hover:text-wa-dark hover:border-wa-dark disabled:opacity-50">
+        <button
+          onClick={run}
+          disabled={busy}
+          className="inline-flex items-center gap-1 rounded-full border border-dashed border-neutral-300 dark:border-neutral-700 px-2.5 py-1 text-neutral-500 hover:text-wa-dark hover:border-wa-dark disabled:opacity-50"
+        >
           {busy ? <Spinner size={12} className="animate-spin" /> : <Sparkles size={12} />} Suggest replies
         </button>
       ) : (
         <>
           {items.map((t, i) => (
-            <button key={i} onClick={() => onPick(t)} title="Insert into composer" className="max-w-[320px] truncate rounded-full bg-wa/15 dark:bg-wa/20 px-3 py-1 text-left hover:bg-wa/30">
+            <button
+              key={i}
+              onClick={() => onPick(t)}
+              title="Insert into composer"
+              className="max-w-[320px] truncate rounded-full bg-wa/15 dark:bg-wa/20 px-3 py-1 text-left hover:bg-wa/30"
+            >
               {t}
             </button>
           ))}
           <button onClick={run} disabled={busy} title="Regenerate" className="p-1 text-neutral-500 hover:text-wa-dark disabled:opacity-50">
             {busy ? <Spinner size={12} className="animate-spin" /> : <RefreshCw size={12} />}
           </button>
-          <button onClick={() => setItems(null)} title="Dismiss" className="p-1 text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"><X size={12} /></button>
+          <button
+            onClick={() => setItems(null)}
+            title="Dismiss"
+            className="p-1 text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"
+          >
+            <X size={12} />
+          </button>
         </>
       )}
       {err && <span className="text-red-600 selectable">{err}</span>}
     </div>
   );
 }
-
-
 
 export function Composer({
   session,
@@ -184,10 +230,13 @@ export function Composer({
   const draftKey = convKey(session, chatId);
   const setDraft = useDrafts((s) => s.set);
   const [text, setTextRaw] = useState(() => useDrafts.getState().drafts[draftKey] ?? "");
-  const setText = (v: string) => {
-    setTextRaw(v);
-    setDraft(draftKey, v);
-  };
+  const setText = useCallback(
+    (v: string) => {
+      setTextRaw(v);
+      setDraft(draftKey, v);
+    },
+    [draftKey, setDraft],
+  );
   const [uploading, setUploading] = useState(false);
   const [translating, setTranslating] = useState(false);
   const autoOut = useChatPrefs((s) => s.autoTranslate[convKey(session, chatId)]?.out); // NB: chatPrefs keys are session:chatId
@@ -229,7 +278,7 @@ export function Composer({
 
   useEffect(() => {
     if (editing) setText(editing.body);
-  }, [editing]);
+  }, [editing, setText]);
 
   // Typing presence: fire startTyping at most every 4s while typing, stopTyping after 5s idle.
   const typingRef = useRef<{ last: number; timer?: ReturnType<typeof setTimeout> }>({ last: 0 });
@@ -237,7 +286,9 @@ export function Composer({
     clearTimeout(typingRef.current.timer);
     if (typingRef.current.last) {
       typingRef.current.last = 0;
-      requireClient().stopTyping(session, chatId).catch(() => {});
+      requireClient()
+        .stopTyping(session, chatId)
+        .catch(() => {});
     }
   };
   const noteTyping = () => {
@@ -245,7 +296,9 @@ export function Composer({
     const now = Date.now();
     if (now - typingRef.current.last > 4000) {
       typingRef.current.last = now;
-      requireClient().startTyping(session, chatId).catch(() => {});
+      requireClient()
+        .startTyping(session, chatId)
+        .catch(() => {});
     }
     clearTimeout(typingRef.current.timer);
     typingRef.current.timer = setTimeout(stopTyping, 5000);
@@ -282,7 +335,9 @@ export function Composer({
           setTranslating(false);
         }
       }
-      const mentions = [...out.matchAll(/@(\d{6,20})/g)].map((x) => chipTable.get(x[1]!)?.id ?? mentionIds.current.get(x[1]!)).filter((x): x is string => !!x);
+      const mentions = [...out.matchAll(/@(\d{6,20})/g)]
+        .map((x) => chipTable.get(x[1]!)?.id ?? mentionIds.current.get(x[1]!))
+        .filter((x): x is string => !!x);
       await send.mutateAsync({ text: out, replyTo: replyTo?.id, mentions: [...new Set(mentions)] });
       onClearReply();
     } catch (e) {
@@ -293,7 +348,10 @@ export function Composer({
 
   /** "Mark as read only when I reply": send the receipt right before our message goes out. */
   const receiptBeforeSend = () => {
-    if (useSettings.getState().readReceipts === "on-reply") requireClient().sendSeen(session, chatId).catch(() => {});
+    if (useSettings.getState().readReceipts === "on-reply")
+      requireClient()
+        .sendSeen(session, chatId)
+        .catch(() => {});
   };
 
   /** Put a freshly sent message into the cache and refresh the chat list. */
@@ -347,10 +405,26 @@ export function Composer({
 
   return (
     <div
-      className={cn("relative shrink-0 bg-white dark:bg-neutral-900 border-t border-neutral-200 dark:border-neutral-800 p-3 space-y-2", dragging && "ring-2 ring-inset ring-wa-dark")}
-      onDragEnter={(e) => { e.preventDefault(); draggingRef.current++; setDragging(true); }}
-      onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; }}
-      onDragLeave={() => { draggingRef.current--; if (draggingRef.current <= 0) { draggingRef.current = 0; setDragging(false); } }}
+      className={cn(
+        "relative shrink-0 bg-white dark:bg-neutral-900 border-t border-neutral-200 dark:border-neutral-800 p-3 space-y-2",
+        dragging && "ring-2 ring-inset ring-wa-dark",
+      )}
+      onDragEnter={(e) => {
+        e.preventDefault();
+        draggingRef.current++;
+        setDragging(true);
+      }}
+      onDragOver={(e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "copy";
+      }}
+      onDragLeave={() => {
+        draggingRef.current--;
+        if (draggingRef.current <= 0) {
+          draggingRef.current = 0;
+          setDragging(false);
+        }
+      }}
       onDrop={(e) => {
         e.preventDefault();
         draggingRef.current = 0;
@@ -359,7 +433,11 @@ export function Composer({
         if (f) void attach(f);
       }}
     >
-      {dragging && <div className="absolute inset-0 grid place-items-center bg-white/80 dark:bg-neutral-900/80 text-sm font-medium text-wa-dark z-10 pointer-events-none">Drop to send</div>}
+      {dragging && (
+        <div className="absolute inset-0 grid place-items-center bg-white/80 dark:bg-neutral-900/80 text-sm font-medium text-wa-dark z-10 pointer-events-none">
+          Drop to send
+        </div>
+      )}
       {slash !== null && (
         <QuickReplyPicker
           query={slash}
@@ -394,13 +472,27 @@ export function Composer({
         />
       )}
       {!editing && !text.trim() && (
-        <SmartReplies chatId={chatId} chatName={chatCtx.name} recent={recent} resolveName={resolveName} onPick={(t) => { setText(t); requestAnimationFrame(() => taRef.current?.focus()); }} />
+        <SmartReplies
+          chatId={chatId}
+          chatName={chatCtx.name}
+          recent={recent}
+          resolveName={resolveName}
+          onPick={(t) => {
+            setText(t);
+            requestAnimationFrame(() => taRef.current?.focus());
+          }}
+        />
       )}
       {editing && (
         <div className="flex items-center gap-2 rounded-lg bg-amber-50 dark:bg-amber-900/30 px-3 py-1.5 text-xs">
           <span className="font-semibold text-amber-700 dark:text-amber-300">Editing message</span>
           <span className="truncate flex-1 opacity-80">{editing.body}</span>
-          <button onClick={() => { onClearEdit(); setText(""); }}>
+          <button
+            onClick={() => {
+              onClearEdit();
+              setText("");
+            }}
+          >
             <X size={14} />
           </button>
         </div>
@@ -419,7 +511,13 @@ export function Composer({
           onClose={() => setDialog(null)}
           onSend={async (blob, mime) => {
             const ext = mime.includes("ogg") ? "ogg" : mime.includes("mp4") ? "m4a" : "webm";
-            appendSent(await requireClient().sendVoice(session, chatId, { mimetype: mime.split(";")[0]!, filename: `voice.${ext}`, data: await blobToBase64(blob) }));
+            appendSent(
+              await requireClient().sendVoice(session, chatId, {
+                mimetype: mime.split(";")[0]!,
+                filename: `voice.${ext}`,
+                data: await blobToBase64(blob),
+              }),
+            );
           }}
         />
       )}
@@ -432,7 +530,13 @@ export function Composer({
       {dialog === "contact" && (
         <ContactDialog
           onClose={() => setDialog(null)}
-          onSend={async (name, phone, org) => appendSent(await requireClient().sendContactVcard(session, chatId, [{ fullName: name, phoneNumber: phone, organization: org || undefined }]))}
+          onSend={async (name, phone, org) =>
+            appendSent(
+              await requireClient().sendContactVcard(session, chatId, [
+                { fullName: name, phoneNumber: phone, organization: org || undefined },
+              ]),
+            )
+          }
         />
       )}
       {dialog === "poll" && (
@@ -515,8 +619,18 @@ export function Composer({
             el.style.height = Math.min(el.scrollHeight, 160) + "px";
           }}
         />
-        <Button onClick={submit} disabled={!text.trim() || send.isPending || translating} title={autoOut ? `Send (translated to ${langName(autoOut)})` : "Send"}>
-          {send.isPending || translating ? <Loader2 size={16} className="animate-spin" /> : autoOut ? <Languages size={16} /> : <Send size={16} />}
+        <Button
+          onClick={submit}
+          disabled={!text.trim() || send.isPending || translating}
+          title={autoOut ? `Send (translated to ${langName(autoOut)})` : "Send"}
+        >
+          {send.isPending || translating ? (
+            <Loader2 size={16} className="animate-spin" />
+          ) : autoOut ? (
+            <Languages size={16} />
+          ) : (
+            <Send size={16} />
+          )}
         </Button>
       </div>
     </div>
