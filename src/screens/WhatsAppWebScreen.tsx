@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { ChevronLeft, ChevronRight, Columns2, Loader2, Plus, Trash2, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Columns2, GripVertical, Loader2, Plus, Rows2, Trash2, X } from "lucide-react";
 import { useWaWeb, type WaWebSession } from "@/store/waWeb";
 import { confirm } from "@/components/Confirm";
 import { Button } from "@/components/ui";
@@ -18,9 +18,10 @@ const HANDLE_WIDTH = 8;
  * destroyed — when a pane unmounts, so logins survive switching away.
  *
  * Panes share a row by weight (`sizes`); dragging the handle between two panes moves
- * width from one to the other. Native webviews can't be clipped, so instead of
- * scrolling the row wraps into as many rows as needed to keep every pane at least
- * MIN_PANE_WIDTH wide and fully on screen.
+ * width from one to the other, and dragging a pane's title bar onto another's reorders
+ * them. The user picks how many rows to use (`rows`, 0 = auto); native webviews can't be
+ * clipped, so instead of scrolling, extra rows are added as needed to keep every pane at
+ * least MIN_PANE_WIDTH wide and fully on screen.
  */
 export function WhatsAppWebScreen({ header }: { header: React.ReactNode }) {
   const sessions = useWaWeb((s) => s.sessions);
@@ -28,6 +29,8 @@ export function WhatsAppWebScreen({ header }: { header: React.ReactNode }) {
   const active = useWaWeb((s) => s.active);
   const showPane = useWaWeb((s) => s.showPane);
   const add = useWaWeb((s) => s.add);
+  const wantedRows = useWaWeb((s) => s.rows);
+  const setRows = useWaWeb((s) => s.setRows);
   const shown = panes.map((id) => sessions.find((s) => s.id === id)).filter((s): s is WaWebSession => !!s);
   const hidden = sessions.filter((s) => !panes.includes(s.id));
 
@@ -40,7 +43,9 @@ export function WhatsAppWebScreen({ header }: { header: React.ReactNode }) {
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
-  const cols = Math.max(1, Math.min(shown.length, Math.floor((gridWidth + HANDLE_WIDTH) / (MIN_PANE_WIDTH + HANDLE_WIDTH))));
+  const maxCols = Math.floor((gridWidth + HANDLE_WIDTH) / (MIN_PANE_WIDTH + HANDLE_WIDTH));
+  const wantedCols = wantedRows > 0 ? Math.ceil(shown.length / wantedRows) : maxCols;
+  const cols = Math.max(1, Math.min(shown.length, wantedCols, maxCols));
   const rows: WaWebSession[][] = [];
   for (let i = 0; i < shown.length; i += cols) rows.push(shown.slice(i, i + cols));
 
@@ -51,6 +56,24 @@ export function WhatsAppWebScreen({ header }: { header: React.ReactNode }) {
         <span className="text-xs text-neutral-500 flex items-center gap-1 ml-2">
           <Columns2 size={14} /> {shown.length} side by side
         </span>
+        <label
+          className="flex items-center gap-1 text-xs text-neutral-600 dark:text-neutral-300 ml-2"
+          title="Lay the panes out in this many rows"
+        >
+          <Rows2 size={14} />
+          <select
+            value={wantedRows}
+            onChange={(e) => setRows(Number(e.target.value))}
+            className="rounded-lg bg-neutral-100 dark:bg-neutral-800 px-2 py-1.5 outline-none cursor-pointer"
+          >
+            <option value={0}>Auto rows</option>
+            {[1, 2, 3, 4].map((n) => (
+              <option key={n} value={n}>
+                {n} {n === 1 ? "row" : "rows"}
+              </option>
+            ))}
+          </select>
+        </label>
         <label className="ml-auto flex items-center gap-1 text-xs text-neutral-600 dark:text-neutral-300">
           <Plus size={14} />
           <select
@@ -119,6 +142,7 @@ function PaneRow({ row, offset, count, active }: { row: WaWebSession[]; offset: 
 }
 
 const SYNC_EVENT = "wahana:waweb-sync";
+const DRAG_TYPE = "application/x-wahana-waweb-pane";
 const hideAllPanes = () => Promise.all(useWaWeb.getState().panes.map((id) => invoke("wa_web_hide", { id }).catch(console.error)));
 const syncAllPanes = () => window.dispatchEvent(new Event(SYNC_EVENT));
 /** After a removal the store has already dropped the pane, so a plain sync only reaches survivors. */
@@ -141,9 +165,11 @@ function WaWebPane({
   const remove = useWaWeb((s) => s.remove);
   const hidePane = useWaWeb((s) => s.hidePane);
   const movePane = useWaWeb((s) => s.movePane);
+  const movePaneTo = useWaWeb((s) => s.movePaneTo);
   const setActive = useWaWeb((s) => s.setActive);
   const [name, setName] = useState(session.name);
   const [error, setError] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState(false);
   useEffect(() => setName(session.name), [session.name]);
 
   const ref = useRef<HTMLDivElement>(null);
@@ -194,12 +220,35 @@ function WaWebPane({
       style={{ flex: `${weight} 1 0px`, minWidth: MIN_PANE_WIDTH }}
       onMouseDown={() => !isActive && setActive(session.id)}
     >
+      {/* Title bar doubles as the drag handle for reordering; other title bars are the drop targets
+          (the native webviews below them never see DOM drag events). */}
       <div
+        draggable
+        onDragStart={(e) => {
+          e.dataTransfer.setData(DRAG_TYPE, session.id);
+          e.dataTransfer.effectAllowed = "move";
+        }}
+        onDragOver={(e) => {
+          if (!e.dataTransfer.types.includes(DRAG_TYPE)) return;
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "move";
+          setDropTarget(true);
+        }}
+        onDragLeave={() => setDropTarget(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDropTarget(false);
+          const id = e.dataTransfer.getData(DRAG_TYPE);
+          if (id && id !== session.id) movePaneTo(id, session.id);
+        }}
         className={cn(
-          "flex items-center gap-1 px-2 py-1 border-b border-neutral-200 dark:border-neutral-800 text-xs",
-          isActive ? "bg-wa/10" : "bg-neutral-50 dark:bg-neutral-900",
+          "flex items-center gap-1 px-2 py-1 border-b text-xs cursor-grab active:cursor-grabbing",
+          dropTarget ? "border-wa-dark bg-wa/20 ring-2 ring-inset ring-wa-dark/60" : "border-neutral-200 dark:border-neutral-800",
+          !dropTarget && (isActive ? "bg-wa/10" : "bg-neutral-50 dark:bg-neutral-900"),
         )}
+        title="Drag onto another pane's title bar to reorder"
       >
+        <GripVertical size={14} className="text-neutral-400 shrink-0" />
         <button disabled={index === 0} title="Move left" onClick={() => movePane(session.id, -1)} className="disabled:opacity-30">
           <ChevronLeft size={14} />
         </button>
@@ -211,7 +260,13 @@ function WaWebPane({
           onChange={(e) => setName(e.target.value)}
           onBlur={() => rename(session.id, name)}
           onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
-          className="flex-1 min-w-0 bg-transparent px-1.5 py-0.5 rounded outline-none focus:bg-white dark:focus:bg-neutral-800 font-medium"
+          draggable
+          onDragStart={(e) => {
+            // Let text selection in the name field work; only the bar itself starts a reorder.
+            e.preventDefault();
+            e.stopPropagation();
+          }}
+          className="flex-1 min-w-0 bg-transparent px-1.5 py-0.5 rounded outline-none focus:bg-white dark:focus:bg-neutral-800 font-medium cursor-text"
           title="Session name (click to rename)"
         />
         <Button

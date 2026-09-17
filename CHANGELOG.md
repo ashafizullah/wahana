@@ -5,10 +5,16 @@
 ### Added
 
 - WhatsApp Web split view: drag the divider between two panes to resize them (double-click to reset to equal widths). Sizes are remembered.
+- WhatsApp Web split view: drag a pane's title bar onto another pane to reorder them.
+- WhatsApp Web split view: choose how many rows the panes are laid out in (Auto / 1–4).
 
 ### Changed
 
 - WhatsApp Web split view is responsive: panes never shrink below 400px; when the window can't fit them all in one row they wrap onto additional rows instead of squeezing.
+
+### Fixed
+
+- Windows: dropping a file onto the composer did nothing (Tauri's native drag-drop handler swallowed the drop).
 
 ## 0.4.5 — 2026-09-17
 

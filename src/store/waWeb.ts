@@ -26,6 +26,8 @@ interface State {
   panes: string[];
   /** Relative width of each pane (flex-grow weight); a missing entry means 1. */
   sizes: Record<string, number>;
+  /** Rows the split view is laid out in; 0 = as few as fit. More rows are added when panes would get too narrow. */
+  rows: number;
   hydrate: () => Promise<void>;
   add: (name?: string) => WaWebSession;
   rename: (id: string, name: string) => void;
@@ -36,18 +38,19 @@ interface State {
   /** Take a session out of the split view; leaving WhatsApp Web mode when none is left. */
   hidePane: (id: string) => void;
   movePane: (id: string, dir: -1 | 1) => void;
+  /** Drop `id` at `target`'s position (drag-and-drop reorder). */
+  movePaneTo: (id: string, target: string) => void;
+  setRows: (rows: number) => void;
   /** Move `delta` weight from pane `b` to pane `a` (negative: the other way), keeping both ≥ minWeight. */
   resizePanes: (a: string, b: string, delta: number, minWeight: number) => void;
   /** Back to equal widths. */
   resetSizes: () => void;
 }
 
-type Persisted = Pick<State, "sessions" | "active" | "panes" | "sizes">;
-const persist = (st: Persisted) =>
-  void store().then((s) =>
-    Promise.all([s.set("sessions", st.sessions), s.set("active", st.active), s.set("panes", st.panes), s.set("sizes", st.sizes)]),
-  );
-const pick = (st: State): Persisted => ({ sessions: st.sessions, active: st.active, panes: st.panes, sizes: st.sizes });
+type Persisted = Pick<State, "sessions" | "active" | "panes" | "sizes" | "rows">;
+const KEYS = ["sessions", "active", "panes", "sizes", "rows"] as const satisfies readonly (keyof Persisted)[];
+const persist = (st: Persisted) => void store().then((s) => Promise.all(KEYS.map((k) => s.set(k, st[k]))));
+const pick = (st: State): Persisted => ({ sessions: st.sessions, active: st.active, panes: st.panes, sizes: st.sizes, rows: st.rows });
 
 export const useWaWeb = create<State>((set, get) => ({
   sessions: [],
@@ -55,6 +58,7 @@ export const useWaWeb = create<State>((set, get) => ({
   active: null,
   panes: [],
   sizes: {},
+  rows: 0,
   async hydrate() {
     invoke<boolean>("wa_web_isolation_supported")
       .then((isolated) => set({ isolated }))
@@ -69,7 +73,8 @@ export const useWaWeb = create<State>((set, get) => ({
     const sizes = Object.fromEntries(
       Object.entries((await s.get<Record<string, number>>("sizes")) ?? {}).filter(([id, w]) => has(id) && Number.isFinite(w) && w > 0),
     );
-    set({ sessions, active, panes, sizes });
+    const rows = (await s.get<number>("rows")) ?? 0;
+    set({ sessions, active, panes, sizes, rows: Number.isInteger(rows) && rows >= 0 ? rows : 0 });
   },
   add(name) {
     const n = get().sessions.length + 1;
@@ -94,7 +99,7 @@ export const useWaWeb = create<State>((set, get) => ({
       const panes = st.panes.filter((p) => p !== id);
       const active = st.active === id ? (panes[0] ?? null) : st.active;
       const { [id]: _, ...sizes } = st.sizes;
-      const next = { sessions: st.sessions.filter((s) => s.id !== id), active, panes, sizes };
+      const next = pick({ ...st, sessions: st.sessions.filter((s) => s.id !== id), active, panes, sizes });
       persist(next);
       return next;
     });
@@ -132,6 +137,25 @@ export const useWaWeb = create<State>((set, get) => ({
       const panes = [...st.panes];
       [panes[i], panes[j]] = [panes[j]!, panes[i]!];
       const next = pick({ ...st, panes });
+      persist(next);
+      return next;
+    });
+  },
+  movePaneTo(id, target) {
+    set((st) => {
+      const from = st.panes.indexOf(id);
+      const to = st.panes.indexOf(target);
+      if (from < 0 || to < 0 || from === to) return st;
+      const panes = st.panes.filter((p) => p !== id);
+      panes.splice(to, 0, id);
+      const next = pick({ ...st, panes });
+      persist(next);
+      return next;
+    });
+  },
+  setRows(rows) {
+    set((st) => {
+      const next = pick({ ...st, rows: Math.max(0, Math.floor(rows)) });
       persist(next);
       return next;
     });
