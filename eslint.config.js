@@ -25,6 +25,7 @@ export default tseslint.config(
       "react-hooks/purity": "off",
       "react-hooks/refs": "off",
       "react-hooks/incompatible-library": "off",
+      "react-hooks/preserve-manual-memoization": "off",
     },
   },
 );

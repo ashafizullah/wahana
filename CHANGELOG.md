@@ -9,6 +9,7 @@
 ### Changed
 
 - ESLint (typescript-eslint + react-hooks) and Prettier run in `npm run check` and in CI; the whole tree is formatted once.
+- The conversation view is split into a header, a search bar and two hooks (`useOrderedMessages`, `useMessageList` for scrolling / paging / virtualisation); `ChatScreen.tsx` is now the glue only.
 - Shared helpers replace repeated snippets: `errMsg`, `convKey`, `ViewMessage`, `mediaOpts`, `useLatest`/`useEvent`/`useDismiss`, and a `Popover`/`MenuItem` dropdown that closes on outside click and Escape.
 
 ## 0.4.2 — 2026-09-15
