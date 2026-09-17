@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Windows: options in native dropdowns (session picker, language selects) were white-on-white in dark mode.
+
+### Changed
+
+- New installs default the AI provider to "OpenAI-compatible" with an empty model; a saved Anthropic setup is unchanged.
+
 ## 0.4.3 — 2026-09-17
 
 ### Fixed

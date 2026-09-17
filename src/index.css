@@ -40,6 +40,11 @@ textarea,
   user-select: none;
   -webkit-user-select: none;
 }
+/* Native <select> popups on Windows (WebView2) paint options on a white sheet while the text
+   inherits the page colour, which is near-white in dark mode. Give options explicit colours. */
+select option {
+  @apply bg-white text-neutral-900 dark:bg-neutral-900 dark:text-neutral-100;
+}
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;
