@@ -4,6 +4,7 @@
 
 ### Added
 
+- Welcome screen on first run: start with WhatsApp Web in one click, or connect a WAHA server (URL + API key, with Test connection). Reopen it any time from Settings → About.
 - WhatsApp Web: unread count per session — shown on the pane's title bar, in the session picker, and included in the dock/taskbar badge and tray tooltip.
 
 ### Changed

@@ -15,6 +15,7 @@ import {
 import { useSettings } from "@/store/settings";
 import { useWahaSocket } from "@/realtime/useWahaSocket";
 import { SettingsScreen } from "@/screens/SettingsScreen";
+import { WelcomeScreen } from "@/screens/WelcomeScreen";
 import { SessionsScreen } from "@/screens/SessionsScreen";
 import { ChatScreen } from "@/screens/ChatScreen";
 import { EventsScreen } from "@/screens/EventsScreen";
@@ -50,7 +51,12 @@ import { Button } from "@/components/ui";
 type Tab = "chats" | "status" | "scheduler" | "broadcast" | "autoreply" | "sessions" | "events" | "settings";
 
 export default function App() {
-  const { hydrated, hydrate, client } = useSettings();
+  const { hydrated, hydrate, client, profiles } = useSettings();
+  const waWebHydrated = useWaWeb((s) => s.hydrated);
+  const waWebSessions = useWaWeb((s) => s.sessions);
+  // First run: nothing configured at all. `null` until both stores have loaded so the
+  // screen neither flashes for existing users nor is skipped for new ones.
+  const [welcome, setWelcome] = useState<boolean | null>(null);
   const [tab, setTab] = useState<Tab>("chats");
   const socket = useWahaSocket();
   const unreadCounts = useUnread((s) => s.counts);
@@ -109,6 +115,9 @@ export default function App() {
   ]);
 
   useEffect(() => {
+    if (hydrated && waWebHydrated && welcome === null) setWelcome(profiles.length === 0 && waWebSessions.length === 0);
+  }, [hydrated, waWebHydrated, welcome, profiles.length, waWebSessions.length]);
+  useEffect(() => {
     if (hydrated && !client) setTab("settings");
   }, [hydrated, client]);
 
@@ -140,11 +149,14 @@ export default function App() {
       }
     };
     const onOpenSettings = () => setTab("settings");
+    const onOpenWelcome = () => setWelcome(true);
     window.addEventListener("keydown", onKey);
     window.addEventListener("wahana:open-settings", onOpenSettings);
+    window.addEventListener("wahana:open-welcome", onOpenWelcome);
     return () => {
       window.removeEventListener("keydown", onKey);
       window.removeEventListener("wahana:open-settings", onOpenSettings);
+      window.removeEventListener("wahana:open-welcome", onOpenWelcome);
     };
   }, []);
 
@@ -175,7 +187,10 @@ export default function App() {
           <button
             key={n.id}
             title={n.label}
-            onClick={() => setTab(n.id)}
+            onClick={() => {
+              setWelcome(false);
+              setTab(n.id);
+            }}
             className={cn(
               "relative w-11 h-11 rounded-xl grid place-items-center hover:bg-white/10 transition",
               tab === n.id && "bg-white/20 text-white",
@@ -221,15 +236,23 @@ export default function App() {
           </div>
         )}
         <div className="flex-1 min-h-0 flex">
-          <ErrorBoundary key={tab} label={tab}>
-            {tab === "chats" && <ChatScreen />}
-            {tab === "status" && <StatusScreen />}
-            {tab === "scheduler" && <SchedulerScreen />}
-            {tab === "broadcast" && <BroadcastScreen />}
-            {tab === "autoreply" && <AutoReplyScreen />}
-            {tab === "sessions" && <SessionsScreen />}
-            {tab === "events" && <EventsScreen />}
-            {tab === "settings" && <SettingsScreen onSaved={() => setTab("sessions")} />}
+          <ErrorBoundary key={welcome ? "welcome" : tab} label={welcome ? "welcome" : tab}>
+            {welcome && (
+              <WelcomeScreen
+                onDone={(t) => {
+                  setWelcome(false);
+                  setTab(t);
+                }}
+              />
+            )}
+            {!welcome && tab === "chats" && <ChatScreen />}
+            {!welcome && tab === "status" && <StatusScreen />}
+            {!welcome && tab === "scheduler" && <SchedulerScreen />}
+            {!welcome && tab === "broadcast" && <BroadcastScreen />}
+            {!welcome && tab === "autoreply" && <AutoReplyScreen />}
+            {!welcome && tab === "sessions" && <SessionsScreen />}
+            {!welcome && tab === "events" && <EventsScreen />}
+            {!welcome && tab === "settings" && <SettingsScreen onSaved={() => setTab("sessions")} />}
           </ErrorBoundary>
         </div>
       </main>

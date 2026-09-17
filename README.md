@@ -86,6 +86,7 @@ You need:
 
 **App**
 
+- First-run welcome screen: pick WhatsApp Web or connect a WAHA server, no manual required
 - System tray, desktop notifications, incoming-call banner, keyboard shortcuts, light / dark theme
 - Privacy tweaks: typing indicator on/off, read receipts always / on reply / manual / never
 - Settings backup & restore, auto-updater

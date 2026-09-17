@@ -20,6 +20,7 @@ const store = () => (storePromise ??= load(STORE_FILE, { autoSave: true, default
 
 interface State {
   sessions: WaWebSession[];
+  hydrated: boolean;
   /** False on macOS < 14: every WhatsApp Web webview shares one login, so only one session is usable. */
   isolated: boolean;
   active: string | null;
@@ -57,6 +58,7 @@ const pick = (st: State): Persisted => ({ sessions: st.sessions, active: st.acti
 
 export const useWaWeb = create<State>((set, get) => ({
   sessions: [],
+  hydrated: false,
   isolated: true,
   active: null,
   panes: [],
@@ -81,7 +83,7 @@ export const useWaWeb = create<State>((set, get) => ({
       Object.entries((await s.get<Record<string, number>>("sizes")) ?? {}).filter(([id, w]) => has(id) && Number.isFinite(w) && w > 0),
     );
     const rows = (await s.get<number>("rows")) ?? 0;
-    set({ sessions, active, panes, sizes, rows: Number.isInteger(rows) && rows >= 0 ? rows : 0 });
+    set({ sessions, active, panes, sizes, rows: Number.isInteger(rows) && rows >= 0 ? rows : 0, hydrated: true });
   },
   add(name) {
     const n = get().sessions.length + 1;
