@@ -1,6 +1,6 @@
 [package]
 name = "wahana"
-version = "0.4.5"
+version = "0.4.6"
 description = "Wahana — desktop client for WAHA (WhatsApp HTTP API)"
 authors = ["Adam Suchi Hafizullah"]
 edition = "2021"
