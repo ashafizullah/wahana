@@ -26,7 +26,8 @@ export function GenerateButton({
   const [err, setErr] = useState<string | null>(null);
   const [undo, setUndo] = useState<string | null>(null);
   const ready = aiConfigured();
-  const language = useSettings((s) => s.aiComposeTo);
+  // Drafts are written in the user's own language; the 🌐 button translates them afterwards if needed.
+  const language = useSettings((s) => s.aiTranslateTo);
 
   const run = async () => {
     if (!brief.trim()) return;

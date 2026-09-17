@@ -114,7 +114,8 @@ export function AiSection() {
             ))}
           </select>
           <p className="text-[11px] text-neutral-500 mt-1">
-            The language you read in. Incoming messages are translated into it; summaries and image descriptions are written in it.
+            The language you read and write in. Incoming messages are translated into it; summaries, image descriptions and AI drafts are
+            written in it.
           </p>
         </div>
         <div>
@@ -131,8 +132,8 @@ export function AiSection() {
             ))}
           </select>
           <p className="text-[11px] text-neutral-500 mt-1">
-            The language the other side reads. The 🌐 button in the composer translates your draft into it. Per-chat overrides: chat menu ⋮
-            → Auto-translate.
+            The language the other side reads. Only used for translating: the 🌐 button in the composer and per-chat auto-translate (chat
+            menu ⋮ → Auto-translate).
           </p>
         </div>
       </div>

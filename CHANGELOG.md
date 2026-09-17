@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- "Draft with AI" (broadcast, status) wrote in the _Target language_ (the other side's) instead of _My language_.
+
 ## 0.4.7 — 2026-09-18
 
 ### Added
