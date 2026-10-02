@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
-import { Bell, DatabaseBackup, HardDrive, Image as ImageIcon, Info, Server, Sparkles } from "lucide-react";
+import { Bell, Palette, DatabaseBackup, HardDrive, Image as ImageIcon, Info, Server, Sparkles } from "lucide-react";
 import { usingFallback } from "@/lib/secrets";
 import { OpenCtx, Section } from "./settings/shared";
 import { ProfilesSection } from "./settings/ProfilesSection";
 import { ConnectionSection } from "./settings/ConnectionSection";
+import { AppearanceSection } from "./settings/AppearanceSection";
 import { MediaSection } from "./settings/MediaSection";
 import { StorageSection } from "./settings/StorageSection";
 import { AiSection } from "./settings/AiSection";
@@ -21,7 +22,7 @@ function loadOpen(): string[] {
     return DEFAULT_OPEN;
   }
 }
-const ALL_SECTIONS = ["Servers", "Media", "Storage", "AI", "Notifications", "Backup & restore", "About"];
+const ALL_SECTIONS = ["Servers", "Appearance", "Media", "Storage", "AI", "Notifications", "Backup & restore", "About"];
 
 export function SettingsScreen({ onSaved }: { onSaved: () => void }) {
   const [open, setOpen] = useState<string[]>(loadOpen);
@@ -57,6 +58,9 @@ export function SettingsScreen({ onSaved }: { onSaved: () => void }) {
           >
             <ProfilesSection />
             <ConnectionSection onSaved={onSaved} />
+          </Section>
+          <Section icon={Palette} title="Appearance">
+            <AppearanceSection />
           </Section>
           <Section
             icon={ImageIcon}
