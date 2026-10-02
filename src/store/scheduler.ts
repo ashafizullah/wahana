@@ -6,6 +6,8 @@ export type Kind = "text" | "image" | "video" | "file";
 
 export interface Schedule {
   id: string;
+  /** `waha:<profileId>:<session>` or `native:<accountId>`. */
+  account: string;
   profile: string;
   session: string;
   target_type: TargetType;
@@ -42,13 +44,16 @@ let dbPromise: Promise<Database> | null = null;
 export const db = () => (dbPromise ??= Database.load("sqlite:wahana.db"));
 
 const COLS =
-  "id, profile, session, target_type, target_id, target_name, kind, text, media_mime, media_name, next_run, anchor, repeat, weekdays, enabled, created_at, last_run, last_status, last_error, runs";
+  "id, account, profile, session, target_type, target_id, target_name, kind, text, media_mime, media_name, next_run, anchor, repeat, weekdays, enabled, created_at, last_run, last_status, last_error, runs";
 
-export async function listSchedules(profile: string): Promise<Schedule[]> {
+/** All schedules, or — with an account — only that account's. */
+export async function listSchedules(account?: string): Promise<Schedule[]> {
   const d = await db();
-  return d.select<Schedule[]>(`SELECT ${COLS}, NULL AS media_b64 FROM schedules WHERE profile = $1 ORDER BY enabled DESC, next_run ASC`, [
-    profile,
-  ]);
+  return account === undefined
+    ? d.select<Schedule[]>(`SELECT ${COLS}, NULL AS media_b64 FROM schedules ORDER BY enabled DESC, next_run ASC`)
+    : d.select<Schedule[]>(`SELECT ${COLS}, NULL AS media_b64 FROM schedules WHERE account = $1 ORDER BY enabled DESC, next_run ASC`, [
+        account,
+      ]);
 }
 
 export async function getSchedule(id: string): Promise<Schedule | undefined> {
@@ -69,13 +74,14 @@ export async function upsertSchedule(
 ) {
   const d = await db();
   await d.execute(
-    `INSERT INTO schedules (id, profile, session, target_type, target_id, target_name, kind, text, media_b64, media_mime, media_name, next_run, anchor, repeat, weekdays, enabled, created_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
-     ON CONFLICT(id) DO UPDATE SET session=excluded.session, target_type=excluded.target_type, target_id=excluded.target_id, target_name=excluded.target_name,
+    `INSERT INTO schedules (id, account, profile, session, target_type, target_id, target_name, kind, text, media_b64, media_mime, media_name, next_run, anchor, repeat, weekdays, enabled, created_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+     ON CONFLICT(id) DO UPDATE SET account=excluded.account, session=excluded.session, target_type=excluded.target_type, target_id=excluded.target_id, target_name=excluded.target_name,
        kind=excluded.kind, text=excluded.text, media_b64=COALESCE(excluded.media_b64, schedules.media_b64), media_mime=COALESCE(excluded.media_mime, schedules.media_mime),
        media_name=COALESCE(excluded.media_name, schedules.media_name), next_run=excluded.next_run, anchor=excluded.anchor, repeat=excluded.repeat, weekdays=excluded.weekdays, enabled=excluded.enabled`,
     [
       s.id,
+      s.account,
       s.profile,
       s.session,
       s.target_type,

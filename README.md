@@ -78,15 +78,17 @@ You need:
 - Draft a broadcast or status from a short brief ("Draft with AI" in the composer)
 - Optionally label new direct chats automatically with your existing labels (Settings → AI)
 
-**WhatsApp Web (no server needed)**
+**WhatsApp (no server needed)**
 
-- Plain, unmodified web.whatsapp.com embedded next to your WAHA sessions in the same picker — one place for everything
-- Several WhatsApp Web accounts, each with its own isolated login — show any number of them side by side in one split view, drag the dividers to give one more room (double-click to even them out), drag title bars to reorder, lay them out in 1–4 rows, hide, rename / remove at will; when the window is too narrow the panes wrap onto extra rows
-- Notifications reach the OS notification center, unread counts show on each pane and in the app badge, downloads land in ~/Downloads, links open in your browser, calls work
+- Link WhatsApp accounts directly by scanning a QR code: the app talks to WhatsApp itself through [whatsapp-rust](https://github.com/oxidezap/whatsapp-rust), with no server and no embedded browser
+- Several accounts next to your WAHA sessions in the same picker; each keeps its own session on disk and reconnects on launch, and can be renamed, disconnected, logged out or removed
+- Send and receive text messages; notifications reach the OS notification center and unread chats show in the picker and the app badge
+- Chat history: your phone sends it when the account is linked, it is kept on disk, and older messages of a chat can be fetched from the phone on request; group names, contact names and profile pictures are filled in
+- Not yet: media, read receipts, typing indicators
 
 **App**
 
-- First-run welcome screen: pick WhatsApp Web or connect a WAHA server, no manual required
+- First-run welcome screen: link WhatsApp or connect a WAHA server, no manual required
 - System tray, desktop notifications, incoming-call banner, keyboard shortcuts, light / dark theme
 - Privacy tweaks: typing indicator on/off, read receipts always / on reply / manual / never
 - Settings backup & restore, auto-updater

@@ -1,5 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { accountParts, useAccounts } from "@/lib/account";
+import { postStatusMediaOn, postStatusTextOn, sendMediaOn, sendTextOn, type SendOutcome } from "@/lib/send";
 import { useSettings } from "@/store/settings";
 import { claimRun, dueSchedules, nextOccurrence, recordRun, type Schedule } from "@/store/scheduler";
 import { sendNotification } from "@tauri-apps/plugin-notification";
@@ -10,40 +12,35 @@ import { errMsg } from "@/lib/utils";
 export const GRACE_SECONDS = 60 * 60;
 const TICK_MS = 20_000;
 
-async function execute(s: Schedule) {
-  const client = useSettings.getState().client;
-  if (!client) throw new Error("not connected");
+async function execute(s: Schedule): Promise<SendOutcome | void> {
   const file = s.media_b64
-    ? { mimetype: s.media_mime ?? "application/octet-stream", filename: s.media_name ?? "file", data: s.media_b64 }
+    ? { mimetype: s.media_mime ?? "application/octet-stream", name: s.media_name ?? "file", base64: s.media_b64 }
     : null;
   const text = s.text ?? "";
   if (s.target_type === "status") {
-    if (s.kind === "image" && file) return client.postImageStatus(s.session, file, text || undefined);
-    if (s.kind === "video" && file) return client.postVideoStatus(s.session, file, text || undefined);
-    return client.postTextStatus(s.session, text);
+    if (file && (s.kind === "image" || s.kind === "video")) return postStatusMediaOn(s.account, file, text);
+    return postStatusTextOn(s.account, text);
   }
   const chatId = s.target_id!;
-  if (s.kind === "image" && file) return client.sendImage(s.session, chatId, file, text || undefined);
-  if (s.kind === "video" && file) return client.sendVideo(s.session, chatId, file, text || undefined);
-  if (s.kind === "file" && file) return client.sendFile(s.session, chatId, file, text || undefined);
-  return client.sendText(s.session, chatId, text);
+  if (file && s.kind !== "text") return sendMediaOn(s.account, chatId, file, text);
+  return sendTextOn(s.account, chatId, text);
 }
 
-/** Runs due schedules while the app is alive (window may be hidden in the tray). */
+/** Runs due schedules of every account while the app is alive (window may be hidden in the tray). */
 export function useScheduler() {
-  const client = useSettings((s) => s.client);
-  const profile = useSettings((s) => s.activeProfile);
+  const accounts = useAccounts();
   const qc = useQueryClient();
   const running = useRef(false);
+  const hasAccounts = accounts.length > 0;
 
   useEffect(() => {
-    if (!client) return;
+    if (!hasAccounts) return;
     const tick = async () => {
       if (running.current) return;
       running.current = true;
       try {
         const now = Math.floor(Date.now() / 1000);
-        const due = (await dueSchedules(now)).filter((s) => s.profile === profile);
+        const due = await dueSchedules(now);
         for (const s of due) {
           const late = now - s.next_run;
           const next = nextOccurrence(s, now);
@@ -54,9 +51,10 @@ export function useScheduler() {
             continue;
           }
           try {
-            const res = (await execute(s)) as { id?: string } | undefined;
+            const res = (await execute(s)) as SendOutcome | undefined;
             await recordRun(s, "ok", { messageId: res?.id });
-            if (s.target_id) qc.invalidateQueries({ queryKey: qk.chats(s.session) });
+            const p = accountParts(s.account);
+            if (s.target_id && p?.kind === "waha" && p.session) qc.invalidateQueries({ queryKey: qk.chats(p.session) });
           } catch (e) {
             const msg = errMsg(e);
             await recordRun(s, "error", { error: msg });
@@ -77,5 +75,5 @@ export function useScheduler() {
     void tick();
     const t = setInterval(tick, TICK_MS);
     return () => clearInterval(t);
-  }, [client, profile, qc]);
+  }, [hasAccounts, qc]);
 }

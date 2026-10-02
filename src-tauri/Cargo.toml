@@ -18,7 +18,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["tray-icon", "image-png", "unstable"] }
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
 tauri-plugin-opener = "2"
 tauri-plugin-store = "2"
 tauri-plugin-notification = "2"
@@ -31,6 +31,32 @@ tauri-plugin-sql = { version = "2", features = ["sqlite"] }
 keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+tokio = { version = "1", features = ["sync", "rt", "time"] }
+
+# Native WhatsApp client, replacing the embedded WhatsApp Web child webviews.
+#
+# `sqlite-storage` is deliberately NOT enabled on `whatsapp-rust`: doing so pulls
+# `whatsapp-rust-sqlite-storage` with its default `bundled-sqlite` feature, which requires
+# `libsqlite3-sys ^0.37`. This app already links `libsqlite3-sys 0.30` through
+# `tauri-plugin-sql` (sqlx), and Cargo refuses two versions of a crate that declares a
+# native `links` key. The storage crate is therefore depended on directly with no default
+# features — diesel accepts `libsqlite3-sys >=0.17.2, <0.38.0`, so it shares the 0.30 copy.
+# `simd` is intentionally absent: it turns on `#![feature(portable_simd)]` inside
+# `wacore-binary`, which is nightly-only, and this project builds on stable. It is a
+# performance knob (roughly a fifth fewer instructions on the Signal encrypt paths), not
+# a correctness one.
+whatsapp-rust = { version = "0.7", default-features = false, features = [
+    "tokio-transport",
+    "tokio-runtime",
+    "tokio-native",
+    "ureq-client",
+    "signal",
+] }
+whatsapp-rust-sqlite-storage = { version = "0.7", default-features = false }
+# Chat history for the native accounts. 0.32 is the line on `libsqlite3-sys 0.30`, the
+# copy `tauri-plugin-sql` already links (see the note above).
+rusqlite = "0.32"
+base64 = "0.22"
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration

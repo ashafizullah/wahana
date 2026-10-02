@@ -17,9 +17,9 @@ import {
   AlertTriangle,
   Clock,
 } from "lucide-react";
-import { useSettings } from "@/store/settings";
-import { SessionSelect } from "@/components/SessionSelect";
-import { useChats, useContacts } from "@/api/queries";
+import { accountParts, useAccountLabel, useAccounts, useActiveAccount } from "@/lib/account";
+import { useAccountChats } from "@/lib/useAccountChats";
+import { AccountSelect } from "@/components/AccountSelect";
 import { Avatar, Button, Input, Label } from "@/components/ui";
 import { cn, displayId, fileToBase64, isChannel, isGroup, errMsg } from "@/lib/utils";
 import { confirm } from "@/components/Confirm";
@@ -33,23 +33,40 @@ import {
   type BroadcastSummary,
 } from "@/store/broadcast";
 import type { Kind } from "@/store/scheduler";
-import { NotConnected } from "@/components/NotConnected";
+import { openSettings } from "@/components/NotConnected";
 import { GenerateButton } from "@/components/GenerateButton";
 
 const fmt = (s: number) => new Date(s * 1000).toLocaleString([], { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
 
+/** Shown when nothing can send: no WAHA server and no native account. */
+function NoAccounts() {
+  return (
+    <div className="flex-1 grid place-items-center text-neutral-500 text-sm p-6">
+      <div className="flex flex-col items-center gap-3 max-w-md text-center">
+        <Radio size={28} className="text-neutral-400" />
+        <p className="font-medium text-neutral-700 dark:text-neutral-300">No account to send from.</p>
+        <p className="text-xs">Link a WhatsApp account in Sessions, or add a WAHA server in Settings.</p>
+        <Button onClick={openSettings}>Open settings</Button>
+      </div>
+    </div>
+  );
+}
+
 export function BroadcastScreen() {
-  const { client, activeProfile, session } = useSettings();
+  const accounts = useAccounts();
+  const active = useActiveAccount();
+  const label = useAccountLabel();
   const qc = useQueryClient();
   const [creating, setCreating] = useState(false);
   const [open, setOpen] = useState<BroadcastSummary | null>(null);
   const q = useQuery({
-    queryKey: ["broadcasts", activeProfile],
-    queryFn: () => listBroadcasts(activeProfile),
-    enabled: !!activeProfile,
+    queryKey: ["broadcasts"],
+    queryFn: () => listBroadcasts(),
+    enabled: accounts.length > 0,
     refetchInterval: 3000,
   });
-  if (!client) return <NotConnected />;
+  if (accounts.length === 0) return <NoAccounts />;
+  const defaultAccount = active && accounts.some((a) => a.key === active.key) ? active.key : accounts[0]!.key;
   const refresh = () => qc.invalidateQueries({ queryKey: ["broadcasts"] });
 
   return (
@@ -80,8 +97,8 @@ export function BroadcastScreen() {
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <span className="font-medium truncate">{b.name || "Untitled broadcast"}</span>
-                    <span className="text-[10px] rounded-full bg-wa/15 text-wa-dark dark:text-wa px-1.5 py-0.5 font-mono" title="Session">
-                      {b.session}
+                    <span className="text-[10px] rounded-full bg-wa/15 text-wa-dark dark:text-wa px-1.5 py-0.5 font-mono" title="Account">
+                      {label(b.account)}
                     </span>
                     <span
                       className={cn(
@@ -202,8 +219,7 @@ export function BroadcastScreen() {
       </div>
       {creating && (
         <NewBroadcast
-          session={session}
-          profile={activeProfile}
+          defaultAccount={defaultAccount}
           onClose={() => setCreating(false)}
           onCreated={() => {
             setCreating(false);
@@ -216,20 +232,10 @@ export function BroadcastScreen() {
   );
 }
 
-function NewBroadcast({
-  session,
-  profile,
-  onClose,
-  onCreated,
-}: {
-  session: string;
-  profile: string;
-  onClose: () => void;
-  onCreated: () => void;
-}) {
-  const [sess, setSess] = useState(session);
-  const { data: chats } = useChats(sess);
-  const { data: contacts } = useContacts(sess);
+function NewBroadcast({ defaultAccount, onClose, onCreated }: { defaultAccount: string; onClose: () => void; onCreated: () => void }) {
+  const [account, setAccount] = useState(defaultAccount);
+  const chats = useAccountChats(account);
+  const suffix = accountParts(account)?.kind === "native" ? "@s.whatsapp.net" : "@c.us";
   const [name, setName] = useState("");
   const [q, setQ] = useState("");
   const [picked, setPicked] = useState<Map<string, string>>(new Map()); // id → name
@@ -251,24 +257,20 @@ function NewBroadcast({
 
   const candidates = useMemo(() => {
     const t = q.trim().toLowerCase();
-    const fromChats = (chats ?? [])
-      .filter((c) => c.id !== "status@broadcast")
-      .map((c) => ({ id: c.id, name: c.name || displayId(c.id), picture: c.picture }));
-    const fromContacts = (contacts ?? [])
-      .filter((c) => (c.name || c.pushname) && c.id.endsWith("@c.us"))
-      .map((c) => ({ id: c.id, name: c.name || c.pushname || displayId(c.id), picture: null }));
     const seen = new Set<string>();
-    return [...fromChats, ...fromContacts]
+    return chats
+      .filter((c) => c.id !== "status@broadcast")
+      .map((c) => ({ id: c.id, name: c.name || displayId(c.id) }))
       .filter((c) => (seen.has(c.id) ? false : (seen.add(c.id), true)))
       .filter((c) => !t || c.name.toLowerCase().includes(t) || c.id.includes(t))
       .slice(0, 40);
-  }, [chats, contacts, q]);
+  }, [chats, q]);
 
   const pastedNumbers = numbers
     .split(/[\s,;]+/)
     .map((n) => n.replace(/\D/g, ""))
     .filter((n) => n.length >= 8);
-  const total = picked.size + pastedNumbers.filter((n) => !picked.has(`${n}@c.us`)).length;
+  const total = picked.size + pastedNumbers.filter((n) => !picked.has(`${n}${suffix}`)).length;
   const kind: Kind = file ? (file.type.startsWith("image/") ? "image" : file.type.startsWith("video/") ? "video" : "file") : "text";
   const valid = total > 0 && (text.trim() || file) && delayMin >= 1 && delayMax >= delayMin;
 
@@ -278,12 +280,14 @@ function NewBroadcast({
     try {
       const id = Math.random().toString(36).slice(2, 12);
       const recipients = [...picked.entries()].map(([chatId, n]) => ({ chatId, name: n }));
-      for (const n of pastedNumbers) if (!picked.has(`${n}@c.us`)) recipients.push({ chatId: `${n}@c.us`, name: `+${n}` });
+      for (const n of pastedNumbers) if (!picked.has(`${n}${suffix}`)) recipients.push({ chatId: `${n}${suffix}`, name: `+${n}` });
+      const parts = accountParts(account);
       await createBroadcast(
         {
           id,
-          profile,
-          session: sess,
+          account,
+          profile: parts?.kind === "waha" ? (parts.profile ?? "") : "",
+          session: parts?.kind === "waha" ? (parts.session ?? "") : "",
           name: name.trim() || null,
           kind,
           text: text.trim() || null,
@@ -322,11 +326,11 @@ function NewBroadcast({
                 <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Promo September" />
               </div>
               <div>
-                <Label>Send from (session)</Label>
-                <SessionSelect
-                  value={sess}
+                <Label>Send from (account)</Label>
+                <AccountSelect
+                  value={account}
                   onChange={(v) => {
-                    setSess(v);
+                    setAccount(v);
                     setPicked(new Map());
                   }}
                   className="min-w-[180px]"
@@ -356,7 +360,7 @@ function NewBroadcast({
                           })
                         }
                       />
-                      <Avatar src={c.picture} name={c.name} size={24} />
+                      <Avatar name={c.name} size={24} />
                       <span className="flex-1 truncate">{c.name}</span>
                       {isChannel(c.id) ? (
                         <Megaphone size={12} className="text-neutral-400" />
@@ -392,7 +396,7 @@ function NewBroadcast({
                 className="w-full rounded-lg border border-neutral-300 dark:border-neutral-700 bg-transparent px-3 py-2 text-sm outline-none"
               />
               <div className="flex items-center gap-2 mt-1.5">
-                <GenerateButton kind="broadcast" text={text} onResult={setText} session={sess} />
+                <GenerateButton kind="broadcast" text={text} onResult={setText} account={account} />
                 <input ref={fileRef} type="file" hidden onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
                 <Button size="sm" variant="secondary" onClick={() => fileRef.current?.click()}>
                   <Paperclip size={12} /> {file ? "Change attachment" : "Attach"}

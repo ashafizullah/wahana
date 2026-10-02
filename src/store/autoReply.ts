@@ -7,6 +7,8 @@ export type ReplyKind = "text" | "ai";
 
 export interface AutoReplyRule {
   id: string;
+  /** `waha:<profileId>:<session>` or `native:<accountId>`. */
+  account: string;
   profile: string;
   session: string;
   name: string;
@@ -34,6 +36,8 @@ export interface AutoReplyRule {
 export interface AutoReplyLog {
   id: number;
   rule_id: string;
+  /** `waha:<profileId>:<session>` or `native:<accountId>`. */
+  account: string;
   session: string;
   chat_id: string;
   chat_name: string | null;
@@ -44,29 +48,33 @@ export interface AutoReplyLog {
   at: number;
 }
 
-export const listRules = async (profile: string) =>
-  (await db()).select<AutoReplyRule[]>("SELECT * FROM auto_reply_rules WHERE profile = $1 ORDER BY priority ASC, created_at ASC", [
-    profile,
-  ]);
+/** All rules, or — with an account — only that account's. */
+export const listRules = async (account?: string) =>
+  account === undefined
+    ? (await db()).select<AutoReplyRule[]>("SELECT * FROM auto_reply_rules ORDER BY priority ASC, created_at ASC")
+    : (await db()).select<AutoReplyRule[]>("SELECT * FROM auto_reply_rules WHERE account = $1 ORDER BY priority ASC, created_at ASC", [
+        account,
+      ]);
 
-export const activeRules = async (profile: string, session: string) =>
+export const activeRules = async (account: string) =>
   (await db()).select<AutoReplyRule[]>(
-    "SELECT * FROM auto_reply_rules WHERE profile = $1 AND session = $2 AND enabled = 1 ORDER BY priority ASC, created_at ASC",
-    [profile, session],
+    "SELECT * FROM auto_reply_rules WHERE account = $1 AND enabled = 1 ORDER BY priority ASC, created_at ASC",
+    [account],
   );
 
 export async function upsertRule(r: Omit<AutoReplyRule, "created_at" | "replies" | "last_run"> & { created_at?: number }) {
   await (
     await db()
   ).execute(
-    `INSERT INTO auto_reply_rules (id, profile, session, name, enabled, priority, scope, chat_ids, hours_from, hours_to, weekdays, match_kind, pattern, reply_kind, text, ai_instructions, ai_context, cooldown_min, quote, mark_seen, created_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
-     ON CONFLICT(id) DO UPDATE SET session=excluded.session, name=excluded.name, enabled=excluded.enabled, priority=excluded.priority, scope=excluded.scope,
+    `INSERT INTO auto_reply_rules (id, account, profile, session, name, enabled, priority, scope, chat_ids, hours_from, hours_to, weekdays, match_kind, pattern, reply_kind, text, ai_instructions, ai_context, cooldown_min, quote, mark_seen, created_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
+     ON CONFLICT(id) DO UPDATE SET account=excluded.account, session=excluded.session, name=excluded.name, enabled=excluded.enabled, priority=excluded.priority, scope=excluded.scope,
        chat_ids=excluded.chat_ids, hours_from=excluded.hours_from, hours_to=excluded.hours_to, weekdays=excluded.weekdays, match_kind=excluded.match_kind,
        pattern=excluded.pattern, reply_kind=excluded.reply_kind, text=excluded.text, ai_instructions=excluded.ai_instructions, ai_context=excluded.ai_context,
        cooldown_min=excluded.cooldown_min, quote=excluded.quote, mark_seen=excluded.mark_seen`,
     [
       r.id,
+      r.account,
       r.profile,
       r.session,
       r.name,
@@ -100,14 +108,17 @@ export async function deleteRule(id: string) {
   await d.execute("DELETE FROM auto_reply_rules WHERE id = $1", [id]);
 }
 
-export const listLog = async (profile: string, limit = 200) =>
-  (await db()).select<AutoReplyLog[]>(
-    `SELECT l.* FROM auto_reply_log l JOIN auto_reply_rules r ON r.id = l.rule_id WHERE r.profile = $1 ORDER BY l.at DESC LIMIT $2`,
-    [profile, limit],
-  );
+/** All log rows, or — with an account — only that account's. */
+export const listLog = async (account?: string, limit = 200) =>
+  account === undefined
+    ? (await db()).select<AutoReplyLog[]>("SELECT * FROM auto_reply_log ORDER BY at DESC LIMIT $1", [limit])
+    : (await db()).select<AutoReplyLog[]>("SELECT * FROM auto_reply_log WHERE account = $1 ORDER BY at DESC LIMIT $2", [account, limit]);
 
-export const clearLog = async (profile: string) =>
-  (await db()).execute("DELETE FROM auto_reply_log WHERE rule_id IN (SELECT id FROM auto_reply_rules WHERE profile = $1)", [profile]);
+/** Clears one account's log, or every account's when called with no argument. */
+export const clearLog = async (account?: string) =>
+  account === undefined
+    ? (await db()).execute("DELETE FROM auto_reply_log", [])
+    : (await db()).execute("DELETE FROM auto_reply_log WHERE account = $1", [account]);
 
 /** Unix time of the last successful reply by this rule in this chat (for cooldowns). */
 export async function lastReplyAt(ruleId: string, chatId: string): Promise<number | null> {
@@ -121,26 +132,26 @@ export async function lastReplyAt(ruleId: string, chatId: string): Promise<numbe
 }
 
 /** Replies sent by any rule to this chat since `since` (unix) — the loop guard. */
-export async function repliesSince(session: string, chatId: string, since: number): Promise<number> {
+export async function repliesSince(account: string, chatId: string, since: number): Promise<number> {
   const rows = await (
     await db()
   ).select<{ n: number }[]>(
-    "SELECT COUNT(*) AS n FROM auto_reply_log WHERE session = $1 AND chat_id = $2 AND status = 'sent' AND at >= $3",
-    [session, chatId, since],
+    "SELECT COUNT(*) AS n FROM auto_reply_log WHERE account = $1 AND chat_id = $2 AND status = 'sent' AND at >= $3",
+    [account, chatId, since],
   );
   return rows[0]?.n ?? 0;
 }
 
-/** Replies sent today (local midnight →) by any rule of `profile` — the daily spend guard. */
-export async function repliesToday(profile: string): Promise<number> {
+/** Replies sent today (local midnight →) by any rule of `account` — the daily spend guard. */
+export async function repliesToday(account: string): Promise<number> {
   const midnight = new Date();
   midnight.setHours(0, 0, 0, 0);
   const rows = await (
     await db()
-  ).select<{ n: number }[]>(
-    "SELECT COUNT(*) AS n FROM auto_reply_log l JOIN auto_reply_rules r ON r.id = l.rule_id WHERE r.profile = $1 AND l.status = 'sent' AND l.at >= $2",
-    [profile, Math.floor(midnight.getTime() / 1000)],
-  );
+  ).select<{ n: number }[]>("SELECT COUNT(*) AS n FROM auto_reply_log WHERE account = $1 AND status = 'sent' AND at >= $2", [
+    account,
+    Math.floor(midnight.getTime() / 1000),
+  ]);
   return rows[0]?.n ?? 0;
 }
 
@@ -148,8 +159,19 @@ export async function logReply(entry: Omit<AutoReplyLog, "id" | "at">) {
   const d = await db();
   const now = Math.floor(Date.now() / 1000);
   await d.execute(
-    "INSERT INTO auto_reply_log (rule_id, session, chat_id, chat_name, incoming, reply, status, error, at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)",
-    [entry.rule_id, entry.session, entry.chat_id, entry.chat_name, entry.incoming, entry.reply, entry.status, entry.error, now],
+    "INSERT INTO auto_reply_log (rule_id, account, session, chat_id, chat_name, incoming, reply, status, error, at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)",
+    [
+      entry.rule_id,
+      entry.account,
+      entry.session,
+      entry.chat_id,
+      entry.chat_name,
+      entry.incoming,
+      entry.reply,
+      entry.status,
+      entry.error,
+      now,
+    ],
   );
   if (entry.status === "sent")
     await d.execute("UPDATE auto_reply_rules SET replies = replies + 1, last_run = $2 WHERE id = $1", [entry.rule_id, now]);

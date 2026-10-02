@@ -192,7 +192,7 @@ export const Bubble = memo(function Bubble({
   );
 });
 
-function TranslationView({ id }: { id: string }) {
+export function TranslationView({ id }: { id: string }) {
   const t = useTranslations((s) => s.byMsg[id]);
   const clear = useTranslations((s) => s.clear);
   if (!t) return null;
@@ -216,7 +216,7 @@ function TranslationView({ id }: { id: string }) {
 }
 
 /** AI description / OCR result under an image bubble. */
-function ImageNoteView({ id }: { id: string }) {
+export function ImageNoteView({ id }: { id: string }) {
   const n = useImageNotes((s) => s.byMsg[id]);
   const clear = useImageNotes((s) => s.clear);
   if (!n) return null;

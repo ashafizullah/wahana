@@ -1,6 +1,7 @@
 mod media_cache;
 mod secrets;
-mod waweb;
+mod whatsapp;
+mod whatsapp_db;
 
 use tauri::{
     menu::{Menu, MenuItem},
@@ -63,10 +64,23 @@ pub fn run() {
                             sql: include_str!("../migrations/005_schedule_anchor.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
+                        tauri_plugin_sql::Migration {
+                            version: 6,
+                            description: "quick replies per account",
+                            sql: include_str!("../migrations/006_quick_replies_account.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                        tauri_plugin_sql::Migration {
+                            version: 7,
+                            description: "scheduler, broadcasts and auto-reply per account",
+                            sql: include_str!("../migrations/007_sidebar_accounts.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
                     ],
                 )
                 .build(),
         )
+        .manage(whatsapp::WaState::default())
         .invoke_handler(tauri::generate_handler![
             secrets::save_api_key,
             secrets::get_api_key,
@@ -76,13 +90,35 @@ pub fn run() {
             media_cache::media_cache_put,
             media_cache::media_cache_stats,
             media_cache::media_cache_clear,
-            waweb::wa_web_isolation_supported,
-            waweb::wa_web_set_bounds,
-            waweb::wa_web_hide,
-            waweb::wa_web_remove,
-            waweb::wa_web_report_unread
+            whatsapp::wa_native_accounts,
+            whatsapp::wa_native_add,
+            whatsapp::wa_native_start,
+            whatsapp::wa_native_stop,
+            whatsapp::wa_native_logout,
+            whatsapp::wa_native_remove,
+            whatsapp::wa_native_send_text,
+            whatsapp::wa_native_chats,
+            whatsapp::wa_native_messages,
+            whatsapp::wa_native_mark_read,
+            whatsapp::wa_native_rename,
+            whatsapp::wa_native_picture,
+            whatsapp::wa_native_load_older,
+            whatsapp::wa_native_media,
+            whatsapp::wa_native_send_media,
+            whatsapp::wa_native_chat_info,
+            whatsapp::wa_native_chat_media,
+            whatsapp::wa_native_group_action,
+            whatsapp::wa_native_group_requests,
+            whatsapp::wa_native_send_receipt,
+            whatsapp::wa_native_set_typing,
+            whatsapp::wa_native_statuses,
+            whatsapp::wa_native_status_viewed,
+            whatsapp::wa_native_post_status_text,
+            whatsapp::wa_native_post_status_media,
+            whatsapp::wa_native_delete_status
         ])
         .setup(|app| {
+            whatsapp::restore(app.handle());
             let show = MenuItem::with_id(app, "show", "Open Wahana", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit Wahana", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show, &quit])?;

@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
+import { activeAccountKey } from "@/lib/account";
 import { useSettings } from "@/store/settings";
 
 export type AiProvider = "anthropic" | "openai-compatible";
@@ -51,18 +52,16 @@ export function aiConfigured() {
   return !!c.apiKey && !!c.model && (c.provider === "anthropic" || !!c.baseUrl);
 }
 
-/** The persona text that applies to a session: its override from Settings → AI, else the default persona. */
-export function personaFor(session?: string) {
+/** The persona text that applies to an account (its override from Settings → AI, else the default persona). */
+export function personaFor(account?: string | null) {
   const st = useSettings.getState();
-  return (st.aiPersonaBySession[personaKey(st.activeProfile, session ?? st.session)] ?? "").trim() || st.aiSystemPrompt.trim();
+  const key = account ?? activeAccountKey();
+  return ((key ? st.aiPersonaByAccount[key] : "") ?? "").trim() || st.aiSystemPrompt.trim();
 }
 
-/** Session names repeat across servers ("default" everywhere), so overrides are keyed by server too. */
-export const personaKey = (profile: string, session: string) => `${profile}:${session}`;
-
-/** The user's persona as a system-prompt preamble (empty when unset). Defaults to the active session's persona. */
-export function personaPreamble(session?: string) {
-  const p = personaFor(session);
+/** The user's persona as a system-prompt preamble (empty when unset). Defaults to the active account's persona. */
+export function personaPreamble(account?: string | null) {
+  const p = personaFor(account);
   return p ? `About the user you are assisting (follow these standing instructions):\n${p}\n\n` : "";
 }
 
@@ -73,12 +72,12 @@ export function personaPreamble(session?: string) {
 export async function complete(
   system: string,
   user: string,
-  opts: { maxTokens?: number; cfg?: AiConfig; persona?: boolean; fast?: boolean; session?: string } = {},
+  opts: { maxTokens?: number; cfg?: AiConfig; persona?: boolean; fast?: boolean; account?: string } = {},
 ): Promise<string> {
   const c = opts.cfg ?? config(opts.fast);
   if (!c.apiKey) throw new Error("AI API key is not set (Settings → AI).");
   const maxTokens = opts.maxTokens ?? 4096;
-  if (opts.persona !== false) system = personaPreamble(opts.session) + system;
+  if (opts.persona !== false) system = personaPreamble(opts.account) + system;
 
   if (c.provider === "anthropic") {
     const client = new Anthropic({
@@ -173,7 +172,10 @@ export async function testAi(cfg: AiConfig) {
 export const MAX_TRANSCRIPT_CHARS = 400_000;
 
 /** Summarize a chat transcript (see `transcript()` in exportChat.ts). Output uses WhatsApp formatting so it renders with WaMarkdown. */
-export function summarizeChat(text: string, opts: { chatName: string; isGroup: boolean; language: string; question?: string }) {
+export function summarizeChat(
+  text: string,
+  opts: { chatName: string; isGroup: boolean; language: string; question?: string; account?: string },
+) {
   if (text.length > MAX_TRANSCRIPT_CHARS) {
     // Keep the most recent part; cut at a line boundary.
     const tail = text.slice(-MAX_TRANSCRIPT_CHARS);
@@ -194,7 +196,7 @@ ${
 Use the section titles in the output language. Attribute statements to people by name. Be concise; keep the facts, drop the small talk. Media appears as [photo], [voice], etc. — mention it only when relevant.`
 }`;
   const user = opts.question ? `Question: ${opts.question}\n\nTranscript:\n${text}` : `Transcript:\n${text}`;
-  return complete(system, user, { maxTokens: 2048 });
+  return complete(system, user, { maxTokens: 2048, account: opts.account });
 }
 
 export const REWRITE_MODES = [
@@ -226,10 +228,10 @@ Rules: reply with the rewritten message only — no preamble, quotes or explanat
 }
 
 /** Three short reply suggestions for the current conversation (transcript from `transcript()`). Returns [] when the model output is unusable. */
-export async function smartReplies(text: string, opts: { chatName: string; isGroup: boolean }): Promise<string[]> {
+export async function smartReplies(text: string, opts: { chatName: string; isGroup: boolean; account?: string }): Promise<string[]> {
   const system = `You suggest replies the user ("You" in the transcript) could send next in a ${opts.isGroup ? "WhatsApp group" : "WhatsApp chat"} named "${opts.chatName}".
 Return exactly 3 suggestions as a JSON array of strings and nothing else. Each suggestion: one complete message the user could send as-is, ≤ 25 words, in the same language and register the user writes in (or the other party, if the user hasn't written yet). Make them meaningfully different (e.g. agree / ask a follow-up / decline politely). Answer the latest incoming message; use facts from the transcript, never invent commitments, prices or dates. No numbering, no quotes around the array.`;
-  const raw = await complete(system, `Transcript (latest last):\n${text}`, { maxTokens: 400, fast: true });
+  const raw = await complete(system, `Transcript (latest last):\n${text}`, { maxTokens: 400, fast: true, account: opts.account });
   const m = raw.match(/\[[\s\S]*\]/);
   try {
     const arr = JSON.parse(m ? m[0] : raw) as unknown;
@@ -249,12 +251,12 @@ export async function completeWithImage(
   system: string,
   user: string,
   image: { data: string; mediaType: string },
-  opts: { maxTokens?: number } = {},
+  opts: { maxTokens?: number; account?: string } = {},
 ): Promise<string> {
   const c = config();
   if (!c.apiKey) throw new Error("AI API key is not set (Settings → AI).");
   const maxTokens = opts.maxTokens ?? 2048;
-  system = personaPreamble() + system;
+  system = personaPreamble(opts.account) + system;
 
   if (c.provider === "anthropic") {
     const client = new Anthropic({
@@ -337,13 +339,19 @@ export async function completeWithImage(
 }
 
 /** Describe an image or extract its text. `language` = output language for descriptions (OCR keeps the source text as-is). */
-export function analyzeImage(image: { data: string; mediaType: string }, kind: "describe" | "ocr", language: string, caption?: string) {
+export function analyzeImage(
+  image: { data: string; mediaType: string },
+  kind: "describe" | "ocr",
+  language: string,
+  caption?: string,
+  account?: string,
+) {
   const system =
     kind === "ocr"
       ? "Extract all text from the image exactly as written, preserving line breaks, numbers, and layout order (top to bottom, left to right). Output only the text — no commentary. If the image contains no readable text, reply with exactly: (no text found)"
       : `Describe this image from a WhatsApp chat in ${langName(language)}: what it shows, any people/objects/scene, and any visible text (quote it). Be concise (2–5 sentences); if it is a screenshot, receipt, invoice or document, summarize its key content and figures instead.`;
   const user = caption ? `The sender's caption: "${caption}"` : kind === "ocr" ? "Extract the text." : "Describe the image.";
-  return completeWithImage(system, user, image, { maxTokens: 2048 });
+  return completeWithImage(system, user, image, { maxTokens: 2048, account });
 }
 
 /** Pull the first JSON array out of a model reply (tolerates code fences / prose around it). */
@@ -369,7 +377,10 @@ export interface ExtractedTask {
 }
 
 /** Find commitments, deadlines, appointments and bills in a transcript. */
-export async function extractTasks(text: string, opts: { chatName: string; language: string; now?: Date }): Promise<ExtractedTask[]> {
+export async function extractTasks(
+  text: string,
+  opts: { chatName: string; language: string; now?: Date; account?: string },
+): Promise<ExtractedTask[]> {
   const now = opts.now ?? new Date();
   const pad = (n: number) => String(n).padStart(2, "0");
   const nowIso = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
@@ -378,7 +389,7 @@ export async function extractTasks(text: string, opts: { chatName: string; langu
 Current local date/time: ${nowIso} (${weekday}). Resolve relative dates ("besok", "Jumat", "next week", "jam 3") to absolute local datetimes; when only a date is known use 09:00; when unknown use null. Never invent dates.
 Return a JSON array only, no prose. Items: {"title": string (imperative, ≤ 10 words, in ${langName(opts.language)}), "who": string|undefined, "due": "YYYY-MM-DDTHH:mm"|null, "detail": string|undefined}.
 Include: tasks, promises, deadlines, meetings/appointments, payments due, things to send or bring. Skip small talk and things already done. Max 12 items, most important first. Return [] if none.`;
-  const raw = await complete(system, `Transcript (oldest first):\n${text}`, { maxTokens: 1500 });
+  const raw = await complete(system, `Transcript (oldest first):\n${text}`, { maxTokens: 1500, account: opts.account });
   return parseJsonArray<ExtractedTask>(raw)
     .filter((t) => t && typeof t.title === "string" && t.title.trim())
     .map((t) => ({
@@ -431,7 +442,7 @@ export type ContentKind = "broadcast" | "status" | "group";
  * persona's voice. `kind` sets the shape: broadcast (one-to-many, may use {name}),
  * status (short, punchy), group (announcement to members).
  */
-export function generateContent(brief: string, opts: { kind: ContentKind; language: string; session?: string; current?: string }) {
+export function generateContent(brief: string, opts: { kind: ContentKind; language: string; account?: string; current?: string }) {
   const shape = {
     broadcast:
       "a broadcast sent one-to-one to many customers. Address the reader directly; you may use the placeholder {name} once for their name. 3–8 short lines.",
@@ -444,5 +455,5 @@ Never invent prices, dates, addresses or promises that are not in the brief or t
   const user = opts.current?.trim()
     ? `Brief:\n${brief}\n\nThe user's current draft, to improve or replace as the brief asks:\n${opts.current}`
     : `Brief:\n${brief}`;
-  return complete(system, user, { maxTokens: 800, session: opts.session });
+  return complete(system, user, { maxTokens: 800, account: opts.account });
 }

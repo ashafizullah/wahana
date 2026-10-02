@@ -31,3 +31,6 @@ src-tauri/gen/schemas
 # personal notes
 notes/
 .vitest/
+
+# local agent taste preferences
+.commandcode/taste/

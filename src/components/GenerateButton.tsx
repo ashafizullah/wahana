@@ -13,12 +13,12 @@ export function GenerateButton({
   kind,
   text,
   onResult,
-  session,
+  account,
 }: {
   kind: ContentKind;
   text: string;
   onResult: (t: string) => void;
-  session?: string;
+  account?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [brief, setBrief] = useState("");
@@ -34,7 +34,7 @@ export function GenerateButton({
     setBusy(true);
     setErr(null);
     try {
-      const out = await generateContent(brief, { kind, language, session, current: text });
+      const out = await generateContent(brief, { kind, language, account, current: text });
       if (out) {
         setUndo(text);
         onResult(out);

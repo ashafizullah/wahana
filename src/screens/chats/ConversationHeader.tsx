@@ -8,7 +8,8 @@ import { exportChat, type ExportFormat } from "@/lib/exportChat";
 import { cn, convKey, displayId, errMsg } from "@/lib/utils";
 import type { MentionResolver } from "@/lib/waMarkdown";
 import { useChatPrefs, type AutoTranslate } from "@/store/chatPrefs";
-import { requireClient, useSettings } from "@/store/settings";
+import { requireClient, useReadReceipts, useSettings } from "@/store/settings";
+import { wahaAccountKey } from "@/lib/account";
 
 const EMPTY_AUTO: AutoTranslate = {};
 
@@ -37,7 +38,8 @@ export function ConversationHeader({
   onSummary: () => void;
   onJumpToDate: (day: string) => Promise<void>;
 }) {
-  const readMode = useSettings((s) => s.readReceipts);
+  const profile = useSettings((s) => s.activeProfile);
+  const readMode = useReadReceipts(wahaAccountKey(profile, session));
   const [datePick, setDatePick] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const [exporting, setExporting] = useState(false);

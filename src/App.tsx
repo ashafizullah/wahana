@@ -27,7 +27,7 @@ import { useBroadcastRunner } from "@/realtime/useBroadcastRunner";
 import { pruneLogs } from "@/store/scheduler";
 import { useAutoLabel } from "@/realtime/useAutoLabel";
 import { useScheduler } from "@/realtime/useScheduler";
-import { totalWaWebUnread, useWaWeb } from "@/store/waWeb";
+import { totalWhatsAppUnread, useWhatsApp } from "@/store/whatsapp";
 import { useAutoReply } from "@/realtime/useAutoReply";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { ConfirmHost } from "@/components/Confirm";
@@ -52,8 +52,8 @@ type Tab = "chats" | "status" | "scheduler" | "broadcast" | "autoreply" | "sessi
 
 export default function App() {
   const { hydrated, hydrate, client, profiles } = useSettings();
-  const waWebHydrated = useWaWeb((s) => s.hydrated);
-  const waWebSessions = useWaWeb((s) => s.sessions);
+  const waHydrated = useWhatsApp((s) => s.hydrated);
+  const waAccounts = useWhatsApp((s) => s.accounts);
   // First run: nothing configured at all. `null` until both stores have loaded so the
   // screen neither flashes for existing users nor is skipped for new ones.
   const [welcome, setWelcome] = useState<boolean | null>(null);
@@ -71,9 +71,8 @@ export default function App() {
   const hydratePolls = usePolls((s) => s.hydrate);
   const hydrateCalls = useCalls((s) => s.hydrate);
   const hydrateLive = useLiveMessages((s) => s.hydrate);
-  const hydrateWaWeb = useWaWeb((s) => s.hydrate);
-  const waWebUnread = useWaWeb((s) => s.unread);
-  const unread = totalUnread(unreadCounts) + totalWaWebUnread(waWebUnread);
+  const hydrateWa = useWhatsApp((s) => s.hydrate);
+  const unread = totalUnread(unreadCounts) + totalWhatsAppUnread(waAccounts);
   useBadge(unread);
   const updater = useUpdater();
   useScheduler();
@@ -94,7 +93,7 @@ export default function App() {
     void hydrateRevoked();
     void hydrateDrafts();
     void hydrateChatPrefs();
-    void hydrateWaWeb();
+    hydrateWa().catch(console.error);
     void hydratePolls();
     void hydrateCalls();
     void hydrateLive();
@@ -111,15 +110,16 @@ export default function App() {
     hydratePolls,
     hydrateCalls,
     hydrateLive,
-    hydrateWaWeb,
+    hydrateWa,
   ]);
 
   useEffect(() => {
-    if (hydrated && waWebHydrated && welcome === null) setWelcome(profiles.length === 0 && waWebSessions.length === 0);
-  }, [hydrated, waWebHydrated, welcome, profiles.length, waWebSessions.length]);
+    if (hydrated && waHydrated && welcome === null) setWelcome(profiles.length === 0 && waAccounts.length === 0);
+  }, [hydrated, waHydrated, welcome, profiles.length, waAccounts.length]);
   useEffect(() => {
-    if (hydrated && !client) setTab("settings");
-  }, [hydrated, client]);
+    // A linked WhatsApp account is enough to chat; only send people with neither to Settings.
+    if (hydrated && waHydrated && !client && waAccounts.length === 0) setTab("settings");
+  }, [hydrated, waHydrated, client, waAccounts.length]);
 
   // Global shortcuts: ⌘/Ctrl+1/2/3 switch tabs, ⌘/Ctrl+K focus chat search, ⌘/Ctrl+, opens settings.
   useEffect(() => {
@@ -168,7 +168,7 @@ export default function App() {
     );
   }
 
-  const nav: { id: Tab; icon: typeof MessageSquare; label: string }[] = [
+  const allNav: { id: Tab; icon: typeof MessageSquare; label: string }[] = [
     { id: "chats", icon: MessageSquare, label: "Chats (⌘1)" },
     { id: "status", icon: CircleDashed, label: "Status (⌘2)" },
     { id: "scheduler", icon: CalendarClock, label: "Scheduler (⌘3)" },
@@ -178,6 +178,8 @@ export default function App() {
     { id: "events", icon: Activity, label: "Events (⌘7)" },
     { id: "settings", icon: SettingsIcon, label: "Settings (⌘8)" },
   ];
+  // Events is the WAHA websocket stream; native accounts have no equivalent.
+  const nav = allNav.filter((n) => n.id !== "events" || !!client);
 
   return (
     <div className="h-full flex">

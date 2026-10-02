@@ -20,8 +20,10 @@ import {
   CircleDashed,
   Paperclip,
 } from "lucide-react";
-import { useSettings } from "@/store/settings";
-import { useChats } from "@/api/queries";
+import { accountParts, useAccountLabel, useAccounts, useActiveAccount } from "@/lib/account";
+import { useAccountChats } from "@/lib/useAccountChats";
+import { AccountSelect } from "@/components/AccountSelect";
+import { openSettings } from "@/components/NotConnected";
 import { Avatar, Button, Input, Label } from "@/components/ui";
 import { cn, displayId, fileToBase64, isChannel, isGroup, errMsg } from "@/lib/utils";
 import { stripWaMarkdown } from "@/lib/waMarkdown";
@@ -39,26 +41,40 @@ import {
   type TargetType,
 } from "@/store/scheduler";
 import { GRACE_SECONDS } from "@/realtime/useScheduler";
-import { SessionSelect } from "@/components/SessionSelect";
-import { NotConnected } from "@/components/NotConnected";
 
 const fmt = (s: number) =>
   new Date(s * 1000).toLocaleString([], { weekday: "short", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
+/** Shown when nothing can send: no WAHA server and no native account. */
+function NoAccounts() {
+  return (
+    <div className="flex-1 grid place-items-center text-neutral-500 text-sm p-6">
+      <div className="flex flex-col items-center gap-3 max-w-md text-center">
+        <CalendarClock size={28} className="text-neutral-400" />
+        <p className="font-medium text-neutral-700 dark:text-neutral-300">No account to send from.</p>
+        <p className="text-xs">Link a WhatsApp account in Sessions, or add a WAHA server in Settings.</p>
+        <Button onClick={openSettings}>Open settings</Button>
+      </div>
+    </div>
+  );
+}
+
 export function SchedulerScreen() {
-  const { client, activeProfile, session } = useSettings();
+  const accounts = useAccounts();
+  const active = useActiveAccount();
   const qc = useQueryClient();
   const [editing, setEditing] = useState<Schedule | "new" | null>(null);
   const [history, setHistory] = useState<Schedule | null>(null);
   const q = useQuery({
-    queryKey: ["schedules", activeProfile],
-    queryFn: () => listSchedules(activeProfile),
-    enabled: !!activeProfile,
+    queryKey: ["schedules"],
+    queryFn: () => listSchedules(),
+    enabled: accounts.length > 0,
     refetchInterval: 30_000,
   });
 
-  if (!client) return <NotConnected />;
+  if (accounts.length === 0) return <NoAccounts />;
+  const defaultAccount = active && accounts.some((a) => a.key === active.key) ? active.key : accounts[0]!.key;
   const list = q.data ?? [];
   const upcoming = list.filter((s) => s.enabled);
   const paused = list.filter((s) => !s.enabled);
@@ -90,8 +106,7 @@ export function SchedulerScreen() {
       </div>
       {editing && (
         <ScheduleForm
-          session={session}
-          profile={activeProfile}
+          defaultAccount={defaultAccount}
           initial={editing === "new" ? null : editing}
           onClose={() => setEditing(null)}
           onSaved={() => {
@@ -125,6 +140,7 @@ function Group({
   onHistory: (s: Schedule) => void;
 }) {
   const qc = useQueryClient();
+  const label = useAccountLabel();
   return (
     <section className="space-y-2">
       <h2 className="text-xs font-semibold uppercase tracking-wide text-neutral-500">{title}</h2>
@@ -147,8 +163,8 @@ function Group({
                 <span className="font-medium truncate">
                   {s.target_type === "status" ? "My status" : s.target_name || displayId(s.target_id ?? "")}
                 </span>
-                <span className="text-[10px] rounded-full bg-wa/15 text-wa-dark dark:text-wa px-1.5 py-0.5 font-mono" title="Session">
-                  {s.session}
+                <span className="text-[10px] rounded-full bg-wa/15 text-wa-dark dark:text-wa px-1.5 py-0.5 font-mono" title="Account">
+                  {label(s.account)}
                 </span>
                 <span className="text-[10px] rounded-full bg-neutral-100 dark:bg-neutral-800 px-1.5 py-0.5 text-neutral-600 dark:text-neutral-300 capitalize">
                   {s.repeat}
@@ -235,20 +251,18 @@ function toLocalInput(unix: number) {
 }
 
 function ScheduleForm({
-  session,
-  profile,
+  defaultAccount,
   initial,
   onClose,
   onSaved,
 }: {
-  session: string;
-  profile: string;
+  defaultAccount: string;
   initial: Schedule | null;
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const [sess, setSess] = useState(initial?.session ?? session);
-  const { data: chats } = useChats(sess);
+  const [account, setAccount] = useState(initial?.account ?? defaultAccount);
+  const chats = useAccountChats(account);
   const [targetType, setTargetType] = useState<TargetType>(initial?.target_type ?? "chat");
   const [targetId, setTargetId] = useState(initial?.target_id ?? "");
   const [targetName, setTargetName] = useState(initial?.target_name ?? "");
@@ -271,7 +285,7 @@ function ScheduleForm({
 
   const candidates = useMemo(() => {
     const term = q.trim().toLowerCase();
-    return (chats ?? [])
+    return chats
       .filter((c) => c.id !== "status@broadcast")
       .filter((c) => !term || (c.name ?? "").toLowerCase().includes(term) || c.id.includes(term))
       .slice(0, 30);
@@ -306,10 +320,12 @@ function ScheduleForm({
       if (repeat === "once" && firstRun <= now) throw new Error("That time has already passed — pick a time in the future.");
       if (repeat !== "once" && firstRun <= now)
         firstRun = nextOccurrence({ next_run: whenUnix, repeat, weekdays: weekdays.join(",") }, now) ?? whenUnix;
+      const parts = accountParts(account);
       await upsertSchedule({
         id: initial?.id ?? Math.random().toString(36).slice(2, 12),
-        profile,
-        session: sess,
+        account,
+        profile: parts?.kind === "waha" ? (parts.profile ?? "") : "",
+        session: parts?.kind === "waha" ? (parts.session ?? "") : "",
         target_type: targetType,
         target_id: targetType === "status" ? null : targetId,
         target_name: targetType === "status" ? null : targetName || null,
@@ -345,11 +361,11 @@ function ScheduleForm({
         </div>
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           <div>
-            <Label>Send from (session)</Label>
-            <SessionSelect
-              value={sess}
+            <Label>Send from (account)</Label>
+            <AccountSelect
+              value={account}
               onChange={(v) => {
-                setSess(v);
+                setAccount(v);
                 setTargetId("");
                 setTargetName("");
               }}
@@ -402,7 +418,7 @@ function ScheduleForm({
                           }}
                           className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-neutral-100 dark:hover:bg-neutral-800"
                         >
-                          <Avatar src={c.picture} name={c.name || displayId(c.id)} size={26} />
+                          <Avatar name={c.name || displayId(c.id)} size={26} />
                           <span className="flex-1 truncate">{c.name || displayId(c.id)}</span>
                           {isChannel(c.id) ? (
                             <Megaphone size={12} className="text-neutral-400" />

@@ -15,10 +15,11 @@ import { cn, convKey, displayId, formatDateDivider, isGroup } from "@/lib/utils"
 import { useNameResolver } from "@/realtime/useNames";
 import { presenceLabel, usePresence } from "@/realtime/usePresence";
 import { useChatPrefs } from "@/store/chatPrefs";
-import { requireClient, useSettings } from "@/store/settings";
+import { readReceiptsFor, requireClient, useSettings } from "@/store/settings";
+import { wahaAccountKey } from "@/lib/account";
 import { chatKey, useUnread } from "@/store/unread";
-import { useWaWeb } from "@/store/waWeb";
-import { WhatsAppWebScreen } from "@/screens/WhatsAppWebScreen";
+import { useWhatsApp } from "@/store/whatsapp";
+import { WhatsAppScreen } from "@/screens/WhatsAppScreen";
 import { ChatList, SessionPicker } from "@/screens/chats/ChatList";
 import { Composer } from "@/screens/chats/Composer";
 import { ConversationHeader } from "@/screens/chats/ConversationHeader";
@@ -34,21 +35,22 @@ export function ChatScreen() {
   // A chat id belongs to one session: switching servers/sessions must drop the selection.
   useEffect(() => setSelected(null), [session]);
   const [listWidth, setListWidth] = usePaneWidth("chatList", 320, 240, 560);
-  const waWebActive = useWaWeb((s) => s.active);
-  const waWebSessions = useWaWeb((s) => s.sessions);
-  const addWaWeb = useWaWeb((s) => s.add);
+  const waActive = useWhatsApp((s) => s.active);
+  const waAccounts = useWhatsApp((s) => s.accounts);
+  const addWa = useWhatsApp((s) => s.add);
 
   const sessionInfo = sessions?.find((s) => s.name === session);
-  const waWeb = waWebSessions.find((s) => s.id === waWebActive);
+  // Without a WAHA server there is nothing else to show, so fall back to the first account.
+  const waAccount = waAccounts.find((a) => a.id === waActive) ?? (client ? undefined : waAccounts[0]);
 
-  if (waWeb) {
-    return <WhatsAppWebScreen header={<SessionPicker sessions={sessions ?? []} />} />;
+  if (waAccount) {
+    return <WhatsAppScreen account={waAccount} header={<SessionPicker sessions={sessions ?? []} />} />;
   }
   if (!client) {
     return (
       <NotConnected>
-        <Button variant="secondary" onClick={() => addWaWeb()}>
-          Use WhatsApp Web instead
+        <Button variant="secondary" onClick={() => void addWa().catch(console.error)}>
+          Link a WhatsApp account instead
         </Button>
       </NotConnected>
     );
@@ -149,7 +151,7 @@ function Conversation({ session, chatId, onOpenChat }: { session: string; chatId
   }, [ordered]);
   useEffect(() => {
     markSeen(session, chatId);
-    if (useSettings.getState().readReceipts === "always")
+    if (readReceiptsFor(wahaAccountKey(useSettings.getState().activeProfile, session)) === "always")
       requireClient()
         .sendSeen(session, chatId)
         .catch(() => {});

@@ -1,130 +1,112 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { confirm } from "@/components/Confirm";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  CheckCheck,
   ChevronLeft,
   ChevronRight,
-  Loader2,
-  Plus,
-  Trash2,
-  X,
-  Type,
   Image as ImageIcon,
-  RefreshCw,
+  Loader2,
   Pause,
   Play,
-  CheckCheck,
+  Plus,
+  RefreshCw,
   Search,
+  Trash2,
+  Type,
+  X,
 } from "lucide-react";
-import { useStatusSeen } from "@/store/statusSeen";
-import { requireClient, useReadReceipts, useSettings } from "@/store/settings";
-import { wahaAccountKey } from "@/lib/account";
-import { useWhatsApp } from "@/store/whatsapp";
-import { NativeStatusScreen } from "@/screens/whatsapp/NativeStatusScreen";
-import { useNameResolver } from "@/realtime/useNames";
-import { usePushNames } from "@/store/pushNames";
-import { loadMessageMedia } from "@/lib/mediaCache";
-import { WaMarkdown } from "@/lib/waMarkdown";
 import { Avatar, Button, Input } from "@/components/ui";
 import { GenerateButton } from "@/components/GenerateButton";
-import { cn, displayId, fileToBase64, formatTime, errMsg } from "@/lib/utils";
-import type { WAMessage } from "@/api/types";
-import { NotConnected } from "@/components/NotConnected";
+import { nativeAccountKey } from "@/lib/account";
+import { cn, errMsg, formatTime } from "@/lib/utils";
+import { WaMarkdown } from "@/lib/waMarkdown";
+import { nativeWa, onNativeStatus, type NativeAccount, type NativeStatus } from "@/lib/nativeWa";
+import { readReceiptsFor } from "@/store/settings";
+import { useStatusSeen } from "@/store/statusSeen";
+import { nativeMediaBlob } from "@/screens/whatsapp/NativeMediaView";
+import { usePicture } from "@/screens/whatsapp/usePicture";
 
-const STATUS_CHAT = "status@broadcast";
+/**
+ * Status (stories) for a native WhatsApp account: the last 24 hours grouped by poster,
+ * a viewer that marks them seen, and posting (text or photo/video) to your saved contacts.
+ * Mirrors `StatusScreen` (WAHA) but through `nativeWa`.
+ */
 
 interface Story {
-  m: WAMessage;
+  m: NativeStatus;
   kind: "image" | "video" | "text";
   thumb: string | null;
   text: string;
-  bg?: string;
 }
 
-function toStory(m: WAMessage): Story {
-  const msg =
-    (
-      m._data as
-        { Message?: Record<string, { JPEGThumbnail?: string; caption?: string; text?: string; backgroundArgb?: number }> } | undefined
-    )?.Message ?? {};
-  const k = Object.keys(msg).find((x) => x !== "messageContextInfo") ?? "";
-  const inner = msg[k] ?? {};
-  const kind = k === "videoMessage" ? "video" : k === "imageMessage" ? "image" : "text";
-  const argb = inner.backgroundArgb;
-  const bg = argb ? `#${(argb & 0xffffff).toString(16).padStart(6, "0")}` : undefined;
-  return {
-    m,
-    kind,
-    thumb: inner.JPEGThumbnail ? `data:image/jpeg;base64,${inner.JPEGThumbnail}` : null,
-    text: m.body || inner.caption || inner.text || "",
-    bg,
-  };
+function toStory(m: NativeStatus): Story {
+  const kind = m.media ? (m.media.kind === "video" ? "video" : "image") : "text";
+  return { m, kind, thumb: m.media?.thumbnail ?? null, text: m.body };
 }
 
-/** Status (stories): the native account's screen when one is picked, else the WAHA sessions'. */
-export function StatusScreen() {
-  const { client } = useSettings();
-  const waActive = useWhatsApp((s) => s.active);
-  const waAccounts = useWhatsApp((s) => s.accounts);
-  const waAccount = waAccounts.find((a) => a.id === waActive) ?? (client ? undefined : waAccounts[0]);
-  if (waAccount) return <NativeStatusScreen account={waAccount} />;
-  return <WahaStatusScreen />;
-}
-
-/** Status (stories) from contacts in the last 24h, plus posting your own, through WAHA. */
-function WahaStatusScreen() {
-  const { session, client } = useSettings();
-  const qc = useQueryClient();
-  const resolveName = useNameResolver(session, STATUS_CHAT);
-  const [selected, setSelected] = useState<string | null>(null);
-  const [compose, setCompose] = useState(false);
+export function NativeStatusScreen({ account }: { account: NativeAccount }) {
+  const connected = account.status === "working";
   const seen = useStatusSeen((s) => s.seen);
   const hydrateSeen = useStatusSeen((s) => s.hydrate);
+  const [list, setList] = useState<NativeStatus[]>([]);
+  const [tick, setTick] = useState(0);
+  const [selected, setSelected] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [compose, setCompose] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
   useEffect(() => {
     void hydrateSeen();
   }, [hydrateSeen]);
 
-  const q = useQuery({
-    queryKey: ["status", session],
-    queryFn: async () => {
-      const list = await requireClient().statusMessages(session);
-      usePushNames.getState().learn(list);
-      return list;
-    },
-    enabled: !!client && !!session,
-    refetchInterval: 60_000,
-  });
+  useEffect(() => {
+    let cancelled = false;
+    const load = () =>
+      nativeWa
+        .statuses(account.id)
+        .then((s) => !cancelled && setList(s))
+        .catch((e) => !cancelled && setError(errMsg(e)));
+    void load();
+    const timer = setInterval(load, 60_000);
+    const un = onNativeStatus((id) => id === account.id && setTick((t) => t + 1));
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+      void un.then((f) => f());
+    };
+  }, [account.id, tick]);
 
   const groups = useMemo(() => {
-    const now = Date.now() / 1000;
+    const now = Date.now();
     const by = new Map<string, Story[]>();
-    for (const m of q.data ?? []) {
-      if (now - m.timestamp > 86_400) continue;
-      const key = m.fromMe ? "me" : m.participant || m.from;
+    for (const m of list) {
+      if (now - m.timestamp > 86_400_000) continue;
+      const key = m.fromMe || !m.sender ? "me" : m.sender;
       (by.get(key) ?? by.set(key, []).get(key)!).push(toStory(m));
     }
     const term = search.trim().toLowerCase().replace(/^\+/, "");
     return [...by.entries()]
       .map(([id, stories]) => {
         const sorted = stories.sort((a, b) => a.m.timestamp - b.m.timestamp);
-        const name = id === "me" ? "My status" : (resolveName(id) ?? displayId(id));
+        const last = sorted[sorted.length - 1]!;
+        const name = id === "me" ? "My status" : last.m.senderName || displayId(id);
         const unseen = id === "me" ? 0 : sorted.filter((st) => !seen[st.m.id]).length;
-        return { id, stories: sorted, name, unseen, latest: sorted[sorted.length - 1]!.m.timestamp };
+        return { id, stories: sorted, name, unseen, latest: last.m.timestamp };
       })
       .filter((g) => !term || g.name.toLowerCase().includes(term) || g.id.replace(/\D/g, "").includes(term.replace(/\D/g, "") || "\u0000"))
       .sort((a, b) => {
         if (a.id === "me") return -1;
         if (b.id === "me") return 1;
-        // Contacts with unseen updates first, fully-viewed ones sink to the bottom; newest first within each group.
         if (!!a.unseen !== !!b.unseen) return a.unseen ? -1 : 1;
         return b.latest - a.latest;
       });
-  }, [q.data, seen, resolveName, search]);
+  }, [list, seen, search]);
 
   const current = groups.find((g) => g.id === selected) ?? null;
 
-  if (!client) return <NotConnected />;
+  if (!connected) {
+    return <div className="flex-1 grid place-items-center text-sm text-neutral-500">Connect this account to see status.</div>;
+  }
 
   return (
     <>
@@ -135,13 +117,13 @@ function WahaStatusScreen() {
               Status{" "}
               <span
                 className="text-[10px] rounded-full bg-wa/15 text-wa-dark dark:text-wa px-1.5 py-0.5 font-mono font-normal"
-                title="Session — switch it in Chats"
+                title="Native account"
               >
-                {session}
+                {account.name}
               </span>
             </span>
-            <Button size="sm" variant="ghost" onClick={() => q.refetch()} title="Refresh">
-              <RefreshCw size={14} className={cn(q.isFetching && "animate-spin")} />
+            <Button size="sm" variant="ghost" onClick={() => setTick((t) => t + 1)} title="Refresh">
+              <RefreshCw size={14} />
             </Button>
             <Button size="sm" onClick={() => setCompose(true)} title="Post a status">
               <Plus size={14} />
@@ -159,13 +141,11 @@ function WahaStatusScreen() {
           </div>
         </div>
         <div className="flex-1 overflow-y-auto">
-          {q.isLoading && <Loader2 className="animate-spin text-neutral-400 m-4" />}
-          {q.error && <div className="p-4 text-xs text-red-600 selectable">{(q.error as Error).message}</div>}
-          {!q.isLoading && groups.length === 0 && <p className="p-4 text-sm text-neutral-500">No status updates in the last 24 hours.</p>}
+          {error && <div className="p-4 text-xs text-red-600 selectable">{error}</div>}
+          {groups.length === 0 && !error && <p className="p-4 text-sm text-neutral-500">No status updates in the last 24 hours.</p>}
           {groups.map((g, i) => {
             const last = g.stories[g.stories.length - 1]!;
-            const { name, unseen } = g;
-            const firstViewed = g.id !== "me" && !unseen && (i === 0 || groups[i - 1]!.id === "me" || !!groups[i - 1]!.unseen);
+            const firstViewed = g.id !== "me" && !g.unseen && (i === 0 || groups[i - 1]!.id === "me" || !!groups[i - 1]!.unseen);
             return (
               <div key={g.id}>
                 {firstViewed && (
@@ -178,41 +158,44 @@ function WahaStatusScreen() {
                     selected === g.id && "bg-neutral-100 dark:bg-neutral-800",
                   )}
                 >
-                  <div className="relative">
-                    <div className={cn("rounded-full p-[2px] ring-2", unseen ? "ring-wa" : "ring-neutral-300 dark:ring-neutral-600")}>
-                      <Avatar src={last.thumb} name={name} size={40} />
-                    </div>
-                  </div>
+                  <GroupAvatar
+                    accountId={account.id}
+                    id={g.id}
+                    name={g.name}
+                    thumb={last.thumb}
+                    unseen={!!g.unseen}
+                    connected={connected}
+                  />
                   <div className="min-w-0 flex-1">
-                    <div className="font-medium truncate">{name}</div>
-                    <div className={cn("text-xs", unseen ? "text-neutral-800 dark:text-neutral-100 font-medium" : "text-neutral-500")}>
-                      {unseen ? `${unseen} new · ` : ""}
-                      {g.stories.length} update{g.stories.length === 1 ? "" : "s"} · {formatTime(last.m.timestamp)}
+                    <div className="font-medium truncate">{g.name}</div>
+                    <div className={cn("text-xs", g.unseen ? "text-neutral-800 dark:text-neutral-100 font-medium" : "text-neutral-500")}>
+                      {g.unseen ? `${g.unseen} new · ` : ""}
+                      {g.stories.length} update{g.stories.length === 1 ? "" : "s"} · {formatTime(Math.floor(last.m.timestamp / 1000))}
                     </div>
                   </div>
                 </button>
               </div>
             );
           })}
-          {!q.isLoading && groups.length === 0 && search && <p className="p-4 text-sm text-neutral-500">No status matches “{search}”.</p>}
         </div>
       </div>
       {current ? (
-        <StoryViewer
+        <NativeStoryViewer
           key={current.id}
-          session={session}
+          accountId={account.id}
           name={current.name}
           stories={current.stories}
           mine={current.id === "me"}
-          onDeleted={() => qc.invalidateQueries({ queryKey: ["status", session] })}
+          connected={connected}
+          onDeleted={() => setTick((t) => t + 1)}
           onNextContact={(() => {
-            const i = groups.findIndex((g) => g.id === current.id);
-            const next = groups[i + 1];
+            const idx = groups.findIndex((g) => g.id === current.id);
+            const next = groups[idx + 1];
             return next ? () => setSelected(next.id) : undefined;
           })()}
           onPrevContact={(() => {
-            const i = groups.findIndex((g) => g.id === current.id);
-            const prev = groups[i - 1];
+            const idx = groups.findIndex((g) => g.id === current.id);
+            const prev = groups[idx - 1];
             return prev ? () => setSelected(prev.id) : undefined;
           })()}
         />
@@ -220,12 +203,12 @@ function WahaStatusScreen() {
         <div className="flex-1 grid place-items-center text-neutral-500 text-sm">Select a contact to view their status</div>
       )}
       {compose && (
-        <ComposeStatus
-          session={session}
+        <NativeComposeStatus
+          accountId={account.id}
           onClose={() => setCompose(false)}
           onPosted={() => {
             setCompose(false);
-            setTimeout(() => q.refetch(), 1500);
+            setTimeout(() => setTick((t) => t + 1), 1500);
           }}
         />
       )}
@@ -233,33 +216,56 @@ function WahaStatusScreen() {
   );
 }
 
-const IMAGE_SECONDS = 6;
+/** The poster's ringed avatar, lazily fetching the profile picture. */
+function GroupAvatar({
+  accountId,
+  id,
+  name,
+  thumb,
+  unseen,
+  connected,
+}: {
+  accountId: string;
+  id: string;
+  name: string;
+  thumb: string | null;
+  unseen: boolean;
+  connected: boolean;
+}) {
+  const picture = usePicture(accountId, id, connected && id !== "me");
+  return (
+    <div className={cn("rounded-full p-[2px] ring-2", unseen ? "ring-wa" : "ring-neutral-300 dark:ring-neutral-600")}>
+      <Avatar src={picture ?? thumb ?? undefined} name={name} size={40} />
+    </div>
+  );
+}
 
-function StoryViewer({
-  session,
+const IMAGE_SECONDS = 6;
+const displayId = (id: string) => (id ? `+${id.split("@")[0]}` : "");
+
+function NativeStoryViewer({
+  accountId,
   name,
   stories,
   mine,
+  connected,
   onDeleted,
   onNextContact,
   onPrevContact,
 }: {
-  session: string;
+  accountId: string;
   name: string;
   stories: Story[];
   mine: boolean;
+  connected: boolean;
   onDeleted: () => void;
-  /** Called when the last story of this contact finishes / is skipped past; undefined = last contact. */
   onNextContact?: () => void;
   onPrevContact?: () => void;
 }) {
-  const client = useSettings((s) => s.client);
   const seen = useStatusSeen((s) => s.seen);
   const mark = useStatusSeen((s) => s.mark);
-  const profile = useSettings((s) => s.activeProfile);
-  const readMode = useReadReceipts(wahaAccountKey(profile, session));
-  const [reported, setReported] = useState<Record<string, boolean>>({}); // story id → receipt sent (manual mode)
-  // Start at the oldest unseen update; if everything was seen, replay from the beginning.
+  const readMode = readReceiptsFor(nativeAccountKey(accountId));
+  const [reported, setReported] = useState<Record<string, boolean>>({});
   const [i, setI] = useState(() => {
     const idx = stories.findIndex((st) => !seen[st.m.id]);
     return idx === -1 ? 0 : idx;
@@ -269,19 +275,19 @@ function StoryViewer({
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [paused, setPaused] = useState(false);
-  const [progress, setProgress] = useState(0); // 0..1 for the current item
+  const [progress, setProgress] = useState(0);
   const videoRef = useRef<HTMLVideoElement>(null);
   const story = stories[Math.min(i, stories.length - 1)]!;
 
   const reportView = (st: Story) => {
-    const participant = st.m.participant || st.m.from;
-    return requireClient()
-      .sendSeen(session, STATUS_CHAT, [st.m.id], participant)
+    if (st.m.fromMe || !st.m.sender) return Promise.resolve();
+    return nativeWa
+      .statusViewed(accountId, st.m.sender, st.m.id)
       .then(() => setReported((r) => ({ ...r, [st.m.id]: true })))
       .catch(() => {});
   };
 
-  // Mark as viewed locally; tell WhatsApp (the sender sees you in "viewed by") unless the tweak says manual/never.
+  // Mark seen locally; tell WhatsApp (the poster sees you in "viewed by") unless the tweak says manual/never.
   useEffect(() => {
     if (mine || seen[story.m.id]) return;
     mark(story.m.id);
@@ -289,7 +295,6 @@ function StoryViewer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [story.m.id]);
 
-  // Auto-advance: images/text after a fixed time, videos when they end.
   const ready = story.kind === "text" || !!blob;
   useEffect(() => {
     const v = videoRef.current;
@@ -315,7 +320,7 @@ function StoryViewer({
   }, [ready, paused, story.m.id]);
 
   useEffect(() => {
-    if (!client || story.kind === "text") {
+    if (story.kind === "text") {
       setBlob(null);
       return;
     }
@@ -324,10 +329,10 @@ function StoryViewer({
     setLoading(true);
     setErr(null);
     setBlob(null);
-    loadMessageMedia(client, session, STATUS_CHAT, story.m)
-      .then(({ blob }) => {
+    nativeMediaBlob(accountId, story.m)
+      .then((b) => {
         if (!alive) return;
-        obj = URL.createObjectURL(blob);
+        obj = URL.createObjectURL(b);
         setBlob(obj);
       })
       .catch((e) => alive && setErr(errMsg(e)))
@@ -336,7 +341,7 @@ function StoryViewer({
       alive = false;
       if (obj) URL.revokeObjectURL(obj);
     };
-  }, [client, session, story]);
+  }, [accountId, story, connected]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -386,13 +391,13 @@ function StoryViewer({
         <div className="min-w-0 flex-1">
           <div className="font-medium truncate">{name}</div>
           <div className="text-xs text-white/60">
-            {new Date(story.m.timestamp * 1000).toLocaleString([], { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}{" "}
-            · {i + 1}/{stories.length}
+            {new Date(story.m.timestamp).toLocaleString([], { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })} ·{" "}
+            {i + 1}/{stories.length}
           </div>
         </div>
         {!mine && readMode === "manual" && (
           <button
-            onClick={() => reportView(story)}
+            onClick={() => void reportView(story)}
             disabled={!!reported[story.m.id]}
             className={cn(
               "flex items-center gap-1 rounded-full px-2.5 py-1 text-xs",
@@ -415,7 +420,7 @@ function StoryViewer({
               if (!(await confirm({ title: "Delete this status update?", danger: true, confirmLabel: "Confirm" }))) return;
               setBusy(true);
               try {
-                await requireClient().deleteStatus(session, story.m.id.split("_")[2] ?? story.m.id);
+                await nativeWa.deleteStatus(accountId, story.m.id);
                 onDeleted();
               } catch (e) {
                 setErr(errMsg(e));
@@ -454,10 +459,7 @@ function StoryViewer({
           <ChevronRight />
         </button>
         {story.kind === "text" ? (
-          <div
-            className="h-full max-h-full aspect-[9/16] max-w-full rounded-2xl flex items-center justify-center p-8 text-center text-2xl font-medium"
-            style={{ background: story.bg ?? "#128c7e" }}
-          >
+          <div className="h-full max-h-full aspect-[9/16] max-w-full rounded-2xl flex items-center justify-center p-8 text-center text-2xl font-medium bg-wa-teal">
             <WaMarkdown text={story.text} />
           </div>
         ) : loading ? (
@@ -493,8 +495,24 @@ function StoryViewer({
 }
 
 const COLORS = ["#128c7e", "#075e54", "#25d366", "#ff5722", "#e91e63", "#9c27b0", "#3f51b5", "#2196f3", "#607d8b", "#000000"];
+const argb = (hex: string) => (0xff000000 | parseInt(hex.slice(1), 16)) >>> 0;
 
-function ComposeStatus({ session, onClose, onPosted }: { session: string; onClose: () => void; onPosted: () => void }) {
+/** A small centered JPEG thumbnail (base64) for a photo, or undefined for a video. */
+async function photoThumbnail(file: File): Promise<string | undefined> {
+  if (!file.type.startsWith("image/")) return undefined;
+  try {
+    const bitmap = await createImageBitmap(file);
+    const side = Math.max(bitmap.width, bitmap.height);
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = side;
+    canvas.getContext("2d")!.drawImage(bitmap, (side - bitmap.width) / 2, (side - bitmap.height) / 2);
+    return canvas.toDataURL("image/jpeg", 0.7).split(",")[1];
+  } catch {
+    return undefined;
+  }
+}
+
+function NativeComposeStatus({ accountId, onClose, onPosted }: { accountId: string; onClose: () => void; onPosted: () => void }) {
   const [mode, setMode] = useState<"text" | "media">("text");
   const [text, setText] = useState("");
   const [bg, setBg] = useState(COLORS[0]!);
@@ -515,13 +533,8 @@ function ComposeStatus({ session, onClose, onPosted }: { session: string; onClos
     setBusy(true);
     setErr(null);
     try {
-      const c = requireClient();
-      if (mode === "text") await c.postTextStatus(session, text.trim(), bg);
-      else if (file) {
-        const payload = { mimetype: file.type, filename: file.name, data: await fileToBase64(file) };
-        if (file.type.startsWith("video/")) await c.postVideoStatus(session, payload, caption.trim() || undefined);
-        else await c.postImageStatus(session, payload, caption.trim() || undefined);
-      }
+      if (mode === "text") await nativeWa.postStatusText(accountId, text.trim(), argb(bg));
+      else if (file) await nativeWa.postStatusMedia(accountId, file, caption.trim(), await photoThumbnail(file));
       onPosted();
     } catch (e) {
       setErr(errMsg(e));
@@ -535,7 +548,7 @@ function ComposeStatus({ session, onClose, onPosted }: { session: string; onClos
       <div className="w-[420px] rounded-xl bg-white dark:bg-neutral-900 shadow-2xl">
         <div className="flex items-center gap-2 p-3 border-b border-neutral-200 dark:border-neutral-800">
           <span className="font-semibold flex-1">
-            New status <span className="text-xs font-normal text-neutral-500">· posted from {session}</span>
+            New status <span className="text-xs font-normal text-neutral-500">· posted from this account</span>
           </span>
           <button onClick={onClose}>
             <X size={16} />
@@ -563,12 +576,7 @@ function ComposeStatus({ session, onClose, onPosted }: { session: string; onClos
                 />
               </div>
               <div className="flex gap-1.5 flex-wrap items-center">
-                <GenerateButton
-                  kind="status"
-                  text={text}
-                  onResult={setText}
-                  account={wahaAccountKey(useSettings.getState().activeProfile, session)}
-                />
+                <GenerateButton kind="status" text={text} onResult={setText} account={nativeAccountKey(accountId)} />
                 {COLORS.map((c) => (
                   <button
                     key={c}

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSettings } from "@/store/settings";
+import { wahaAccountKey } from "@/lib/account";
 import type { WahaEvent, WAMessage, MessageAckPayload, PresenceInfo, SessionStatusPayload } from "@/api/types";
 import { notifyIncoming } from "@/realtime/notify";
 import { qk } from "@/api/queries";
@@ -44,7 +45,8 @@ const EVENTS = [
  */
 /** Fired on `window` as "wahana:incoming" for every message someone else sent (auto-reply listens). */
 export interface IncomingMessage {
-  session: string;
+  /** `waha:<profileId>:<session>` or `native:<accountId>`. */
+  account: string;
   chatId: string;
   message: WAMessage;
 }
@@ -190,7 +192,9 @@ export function useWahaSocket() {
           }
           if (!m.fromMe && !seenBefore)
             window.dispatchEvent(
-              new CustomEvent<IncomingMessage>("wahana:incoming", { detail: { session: e.session, chatId, message: m } }),
+              new CustomEvent<IncomingMessage>("wahana:incoming", {
+                detail: { account: wahaAccountKey(useSettings.getState().activeProfile, e.session), chatId, message: m },
+              }),
             );
           break;
         }

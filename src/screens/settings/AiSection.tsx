@@ -1,9 +1,9 @@
 import { Toggle } from "./shared";
 import { useEffect, useState } from "react";
 import { CheckCircle2, ChevronDown, Loader2, XCircle } from "lucide-react";
-import { DEFAULT_MODELS, LANGUAGES, personaKey, testAi } from "@/lib/ai";
+import { DEFAULT_MODELS, LANGUAGES, testAi } from "@/lib/ai";
 import { useSettings } from "@/store/settings";
-import { useSessions } from "@/api/queries";
+import { useAccounts } from "@/lib/account";
 import { Button, Input, Label } from "@/components/ui";
 import { errMsg } from "@/lib/utils";
 
@@ -149,7 +149,7 @@ export function AiSection() {
           className="w-full rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-2 text-sm outline-none focus:border-wa-dark resize-y"
         />
       </div>
-      <PersonaPerSession />
+      <PersonaPerAccount />
       <Toggle
         label="Label new chats automatically"
         hint="When a direct chat that has no label yet receives a message, ask the AI which of your existing labels fit (lead, complaint, supplier…) and assign them. One request per new chat; never creates labels."
@@ -214,43 +214,37 @@ export function AiSection() {
   );
 }
 
-/** Persona overrides per WAHA session, for when one app serves several businesses / numbers. Saved on blur. */
-function PersonaPerSession() {
-  const { data: sessions } = useSessions();
-  const profile = useSettings((s) => s.activeProfile);
-  const map = useSettings((s) => s.aiPersonaBySession);
+/** Persona overrides per account (WAHA session or native number). Saved on blur. */
+function PersonaPerAccount() {
+  const accounts = useAccounts();
+  const map = useSettings((s) => s.aiPersonaByAccount);
   const save = useSettings((s) => s.save);
   const [open, setOpen] = useState(false);
-  const prefix = `${profile}:`;
-  const stored = Object.keys(map)
-    .filter((k) => k.startsWith(prefix) && map[k]?.trim())
-    .map((k) => k.slice(prefix.length));
-  const names = [...new Set([...(sessions ?? []).map((x) => x.name), ...stored])];
-  if (names.length < 2 && stored.length === 0) return null;
-  const set = (name: string, text: string) => {
+  const overridden = Object.values(map).filter((v) => v?.trim()).length;
+  if (accounts.length < 2 && overridden === 0) return null;
+  const set = (key: string, text: string) => {
     const next = { ...map };
-    if (text.trim()) next[personaKey(profile, name)] = text;
-    else delete next[personaKey(profile, name)];
-    void save({ aiPersonaBySession: next });
+    if (text.trim()) next[key] = text;
+    else delete next[key];
+    void save({ aiPersonaByAccount: next });
   };
-  const overridden = stored.length;
   return (
     <div className="rounded-lg border border-neutral-200 dark:border-neutral-800">
       <button className="w-full flex items-center gap-2 px-3 py-2 text-sm" onClick={() => setOpen((o) => !o)}>
         <ChevronDown size={14} className={open ? "" : "-rotate-90"} />
-        <span className="font-medium">Persona per session</span>
+        <span className="font-medium">Persona per account</span>
         <span className="text-xs text-neutral-500">
-          {overridden ? `${overridden} override${overridden > 1 ? "s" : ""}` : "none — every session uses the persona above"}
+          {overridden ? `${overridden} override${overridden > 1 ? "s" : ""}` : "none — every account uses the persona above"}
         </span>
       </button>
       {open && (
         <div className="px-3 pb-3 space-y-3">
           <p className="text-[11px] text-neutral-500">
-            Running several businesses from one app? Give each session its own "who I am". Empty = use the default persona. Applies to
-            auto-reply, smart replies, the writing assistant and summaries for chats on that session.
+            Running several businesses from one app? Give each number its own "who I am". Empty = use the default persona. Applies to
+            auto-reply, smart replies, the writing assistant and summaries for chats on that account.
           </p>
-          {names.map((n) => (
-            <PersonaField key={n} name={n} value={map[personaKey(profile, n)] ?? ""} onSave={(t) => set(n, t)} />
+          {accounts.map((a) => (
+            <PersonaField key={a.key} name={a.label} value={map[a.key] ?? ""} onSave={(t) => set(a.key, t)} />
           ))}
         </div>
       )}

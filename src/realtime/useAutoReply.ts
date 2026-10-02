@@ -6,6 +6,9 @@ import { useChatPrefs } from "@/store/chatPrefs";
 import { activeRules, lastReplyAt, logReply, repliesSince, repliesToday, ruleMatches, type AutoReplyRule } from "@/store/autoReply";
 import { expandTemplate } from "@/store/quickReplies";
 import { aiAutoReply } from "@/lib/autoReplyAi";
+import { accountParts, useAccounts } from "@/lib/account";
+import { markSeenOn, sendTextOn } from "@/lib/send";
+import { nativeWa } from "@/lib/nativeWa";
 import { qk } from "@/api/queries";
 import { displayId, isGroup, errMsg, convKey } from "@/lib/utils";
 import type { WAMessage } from "@/api/types";
@@ -22,43 +25,97 @@ const MAX_REPLIES_WINDOW_S = 10 * 60;
 const MANUAL_QUIET_S = 15 * 60;
 
 /**
- * Answers incoming messages according to the auto-reply rules of the active
- * profile: first enabled rule whose scope, time window and pattern match wins,
+ * Answers incoming messages according to the rules of the account the message arrived on
+ * (WAHA or native): first enabled rule whose scope, time window and pattern match wins,
  * subject to a per-chat cooldown. Runs while the app is alive (tray is fine).
  */
 export function useAutoReply() {
-  const client = useSettings((s) => s.client);
+  const accounts = useAccounts();
   const qc = useQueryClient();
-  const inflight = useRef(new Set<string>()); // chat ids currently being answered
+  const inflight = useRef(new Set<string>()); // "account:chat" currently being answered
+  const handled = useRef(new Set<string>()); // "account:messageId" already considered
   const dailyLimitWarned = useRef(false);
+  const hasAccounts = accounts.length > 0;
 
   useEffect(() => {
-    if (!client) return;
+    if (!hasAccounts) return;
     const onIncoming = (ev: Event) => {
-      const { session, chatId, message } = (ev as CustomEvent<IncomingMessage>).detail;
-      void handle(session, chatId, message);
+      const { account, chatId, message } = (ev as CustomEvent<IncomingMessage>).detail;
+      void handle(account, chatId, message);
     };
-    const handle = async (session: string, chatId: string, m: WAMessage) => {
+
+    const recentMessages = async (account: string, chatId: string, limit: number): Promise<WAMessage[]> => {
+      const p = accountParts(account);
+      if (p?.kind === "native" && p.id) {
+        const list = await nativeWa.messages(p.id, chatId, limit).catch(() => []);
+        return list.map((m) => ({
+          id: m.id,
+          timestamp: Math.floor(m.timestamp / 1000),
+          fromMe: m.fromMe,
+          from: m.chatId,
+          body: m.body,
+          hasMedia: !!m.media,
+        })) as unknown as WAMessage[];
+      }
+      if (!p?.session) return [];
+      const cached = qc.getQueryData<WAMessage[]>(qk.messages(p.session, chatId));
+      if (cached) return cached;
+      const c = useSettings.getState().client;
+      if (!c) return [];
+      return c.messages(p.session, chatId, { limit, downloadMedia: false }).catch(() => []);
+    };
+
+    /** The user's own last message in this chat is newer than MANUAL_QUIET_S. */
+    const userRepliedRecently = (recent: WAMessage[], m: WAMessage) => {
+      const mine = recent.filter((x) => x.fromMe && x.id !== m.id).reduce((t, x) => Math.max(t, x.timestamp), 0);
+      return mine > 0 && m.timestamp - mine < MANUAL_QUIET_S;
+    };
+
+    const chatNameFor = (m: WAMessage, chatId: string) => {
+      const push = (m._data as { Info?: { PushName?: string } } | undefined)?.Info?.PushName;
+      return (!isGroup(chatId) && push) || displayId(chatId);
+    };
+
+    const templateReply = (rule: AutoReplyRule, chatId: string, chatName: string) =>
+      expandTemplate(rule.text ?? "", {
+        name: chatName,
+        phone: /@(c\.us|s\.whatsapp\.net)$/.test(chatId) ? `+${chatId.split("@")[0]}` : "",
+      }).trim();
+
+    const aiReply = async (rule: AutoReplyRule, account: string, chatId: string, chatName: string, m: WAMessage, recent: WAMessage[]) => {
+      // Always include the trigger message.
+      const messages = [...recent.filter((x) => x.id !== m.id), m].sort((a, b) => a.timestamp - b.timestamp).slice(-rule.ai_context);
+      const session = accountParts(account)?.session;
+      const language = session ? useChatPrefs.getState().autoTranslate[convKey(session, chatId)]?.out : undefined;
+      return aiAutoReply({ instructions: rule.ai_instructions, account, chatName, isGroup: isGroup(chatId), messages, language });
+    };
+
+    const handle = async (account: string, chatId: string, m: WAMessage) => {
       const st = useSettings.getState();
-      if (st.autoReplyPaused || !st.client) return;
+      if (st.autoReplyPaused) return;
       if (Date.now() / 1000 - m.timestamp > MAX_AGE_S) return;
-      const key = convKey(session, chatId);
+      // A redelivered message (offline drain, reconnect) must not be answered twice.
+      const seenKey = `${account}:${m.id}`;
+      if (handled.current.has(seenKey)) return;
+      handled.current.add(seenKey);
+      if (handled.current.size > 2000) handled.current.delete(handled.current.values().next().value!);
+      const key = `${account}:${chatId}`;
       if (inflight.current.has(key)) return; // one at a time per chat: bursts get one answer
       inflight.current.add(key);
       let rule: AutoReplyRule | undefined;
       const body = (m.body ?? "").trim();
-      const chatName = chatNameFor(session, chatId, m);
+      const chatName = chatNameFor(m, chatId);
       try {
         const now = Date.now() / 1000;
-        const rules = await activeRules(st.activeProfile, session);
+        const rules = await activeRules(account);
         rule = rules.find((r) => ruleMatches(r, chatId, body));
         if (!rule) return;
         if (rule.cooldown_min > 0) {
           const last = await lastReplyAt(rule.id, chatId);
           if (last && now - last < rule.cooldown_min * 60) return;
         }
-        if ((await repliesSince(session, chatId, now - MAX_REPLIES_WINDOW_S)) >= MAX_REPLIES) return;
-        if (st.autoReplyDailyLimit > 0 && (await repliesToday(st.activeProfile)) >= st.autoReplyDailyLimit) {
+        if ((await repliesSince(account, chatId, now - MAX_REPLIES_WINDOW_S)) >= MAX_REPLIES) return;
+        if (st.autoReplyDailyLimit > 0 && (await repliesToday(account)) >= st.autoReplyDailyLimit) {
           if (!dailyLimitWarned.current) {
             dailyLimitWarned.current = true;
             if (st.notifications)
@@ -71,20 +128,20 @@ export function useAutoReply() {
         }
         // Recent context: the cache when the chat is open, else a light fetch (the manual-quiet
         // guard and the AI context both need it; chats never opened here have no cache).
-        const recent = await recentMessages(session, chatId, Math.max(20, rule.ai_context));
+        const recent = await recentMessages(account, chatId, Math.max(20, rule.ai_context));
         if (userRepliedRecently(recent, m)) return;
 
         const reply =
-          rule.reply_kind === "ai" ? await aiReply(rule, session, chatId, chatName, m, recent) : templateReply(rule, chatId, chatName);
+          rule.reply_kind === "ai" ? await aiReply(rule, account, chatId, chatName, m, recent) : templateReply(rule, chatId, chatName);
         if (!reply) throw new Error("Empty reply");
         await new Promise((r) => setTimeout(r, DELAY_MS[0] + Math.random() * (DELAY_MS[1] - DELAY_MS[0])));
-        const c = useSettings.getState().client;
-        if (!c || useSettings.getState().autoReplyPaused) return;
-        if (rule.mark_seen) await c.sendSeen(session, chatId, [m.id], m.participant || undefined).catch(() => {});
-        await c.sendText(session, chatId, reply, rule.quote ? m.id : undefined);
+        if (useSettings.getState().autoReplyPaused) return;
+        if (rule.mark_seen) await markSeenOn(account, chatId, m.id).catch(() => {});
+        await sendTextOn(account, chatId, reply, rule.quote ? m.id : undefined);
         await logReply({
           rule_id: rule.id,
-          session,
+          account,
+          session: accountParts(account)?.session ?? "",
           chat_id: chatId,
           chat_name: chatName,
           incoming: body || null,
@@ -96,7 +153,8 @@ export function useAutoReply() {
         if (rule)
           await logReply({
             rule_id: rule.id,
-            session,
+            account,
+            session: accountParts(account)?.session ?? "",
             chat_id: chatId,
             chat_name: chatName,
             incoming: body || null,
@@ -111,38 +169,7 @@ export function useAutoReply() {
       }
     };
 
-    const recentMessages = async (session: string, chatId: string, limit: number): Promise<WAMessage[]> => {
-      const cached = qc.getQueryData<WAMessage[]>(qk.messages(session, chatId));
-      if (cached) return cached;
-      const c = useSettings.getState().client;
-      if (!c) return [];
-      return c.messages(session, chatId, { limit, downloadMedia: false }).catch(() => []);
-    };
-
-    /** The user's own last message in this chat is newer than MANUAL_QUIET_S. */
-    const userRepliedRecently = (recent: WAMessage[], m: WAMessage) => {
-      const mine = recent.filter((x) => x.fromMe && x.id !== m.id).reduce((t, x) => Math.max(t, x.timestamp), 0);
-      return mine > 0 && m.timestamp - mine < MANUAL_QUIET_S;
-    };
-
-    const chatNameFor = (session: string, chatId: string, m: WAMessage) => {
-      const chats = qc.getQueryData<{ id: string; name?: string | null }[]>(qk.chats(session));
-      const known = chats?.find((c) => c.id === chatId)?.name;
-      const push = (m._data as { Info?: { PushName?: string } } | undefined)?.Info?.PushName;
-      return known || (!isGroup(chatId) && push) || displayId(chatId);
-    };
-
-    const templateReply = (rule: AutoReplyRule, chatId: string, chatName: string) =>
-      expandTemplate(rule.text ?? "", { name: chatName, phone: chatId.endsWith("@c.us") ? `+${chatId.split("@")[0]}` : "" }).trim();
-
-    const aiReply = async (rule: AutoReplyRule, session: string, chatId: string, chatName: string, m: WAMessage, recent: WAMessage[]) => {
-      // Always include the trigger message.
-      const messages = [...recent.filter((x) => x.id !== m.id), m].sort((a, b) => a.timestamp - b.timestamp).slice(-rule.ai_context);
-      const language = useChatPrefs.getState().autoTranslate[convKey(session, chatId)]?.out;
-      return aiAutoReply({ instructions: rule.ai_instructions, session, chatName, isGroup: isGroup(chatId), messages, language });
-    };
-
     window.addEventListener("wahana:incoming", onIncoming);
     return () => window.removeEventListener("wahana:incoming", onIncoming);
-  }, [client, qc]);
+  }, [hasAccounts, qc]);
 }

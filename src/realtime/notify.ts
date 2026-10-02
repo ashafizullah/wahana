@@ -11,6 +11,11 @@ async function ensurePermission() {
   return granted;
 }
 
+export async function notifyText(title: string, body: string) {
+  if (!(await ensurePermission())) return;
+  sendNotification({ title, body: body.slice(0, 200) });
+}
+
 /** `session` is appended to the title when given (shown only when the server has several sessions). */
 export async function notifyIncoming(m: WAMessage, session?: string) {
   if (!(await ensurePermission())) return;

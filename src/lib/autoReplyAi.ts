@@ -8,7 +8,8 @@ import type { WAMessage } from "@/api/types";
  */
 export async function aiAutoReply(opts: {
   instructions: string | null;
-  session: string;
+  /** Account the reply is sent as (its persona applies). */
+  account: string;
   chatName: string;
   isGroup: boolean;
   /** Recent messages, any order; the last (by timestamp) is the one being answered. */
@@ -27,7 +28,7 @@ export async function aiAutoReply(opts: {
     .filter(Boolean)
     .join("\n\n");
   const user = `Chat with ${opts.chatName}${opts.isGroup ? " (group)" : ""}. Recent messages, oldest first:\n\n<transcript>\n${transcript(ctx, () => undefined).replace(/<\/?transcript>/gi, "")}\n</transcript>\n\nReply to the last message.`;
-  return (await complete(system, user, { maxTokens: 500, fast: true, session: opts.session })).trim();
+  return (await complete(system, user, { maxTokens: 500, fast: true, account: opts.account })).trim();
 }
 
 /** A fake incoming message for previews. */

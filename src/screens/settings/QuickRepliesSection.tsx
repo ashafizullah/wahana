@@ -1,19 +1,28 @@
-import { useState } from "react";
+import { useContext, useState } from "react";
 import { confirm } from "@/components/Confirm";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { deleteQuickReply, listQuickReplies, saveQuickReply, type QuickReply } from "@/store/quickReplies";
-import { useSettings } from "@/store/settings";
-import { SessionSelect } from "@/components/SessionSelect";
+import { useAccounts } from "@/lib/account";
+import { ScopeCtx } from "./shared";
 import { Button, Input, Label } from "@/components/ui";
 
 export function QuickRepliesSection() {
-  const profile = useSettings((s) => s.activeProfile);
+  const { scope } = useContext(ScopeCtx);
+  const accounts = useAccounts();
+  const label = (key: string | null) => {
+    if (!key) return null;
+    if (key.endsWith(":*")) return `${key.slice(5, -2)} · all sessions`;
+    return accounts.find((a) => a.key === key)?.label ?? key;
+  };
   const qc = useQueryClient();
-  const q = useQuery({ queryKey: ["quick-replies", profile], queryFn: () => listQuickReplies(profile), enabled: !!profile });
+  const q = useQuery({
+    queryKey: ["quick-replies", scope],
+    queryFn: () => listQuickReplies(scope === "" ? undefined : scope),
+  });
   const [editing, setEditing] = useState<Partial<QuickReply> | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const refresh = () => qc.invalidateQueries({ queryKey: ["quick-replies", profile] });
+  const refresh = () => qc.invalidateQueries({ queryKey: ["quick-replies"] });
 
   return (
     <>
@@ -23,12 +32,12 @@ export function QuickRepliesSection() {
             <span className="min-w-0 flex-1">
               <span className="block text-sm font-medium">
                 /{r.shortcut}{" "}
-                {r.session && (
+                {label(r.account) && (
                   <span
                     className="ml-1 text-[10px] rounded-full bg-wa/15 text-wa-dark dark:text-wa px-1.5 py-0.5 font-mono font-normal"
-                    title="Only in this session"
+                    title="Limited to this account"
                   >
-                    {r.session}
+                    {label(r.account)}
                   </span>
                 )}
               </span>
@@ -67,12 +76,10 @@ export function QuickRepliesSection() {
             </div>
             <div>
               <Label>Available in</Label>
-              <SessionSelect
-                value={editing.session ?? ""}
-                onChange={(v) => setEditing({ ...editing, session: v || null })}
-                allowAll="All sessions"
-                className="w-full"
-              />
+              <div className="px-2 py-2 text-sm text-neutral-500">
+                {label(scope === "" ? null : scope) ?? "All accounts"}
+                <span className="block text-[11px]">Change it with the "Apply to" selector at the top.</span>
+              </div>
             </div>
           </div>
           <div>
@@ -94,8 +101,7 @@ export function QuickRepliesSection() {
                 if (!(editing.text ?? "").trim()) return setErr("Text is required.");
                 await saveQuickReply({
                   id: editing.id ?? Math.random().toString(36).slice(2, 10),
-                  profile,
-                  session: editing.session ?? null,
+                  account: scope || null,
                   shortcut,
                   text: editing.text!.trim(),
                 });

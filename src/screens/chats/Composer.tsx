@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useChats, useSendText, qk } from "@/api/queries";
-import { requireClient, useSettings } from "@/store/settings";
+import { readReceiptsFor, requireClient, sendTypingFor, useSettings } from "@/store/settings";
+import { wahaAccountKey } from "@/lib/account";
 import { Button, MenuItem, Popover } from "@/components/ui";
 import { AttachMenu, VoiceRecorder, LocationDialog, ContactDialog, PollDialog, type AttachKind } from "@/components/AttachMenu";
 import { QuoteView } from "@/components/QuoteView";
@@ -292,7 +293,7 @@ export function Composer({
     }
   };
   const noteTyping = () => {
-    if (!useSettings.getState().sendTyping) return;
+    if (!sendTypingFor(wahaAccountKey(useSettings.getState().activeProfile, session))) return;
     const now = Date.now();
     if (now - typingRef.current.last > 4000) {
       typingRef.current.last = now;
@@ -348,7 +349,7 @@ export function Composer({
 
   /** "Mark as read only when I reply": send the receipt right before our message goes out. */
   const receiptBeforeSend = () => {
-    if (useSettings.getState().readReceipts === "on-reply")
+    if (readReceiptsFor(wahaAccountKey(useSettings.getState().activeProfile, session)) === "on-reply")
       requireClient()
         .sendSeen(session, chatId)
         .catch(() => {});

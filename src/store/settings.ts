@@ -19,6 +19,9 @@ export interface Profile {
   session: string;
 }
 
+/** When read receipts (blue ticks) are sent. */
+export type ReadReceipts = "always" | "on-reply" | "manual" | "never";
+
 /** Global preferences persisted in the plain store file. */
 export interface Prefs {
   notifications: boolean;
@@ -34,7 +37,7 @@ export interface Prefs {
   /** Send "typing…" presence to the other side while composing. */
   sendTyping: boolean;
   /** When to send read receipts (blue ticks): on opening a chat, only when you reply, or never. */
-  readReceipts: "always" | "on-reply" | "manual" | "never";
+  readReceipts: ReadReceipts;
   // ── AI ──
   aiProvider: "anthropic" | "openai-compatible";
   aiBaseUrl: string;
@@ -53,8 +56,13 @@ export interface Prefs {
   autoReplyPaused: boolean;
   /** Max auto-replies sent per calendar day across all rules of this server (0 = unlimited). Spend guard for AI replies. */
   autoReplyDailyLimit: number;
-  /** Persona overrides per WAHA session, keyed "profileId:session"; missing or empty = use aiSystemPrompt. */
-  aiPersonaBySession: Record<string, string>;
+  // ── Per-account overrides ──
+  // Keyed by account (`waha:<profileId>:<session>` / `native:<accountId>`); a missing entry
+  // falls back to the global value above, so one setting can still cover every number.
+  sendTypingByAccount: Record<string, boolean>;
+  readReceiptsByAccount: Record<string, ReadReceipts>;
+  /** Persona per account; missing or empty = use aiSystemPrompt. */
+  aiPersonaByAccount: Record<string, string>;
 }
 
 const DEFAULT_PREFS: Prefs = {
@@ -77,7 +85,9 @@ const DEFAULT_PREFS: Prefs = {
   aiAutoLabel: false,
   autoReplyPaused: false,
   autoReplyDailyLimit: 300,
-  aiPersonaBySession: {},
+  sendTypingByAccount: {},
+  readReceiptsByAccount: {},
+  aiPersonaByAccount: {},
 };
 
 interface SettingsState extends Prefs {
@@ -129,6 +139,19 @@ export const useSettings = create<SettingsState>((set, get) => ({
     }
     const legacyReceipts = await s.get<boolean>("sendReadReceipts");
     if (legacyReceipts === false) prefs.readReceipts = "never";
+    // Migrate per-session persona overrides to per-account keys ("profile:session" → "waha:…").
+    const legacyPersona = await s.get<Record<string, string>>("aiPersonaBySession");
+    if (legacyPersona) {
+      const migrated: Record<string, string> = { ...prefs.aiPersonaByAccount };
+      for (const [key, value] of Object.entries(legacyPersona)) {
+        if (!value?.trim()) continue;
+        const scoped = key.startsWith("waha:") || key.startsWith("native:") ? key : `waha:${key}`;
+        migrated[scoped] = value;
+      }
+      prefs.aiPersonaByAccount = migrated;
+      await s.set("aiPersonaByAccount", migrated);
+      await s.delete("aiPersonaBySession");
+    }
     let profiles = (await s.get<Profile[]>("profiles")) ?? [];
     let active = (await s.get<string>("activeProfile")) ?? "";
 
@@ -277,6 +300,27 @@ export function requireClient() {
   if (!c) throw new Error("WAHA is not configured");
   return c;
 }
+
+// ── Per-account resolution (falls back to the global value) ──────────────
+
+/** Read-receipt mode in effect for an account (`null` = the global default). */
+export const readReceiptsFor = (account: string | null): ReadReceipts => {
+  const s = useSettings.getState();
+  return (account ? s.readReceiptsByAccount[account] : undefined) ?? s.readReceipts;
+};
+
+/** Whether typing presence is sent for an account (`null` = the global default). */
+export const sendTypingFor = (account: string | null): boolean => {
+  const s = useSettings.getState();
+  return (account ? s.sendTypingByAccount[account] : undefined) ?? s.sendTyping;
+};
+
+/** Reactive variants, for components that render based on the effective value. */
+export const useReadReceipts = (account: string | null): ReadReceipts =>
+  useSettings((s) => (account ? s.readReceiptsByAccount[account] : undefined) ?? s.readReceipts);
+
+export const useSendTyping = (account: string | null): boolean =>
+  useSettings((s) => (account ? s.sendTypingByAccount[account] : undefined) ?? s.sendTyping);
 
 export type MediaKind = "image" | "sticker" | "video" | "audio" | "document";
 export type MediaPrefs = Pick<Prefs, "autoLoadImages" | "autoLoadStickers" | "autoLoadVideos" | "autoLoadAudio">;

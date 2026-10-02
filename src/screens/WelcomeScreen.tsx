@@ -1,9 +1,9 @@
 import { useState } from "react";
-import { ArrowRight, CheckCircle2, Globe, Loader2, Server, XCircle } from "lucide-react";
+import { ArrowRight, CheckCircle2, Loader2, Server, Smartphone, XCircle } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { WahaClient } from "@/api/client";
 import { useSettings } from "@/store/settings";
-import { useWaWeb } from "@/store/waWeb";
+import { useWhatsApp } from "@/store/whatsapp";
 import { Button, Input, Label } from "@/components/ui";
 import { cn, errMsg } from "@/lib/utils";
 
@@ -11,12 +11,12 @@ import { cn, errMsg } from "@/lib/utils";
 export const openWelcome = () => window.dispatchEvent(new CustomEvent("wahana:open-welcome"));
 
 /**
- * First-run screen: shown while the app has neither a WAHA server nor a WhatsApp Web
- * session. Two ways in — open WhatsApp Web right away, or connect a WAHA server — and a
- * way out to Settings for people who know what they want.
+ * First-run screen: shown while the app has neither a WAHA server nor a WhatsApp account.
+ * Two ways in — link a WhatsApp account right away, or connect a WAHA server — and a way
+ * out to Settings for people who know what they want.
  */
 export function WelcomeScreen({ onDone }: { onDone: (tab: "chats" | "sessions" | "settings") => void }) {
-  const addWaWeb = useWaWeb((s) => s.add);
+  const addWa = useWhatsApp((s) => s.add);
   const [mode, setMode] = useState<"pick" | "waha">("pick");
   return (
     <div className="flex-1 overflow-auto grid place-items-center p-6">
@@ -24,18 +24,18 @@ export function WelcomeScreen({ onDone }: { onDone: (tab: "chats" | "sessions" |
         <div className="text-center space-y-2">
           <img src="/logo.png" alt="" className="w-16 h-16 mx-auto rounded-2xl shadow" />
           <h1 className="text-2xl font-semibold">Welcome to Wahana</h1>
-          <p className="text-sm text-neutral-500">One desktop app for WhatsApp Web and WAHA. How do you want to start?</p>
+          <p className="text-sm text-neutral-500">One desktop app for WhatsApp and WAHA. How do you want to start?</p>
         </div>
 
         {mode === "pick" ? (
           <div className="grid gap-4 sm:grid-cols-2">
             <Card
-              icon={Globe}
-              title="Use WhatsApp Web"
-              body="No server needed. Scan the QR code with your phone, like in a browser. Add more accounts later and show them side by side."
-              action="Open WhatsApp Web"
+              icon={Smartphone}
+              title="Link WhatsApp"
+              body="No server needed. Scan the QR code with your phone to link this app as a device. Add more accounts later."
+              action="Link an account"
               onClick={() => {
-                addWaWeb("WhatsApp Web");
+                void addWa("WhatsApp").catch(console.error);
                 onDone("chats");
               }}
             />
@@ -70,7 +70,7 @@ function Card({
   action,
   onClick,
 }: {
-  icon: typeof Globe;
+  icon: typeof Server;
   title: string;
   body: string;
   action: string;

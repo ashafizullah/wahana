@@ -21,13 +21,14 @@ import {
 } from "lucide-react";
 import { confirm } from "@/components/Confirm";
 import { useSettings } from "@/store/settings";
-import { useChats } from "@/api/queries";
-import { SessionSelect } from "@/components/SessionSelect";
+import { accountParts, useAccountLabel, useAccounts, useActiveAccount } from "@/lib/account";
+import { useAccountChats } from "@/lib/useAccountChats";
+import { AccountSelect } from "@/components/AccountSelect";
+import { openSettings } from "@/components/NotConnected";
 import { Avatar, Badge, Button, Input, Label } from "@/components/ui";
 import { cn, displayId, isGroup, errMsg } from "@/lib/utils";
 import { aiConfigured } from "@/lib/ai";
 import { aiAutoReply, sampleMessage } from "@/lib/autoReplyAi";
-import { NotConnected } from "@/components/NotConnected";
 import {
   clearLog,
   deleteRule,
@@ -53,23 +54,41 @@ const SCOPE_LABEL: Record<Scope, string> = {
   chats: "Specific chats / groups",
 };
 
+/** Shown when nothing can answer: no WAHA server and no native account. */
+function NoAccounts() {
+  return (
+    <div className="flex-1 grid place-items-center text-neutral-500 text-sm p-6">
+      <div className="flex flex-col items-center gap-3 max-w-md text-center">
+        <Bot size={28} className="text-neutral-400" />
+        <p className="font-medium text-neutral-700 dark:text-neutral-300">No account to answer with.</p>
+        <p className="text-xs">Link a WhatsApp account in Sessions, or add a WAHA server in Settings.</p>
+        <Button onClick={openSettings}>Open settings</Button>
+      </div>
+    </div>
+  );
+}
+
 export function AutoReplyScreen() {
-  const { client, activeProfile, session, autoReplyPaused, autoReplyDailyLimit, save } = useSettings();
+  const accounts = useAccounts();
+  const active = useActiveAccount();
+  const label = useAccountLabel();
+  const { autoReplyPaused, autoReplyDailyLimit, save } = useSettings();
   const qc = useQueryClient();
   const [editing, setEditing] = useState<AutoReplyRule | "new" | null>(null);
   const rules = useQuery({
-    queryKey: ["auto-reply", "rules", activeProfile],
-    queryFn: () => listRules(activeProfile),
-    enabled: !!activeProfile,
+    queryKey: ["auto-reply", "rules"],
+    queryFn: () => listRules(),
+    enabled: accounts.length > 0,
   });
   const log = useQuery({
-    queryKey: ["auto-reply", "log", activeProfile],
-    queryFn: () => listLog(activeProfile),
-    enabled: !!activeProfile,
+    queryKey: ["auto-reply", "log"],
+    queryFn: () => listLog(),
+    enabled: accounts.length > 0,
     refetchInterval: 15_000,
   });
 
-  if (!client) return <NotConnected />;
+  if (accounts.length === 0) return <NoAccounts />;
+  const defaultAccount = active && accounts.some((a) => a.key === active.key) ? active.key : accounts[0]!.key;
   const list = rules.data ?? [];
   const invalidate = () => qc.invalidateQueries({ queryKey: ["auto-reply"] });
 
@@ -87,7 +106,7 @@ export function AutoReplyScreen() {
         <div className="ml-auto flex items-center gap-2">
           <label
             className="flex items-center gap-1.5 text-[11px] text-neutral-500"
-            title="Spend guard: replies sent per day across all rules of this server (0 = unlimited)"
+            title="Spend guard: replies sent per day per account, across its rules (0 = unlimited)"
           >
             Max / day
             <input
@@ -133,15 +152,15 @@ export function AutoReplyScreen() {
             instructions (FAQ, prices, tone).
           </div>
         )}
-        {[...new Set(list.map((r) => r.session))].map((sess) => (
-          <section key={sess} className="space-y-2">
+        {[...new Set(list.map((r) => r.account))].map((account) => (
+          <section key={account} className="space-y-2">
             <h2 className="text-xs font-semibold uppercase tracking-wide text-neutral-500 flex items-center gap-2">
-              Session <span className="normal-case tracking-normal font-mono text-neutral-700 dark:text-neutral-200">{sess}</span>
-              {sess === session && <Badge tone="blue">current</Badge>}
+              Account <span className="normal-case tracking-normal font-mono text-neutral-700 dark:text-neutral-200">{label(account)}</span>
+              {account === active?.key && <Badge tone="blue">current</Badge>}
             </h2>
             <ul className="space-y-2">
               {list
-                .filter((r) => r.session === sess)
+                .filter((r) => r.account === account)
                 .map((r) => (
                   <RuleRow key={r.id} r={r} onEdit={() => setEditing(r)} onChanged={invalidate} />
                 ))}
@@ -157,7 +176,7 @@ export function AutoReplyScreen() {
                 variant="ghost"
                 className="ml-auto text-xs"
                 onClick={async () => {
-                  await clearLog(activeProfile);
+                  await clearLog();
                   invalidate();
                 }}
               >
@@ -178,8 +197,7 @@ export function AutoReplyScreen() {
       </div>
       {editing && (
         <RuleForm
-          session={session}
-          profile={activeProfile}
+          defaultAccount={defaultAccount}
           initial={editing === "new" ? null : editing}
           onClose={() => setEditing(null)}
           onSaved={() => {
@@ -304,20 +322,18 @@ function LogRow({ l, ruleName }: { l: AutoReplyLog; ruleName: string }) {
 // ── Form ─────────────────────────────────────────────────────────────────
 
 function RuleForm({
-  session,
-  profile,
+  defaultAccount,
   initial,
   onClose,
   onSaved,
 }: {
-  session: string;
-  profile: string;
+  defaultAccount: string;
   initial: AutoReplyRule | null;
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const [sess, setSess] = useState(initial?.session ?? session);
-  const { data: chats } = useChats(sess);
+  const [account, setAccount] = useState(initial?.account ?? defaultAccount);
+  const chats = useAccountChats(account);
   const [name, setName] = useState(initial?.name ?? "");
   const [scope, setScope] = useState<Scope>(initial?.scope ?? "dm");
   const [chatIds, setChatIds] = useState<string[]>(() => {
@@ -355,12 +371,12 @@ function RuleForm({
 
   const candidates = useMemo(() => {
     const term = q.trim().toLowerCase();
-    return (chats ?? [])
+    return chats
       .filter((c) => c.id !== "status@broadcast" && !chatIds.includes(c.id))
       .filter((c) => !term || (c.name ?? "").toLowerCase().includes(term) || c.id.includes(term))
       .slice(0, 20);
   }, [chats, q, chatIds]);
-  const chatName = (id: string) => chats?.find((c) => c.id === id)?.name || displayId(id);
+  const chatName = (id: string) => chats.find((c) => c.id === id)?.name || displayId(id);
 
   const regexError = useMemo(() => {
     if (matchKind !== "regex" || !pattern.trim()) return null;
@@ -382,10 +398,12 @@ function RuleForm({
     setBusy(true);
     setErr(null);
     try {
+      const parts = accountParts(account);
       await upsertRule({
         id: initial?.id ?? Math.random().toString(36).slice(2, 12),
-        profile,
-        session: sess,
+        account,
+        profile: parts?.kind === "waha" ? (parts.profile ?? "") : "",
+        session: parts?.kind === "waha" ? (parts.session ?? "") : "",
         name: name.trim(),
         enabled: initial?.enabled ?? 1,
         priority: initial?.priority ?? 0,
@@ -420,7 +438,7 @@ function RuleForm({
     try {
       const text = await aiAutoReply({
         instructions,
-        session: sess,
+        account,
         chatName: "Customer",
         isGroup: false,
         messages: [sampleMessage(test.trim())],
@@ -453,11 +471,11 @@ function RuleForm({
               />
             </div>
             <div>
-              <Label>Session (business / number)</Label>
-              <SessionSelect
-                value={sess}
+              <Label>Account</Label>
+              <AccountSelect
+                value={account}
                 onChange={(v) => {
-                  setSess(v);
+                  setAccount(v);
                   setChatIds([]);
                 }}
                 className="min-w-[180px]"

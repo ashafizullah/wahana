@@ -3,6 +3,8 @@ import type { Kind } from "@/store/scheduler";
 
 export interface Broadcast {
   id: string;
+  /** `waha:<profileId>:<session>` or `native:<accountId>`. */
+  account: string;
   profile: string;
   session: string;
   name: string | null;
@@ -35,23 +37,28 @@ export interface BroadcastSummary extends Broadcast {
 }
 
 const COLS =
-  "b.id, b.profile, b.session, b.name, b.kind, b.text, b.media_mime, b.media_name, b.delay_min, b.delay_max, b.status, b.created_at, b.started_at, b.finished_at";
+  "b.id, b.account, b.profile, b.session, b.name, b.kind, b.text, b.media_mime, b.media_name, b.delay_min, b.delay_max, b.status, b.created_at, b.started_at, b.finished_at";
 
-export const listBroadcasts = async (profile: string) =>
-  (await db()).select<BroadcastSummary[]>(
-    `SELECT ${COLS}, NULL AS media_b64,
-       (SELECT COUNT(*) FROM broadcast_items i WHERE i.broadcast_id = b.id) AS total,
-       (SELECT COUNT(*) FROM broadcast_items i WHERE i.broadcast_id = b.id AND i.status = 'sent') AS sent,
-       (SELECT COUNT(*) FROM broadcast_items i WHERE i.broadcast_id = b.id AND i.status = 'error') AS failed
-     FROM broadcasts b WHERE b.profile = $1 ORDER BY b.created_at DESC`,
-    [profile],
-  );
+const SUMMARY_SQL = `SELECT ${COLS}, NULL AS media_b64,
+   (SELECT COUNT(*) FROM broadcast_items i WHERE i.broadcast_id = b.id) AS total,
+   (SELECT COUNT(*) FROM broadcast_items i WHERE i.broadcast_id = b.id AND i.status = 'sent') AS sent,
+   (SELECT COUNT(*) FROM broadcast_items i WHERE i.broadcast_id = b.id AND i.status = 'error') AS failed
+ FROM broadcasts b`;
 
-/** Running broadcasts of one profile, without `media_b64` (polled every second). */
-export const listRunning = async (profile: string) =>
-  (await db()).select<Broadcast[]>(`SELECT ${COLS}, NULL AS media_b64 FROM broadcasts b WHERE b.profile = $1 AND b.status = 'running'`, [
-    profile,
-  ]);
+/** All broadcasts, or — with an account — only that account's. */
+export const listBroadcasts = async (account?: string) =>
+  account === undefined
+    ? (await db()).select<BroadcastSummary[]>(`${SUMMARY_SQL} ORDER BY b.created_at DESC`)
+    : (await db()).select<BroadcastSummary[]>(`${SUMMARY_SQL} WHERE b.account = $1 ORDER BY b.created_at DESC`, [account]);
+
+/** Running broadcasts (all accounts, or one), without `media_b64` (polled every second). */
+export const listRunning = async (account?: string) =>
+  account === undefined
+    ? (await db()).select<Broadcast[]>(`SELECT ${COLS}, NULL AS media_b64 FROM broadcasts b WHERE b.status = 'running'`)
+    : (await db()).select<Broadcast[]>(
+        `SELECT ${COLS}, NULL AS media_b64 FROM broadcasts b WHERE b.account = $1 AND b.status = 'running'`,
+        [account],
+      );
 
 export const getBroadcast = async (id: string) =>
   (await (await db()).select<Broadcast[]>("SELECT * FROM broadcasts WHERE id = $1", [id]))[0];
@@ -70,9 +77,10 @@ export async function createBroadcast(
 ) {
   const d = await db();
   await d.execute(
-    "INSERT INTO broadcasts (id, profile, session, name, kind, text, media_b64, media_mime, media_name, delay_min, delay_max, status, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'draft',$12)",
+    "INSERT INTO broadcasts (id, account, profile, session, name, kind, text, media_b64, media_mime, media_name, delay_min, delay_max, status, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'draft',$13)",
     [
       b.id,
+      b.account,
       b.profile,
       b.session,
       b.name,

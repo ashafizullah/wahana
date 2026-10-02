@@ -9,6 +9,7 @@ import type { MentionResolver } from "@/lib/waMarkdown";
 import { transcript } from "@/lib/exportChat";
 import { LANGUAGES, aiConfigured, summarizeChat } from "@/lib/ai";
 import { useSettings } from "@/store/settings";
+import { wahaAccountKey } from "@/lib/account";
 import type { ViewMessage, WAMessage } from "@/api/types";
 import { isGroup, errMsg, convKey } from "@/lib/utils";
 
@@ -354,6 +355,7 @@ function TaskRow({
         .join(" ");
       await upsertSchedule({
         id: Math.random().toString(36).slice(2, 12),
+        account: wahaAccountKey(profile, session),
         profile,
         session,
         target_type: "chat",

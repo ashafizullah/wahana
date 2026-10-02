@@ -1,30 +1,27 @@
+import { accountMatches } from "@/lib/account";
 import { db } from "@/store/scheduler";
 
 export interface QuickReply {
   id: string;
-  profile: string;
-  /** Limit to one session (business / number); null = available everywhere. */
-  session: string | null;
+  /** Account this reply is limited to, or null for every account. `waha:<profile>:*` = all sessions of one server. */
+  account: string | null;
   shortcut: string;
   text: string;
   created_at: number;
 }
 
-/** All quick replies of a server (Settings), or — with `session` — only those usable in that session. */
-export const listQuickReplies = async (profile: string, session?: string) =>
-  session === undefined
-    ? (await db()).select<QuickReply[]>("SELECT * FROM quick_replies WHERE profile = $1 ORDER BY shortcut", [profile])
-    : (await db()).select<QuickReply[]>(
-        "SELECT * FROM quick_replies WHERE profile = $1 AND (session IS NULL OR session = $2) ORDER BY shortcut",
-        [profile, session],
-      );
+/** All quick replies (Settings), or — with an account — only those usable there. */
+export const listQuickReplies = async (account?: string) => {
+  const rows = await (await db()).select<QuickReply[]>("SELECT * FROM quick_replies ORDER BY shortcut");
+  return account === undefined ? rows : rows.filter((r) => accountMatches(r.account, account));
+};
 
 export async function saveQuickReply(r: Omit<QuickReply, "created_at">) {
   await (
     await db()
   ).execute(
-    "INSERT INTO quick_replies (id, profile, session, shortcut, text, created_at) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT(id) DO UPDATE SET session=excluded.session, shortcut=excluded.shortcut, text=excluded.text",
-    [r.id, r.profile, r.session || null, r.shortcut.replace(/^\//, "").trim().toLowerCase(), r.text, Math.floor(Date.now() / 1000)],
+    "INSERT INTO quick_replies (id, account, shortcut, text, created_at) VALUES ($1,$2,$3,$4,$5) ON CONFLICT(id) DO UPDATE SET account=excluded.account, shortcut=excluded.shortcut, text=excluded.text",
+    [r.id, r.account || null, r.shortcut.replace(/^\//, "").trim().toLowerCase(), r.text, Math.floor(Date.now() / 1000)],
   );
 }
 

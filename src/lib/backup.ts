@@ -46,7 +46,9 @@ const PREF_KEYS: (keyof Prefs)[] = [
   "aiComposeTo",
   "aiSystemPrompt",
   "autoReplyPaused",
-  "aiPersonaBySession",
+  "sendTypingByAccount",
+  "readReceiptsByAccount",
+  "aiPersonaByAccount",
 ];
 
 export async function exportBackup(includeSecrets: boolean): Promise<string | null> {
@@ -75,7 +77,7 @@ export async function exportBackup(includeSecrets: boolean): Promise<string | nu
     },
     quickReplies: await d.select<QuickReply[]>("SELECT * FROM quick_replies"),
     schedules: await d.select<Omit<Schedule, "media_b64">[]>(
-      "SELECT id, profile, session, target_type, target_id, target_name, kind, text, media_mime, media_name, next_run, repeat, weekdays, enabled, created_at, last_run, last_status, last_error, runs FROM schedules",
+      "SELECT id, account, profile, session, target_type, target_id, target_name, kind, text, media_mime, media_name, next_run, anchor, repeat, weekdays, enabled, created_at, last_run, last_status, last_error, runs FROM schedules",
     ),
   };
   if (includeSecrets) {
@@ -139,8 +141,8 @@ export async function restoreBackup(b: Backup, opts: RestoreOptions) {
   if (opts.quickReplies && b.quickReplies) {
     for (const r of b.quickReplies) {
       await d.execute(
-        "INSERT INTO quick_replies (id, profile, session, shortcut, text, created_at) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT(id) DO UPDATE SET session=excluded.session, shortcut=excluded.shortcut, text=excluded.text",
-        [r.id, r.profile, r.session ?? null, r.shortcut, r.text, r.created_at],
+        "INSERT INTO quick_replies (id, account, shortcut, text, created_at) VALUES ($1,$2,$3,$4,$5) ON CONFLICT(id) DO UPDATE SET account=excluded.account, shortcut=excluded.shortcut, text=excluded.text",
+        [r.id, r.account ?? null, r.shortcut, r.text, r.created_at],
       );
     }
   }
@@ -151,11 +153,12 @@ export async function restoreBackup(b: Backup, opts: RestoreOptions) {
       const kind = "text";
       const enabled = hadMedia && !sc.text ? 0 : sc.enabled;
       await d.execute(
-        `INSERT INTO schedules (id, profile, session, target_type, target_id, target_name, kind, text, media_mime, media_name, next_run, repeat, weekdays, enabled, created_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
-         ON CONFLICT(id) DO UPDATE SET session=excluded.session, target_type=excluded.target_type, target_id=excluded.target_id, target_name=excluded.target_name, kind=excluded.kind, text=excluded.text, next_run=excluded.next_run, repeat=excluded.repeat, weekdays=excluded.weekdays, enabled=excluded.enabled`,
+        `INSERT INTO schedules (id, account, profile, session, target_type, target_id, target_name, kind, text, media_mime, media_name, next_run, repeat, weekdays, enabled, created_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+         ON CONFLICT(id) DO UPDATE SET account=excluded.account, session=excluded.session, target_type=excluded.target_type, target_id=excluded.target_id, target_name=excluded.target_name, kind=excluded.kind, text=excluded.text, next_run=excluded.next_run, repeat=excluded.repeat, weekdays=excluded.weekdays, enabled=excluded.enabled`,
         [
           sc.id,
+          sc.account ?? `waha:${sc.profile}:${sc.session}`,
           sc.profile,
           sc.session,
           sc.target_type,

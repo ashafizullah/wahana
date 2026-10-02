@@ -4,6 +4,7 @@ import { useSettings } from "@/store/settings";
 import { aiConfigured, suggestLabels } from "@/lib/ai";
 import { transcript } from "@/lib/exportChat";
 import { displayId, isChannel, isGroup, convKey } from "@/lib/utils";
+import { accountParts } from "@/lib/account";
 import type { IncomingMessage } from "@/realtime/useWahaSocket";
 import type { WAMessage } from "@/api/types";
 import { qk } from "@/api/queries";
@@ -26,8 +27,10 @@ export function useAutoLabel() {
   useEffect(() => {
     if (!client || !enabled) return;
     const onIncoming = (ev: Event) => {
-      const { session, chatId, message } = (ev as CustomEvent<IncomingMessage>).detail;
-      void handle(session, chatId, message);
+      const { account, chatId, message } = (ev as CustomEvent<IncomingMessage>).detail;
+      const p = accountParts(account);
+      if (p?.kind !== "waha" || p.session === undefined) return; // labels are WAHA-only
+      void handle(p.session, chatId, message);
     };
     const handle = async (session: string, chatId: string, m: WAMessage) => {
       if (!aiConfigured() || isGroup(chatId) || isChannel(chatId) || chatId === "status@broadcast") return;

@@ -15,7 +15,7 @@ import type { ChatOverview, WAMessage } from "@/api/types";
 import { cn, displayId, formatTime, isChannel, isGroup, errMsg } from "@/lib/utils";
 import { useQueryClient } from "@tanstack/react-query";
 import { chatKey, unreadFor, useUnread } from "@/store/unread";
-import { useWaWeb } from "@/store/waWeb";
+import { useWhatsApp } from "@/store/whatsapp";
 import { AckIcon } from "@/screens/chats/MessageBubble";
 
 // ── Chat list ────────────────────────────────────────────────────────────
@@ -256,22 +256,20 @@ export function ProfilePicker() {
   );
 }
 
-const WAWEB_NEW = "waweb:new";
+const WA_PREFIX = "wa:";
+const WA_NEW = "wa:new";
 
-/** WAHA sessions and WhatsApp Web sessions in one dropdown; picking a WhatsApp Web one swaps the screen. */
+/** WAHA sessions and native WhatsApp accounts in one dropdown; picking a native one swaps the screen. */
 export function SessionPicker({ sessions }: { sessions: { name: string; status: string; me?: { pushName?: string } | null }[] }) {
   const value = useSettings((s) => s.session);
   const save = useSettings((s) => s.save);
-  const waWeb = useWaWeb((s) => s.sessions);
-  const active = useWaWeb((s) => s.active);
-  const setActive = useWaWeb((s) => s.setActive);
-  const add = useWaWeb((s) => s.add);
-  const isolated = useWaWeb((s) => s.isolated);
-  const waWebUnread = useWaWeb((s) => s.unread);
-  const canAddWaWeb = isolated || waWeb.length === 0;
+  const accounts = useWhatsApp((s) => s.accounts);
+  const active = useWhatsApp((s) => s.active);
+  const setActive = useWhatsApp((s) => s.setActive);
+  const add = useWhatsApp((s) => s.add);
   const dot = (status: string) => (status === "WORKING" ? "bg-emerald-500" : status === "STOPPED" ? "bg-neutral-400" : "bg-amber-400");
   const current = sessions.find((s) => s.name === value);
-  const selected = active ? `waweb:${active}` : value;
+  const selected = active ? `${WA_PREFIX}${active}` : value;
   return (
     <label className="flex items-center gap-2 rounded-lg bg-neutral-100 dark:bg-neutral-800 px-2.5 py-1.5 text-sm">
       <span className={cn("w-2 h-2 rounded-full shrink-0", active ? "bg-wa" : dot(current?.status ?? ""))} />
@@ -279,8 +277,8 @@ export function SessionPicker({ sessions }: { sessions: { name: string; status: 
         value={selected}
         onChange={(e) => {
           const v = e.target.value;
-          if (v === WAWEB_NEW) add();
-          else if (v.startsWith("waweb:")) setActive(v.slice(6));
+          if (v === WA_NEW) void add().catch(console.error);
+          else if (v.startsWith(WA_PREFIX)) setActive(v.slice(WA_PREFIX.length));
           else {
             setActive(null);
             void save({ session: v });
@@ -298,16 +296,15 @@ export function SessionPicker({ sessions }: { sessions: { name: string; status: 
             </option>
           ))}
         </optgroup>
-        <optgroup label="WhatsApp Web">
-          {waWeb.map((s) => (
-            <option key={s.id} value={`waweb:${s.id}`}>
-              {s.name}
-              {waWebUnread[s.id] ? ` · ${waWebUnread[s.id]} unread` : ""}
+        <optgroup label="WhatsApp">
+          {accounts.map((a) => (
+            <option key={a.id} value={`${WA_PREFIX}${a.id}`}>
+              {a.name}
+              {a.me?.pushName ? ` · ${a.me.pushName}` : ""}
+              {a.unread ? ` · ${a.unread} unread` : ""}
             </option>
           ))}
-          <option value={WAWEB_NEW} disabled={!canAddWaWeb}>
-            {canAddWaWeb ? "＋ Add WhatsApp Web…" : "＋ Add WhatsApp Web… (needs macOS 14 for a 2nd account)"}
-          </option>
+          <option value={WA_NEW}>＋ Link a WhatsApp account…</option>
         </optgroup>
       </select>
     </label>
