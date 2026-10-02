@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.5.0 — 2026-10-02
+
+### Added
+
+- Channels: info panel, follow from a link, unfollow, mute, react to posts, load history from the server. Owners and admins can post, edit, delete, and edit the channel profile.
+- Native chat: quoted replies, group member avatars, photo/video albums shown as a grid, composer focuses when replying.
+- Native chat list: multi-select, mark all read, delete chats. Per-recipient read times on messages.
+- Appearance setting with System, Light, and Dark themes.
+- WAHA server profiles can be disabled without deleting them.
+- Features page groups Scheduler, Broadcast, Auto-reply, Tweaks, and Quick replies.
+
+### Fixed
+
+- Channel metadata lookup failing on whatsapp-rust 0.7.0 (workaround for the upstream newsletter bug).
+
 ## 0.4.9 — 2026-10-02
 
 ### Added

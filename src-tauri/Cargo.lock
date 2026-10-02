@@ -6637,7 +6637,7 @@ dependencies = [
 
 [[package]]
 name = "wahana"
-version = "0.4.9"
+version = "0.5.0"
 dependencies = [
  "base64 0.22.1",
  "keyring",
