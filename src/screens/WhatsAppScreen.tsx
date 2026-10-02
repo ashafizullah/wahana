@@ -46,7 +46,8 @@ import { Pairing } from "@/screens/whatsapp/Pairing";
 import { NativeLabelsDialog, labelColorHex } from "@/screens/whatsapp/NativeLabelsDialog";
 import { useChatPrefs } from "@/store/chatPrefs";
 import { bareId, summarize, useReactions } from "@/store/reactions";
-import { PIN_MS, isPinned, usePins } from "@/store/pins";
+import { PIN_MS, isPinned, useChatPins, usePins } from "@/store/pins";
+import { PinBanner } from "@/components/PinBanner";
 import { useRevoked } from "@/store/revoked";
 import { useWhatsApp } from "@/store/whatsapp";
 
@@ -675,6 +676,11 @@ function Conversation({
   const connected = account.status === "working";
   const picture = usePicture(account.id, chatId, connected);
   const moreStored = messages.length >= limit;
+  const chatPins = useChatPins(prefsKey);
+  const [pinIdx, setPinIdx] = useState(0);
+  /** Pinned message to scroll to once it is loaded. */
+  const [jumpTo, setJumpTo] = useState<string | null>(null);
+  const [flash, setFlash] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -713,6 +719,29 @@ function Conversation({
     }
   }, [messages]);
 
+  // Scroll to a pinned message, paging in stored history until it shows up.
+  useEffect(() => {
+    if (!jumpTo) return;
+    const el = listRef.current?.querySelector<HTMLElement>(`[data-msg="${CSS.escape(jumpTo)}"]`);
+    if (el) {
+      el.scrollIntoView({ block: "center", behavior: "smooth" });
+      setFlash(jumpTo);
+      setJumpTo(null);
+    } else if (moreStored) {
+      atBottom.current = false;
+      setLimit((l) => l + PAGE);
+    } else {
+      setJumpTo(null);
+      onError("That pinned message isn't stored yet. Load older messages from your phone first.");
+    }
+  }, [jumpTo, messages, moreStored, onError]);
+
+  useEffect(() => {
+    if (!flash) return;
+    const timer = setTimeout(() => setFlash(null), 1500);
+    return () => clearTimeout(timer);
+  }, [flash]);
+
   useNativeAutoTranslate(messages, autoTranslate?.in);
   const onMenu = useCallback((m: NativeMessage, pos: { x: number; y: number }) => setMenu({ m, pos }), []);
 
@@ -721,6 +750,8 @@ function Conversation({
     setReplyTo(null);
     setEditing(null);
     setForward(null);
+    setPinIdx(0);
+    setJumpTo(null);
   }, [chatId]);
 
   const deleteMessage = async (m: NativeMessage) => {
@@ -813,6 +844,31 @@ function Conversation({
           </Button>
         </header>
 
+        {chatPins.length > 0 &&
+          (() => {
+            const index = pinIdx % chatPins.length;
+            const id = chatPins[index]!;
+            const m = messages.find((x) => bareId(x.id) === id);
+            return (
+              <PinBanner
+                key={id}
+                count={chatPins.length}
+                index={index}
+                who={m && (m.fromMe ? "You" : m.senderName || m.senderPhone || undefined)}
+                text={m && (stripWaMarkdown(m.body) || "📎 Media")}
+                onJump={() => {
+                  setJumpTo(id);
+                  // Like WhatsApp: each click moves on to the next (older) pin.
+                  setPinIdx((i) => (i + 1) % chatPins.length);
+                }}
+                onUnpin={async () => {
+                  await nativeWa.pinMessage(account.id, chatId, m?.id ?? id, false);
+                  usePins.getState().set(prefsKey, id, 0);
+                }}
+              />
+            );
+          })()}
+
         <div
           ref={listRef}
           className="flex-1 overflow-y-auto px-6 py-4"
@@ -848,7 +904,11 @@ function Conversation({
             const newDay = !prev || new Date(prev.timestamp).toDateString() !== new Date(m.timestamp).toDateString();
             const showSender = group && !m.fromMe && (newDay || prev?.fromMe || prev?.senderName !== m.senderName);
             return (
-              <div key={m.id} className="pb-1">
+              <div
+                key={m.id}
+                data-msg={bareId(m.id)}
+                className={cn("pb-1 rounded transition-colors duration-500", flash === bareId(m.id) && "bg-wa/25")}
+              >
                 {newDay && (
                   <div className="flex justify-center my-3">
                     <span className="rounded-md bg-white/80 dark:bg-neutral-800 px-2 py-0.5 text-[11px] text-neutral-600 dark:text-neutral-300 shadow-sm">

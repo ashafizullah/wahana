@@ -7,6 +7,11 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { InfoPanel } from "@/components/InfoPanel";
 import { MessageInfoModal } from "@/components/MessageInfo";
 import { MessageMenu, type MenuPos } from "@/components/MessageMenu";
+import { PinBanner } from "@/components/PinBanner";
+import { stripWaMarkdown } from "@/lib/waMarkdown";
+import { useChatPins, usePins } from "@/store/pins";
+import { bareId } from "@/store/reactions";
+import { Bubble, senderName } from "@/screens/chats/MessageBubble";
 import { NotConnected } from "@/components/NotConnected";
 import { ResizeHandle, usePaneWidth } from "@/components/ResizeHandle";
 import { SummaryModal } from "@/components/SummaryModal";
@@ -23,7 +28,6 @@ import { WhatsAppScreen } from "@/screens/WhatsAppScreen";
 import { ChatList, SessionPicker } from "@/screens/chats/ChatList";
 import { Composer } from "@/screens/chats/Composer";
 import { ConversationHeader } from "@/screens/chats/ConversationHeader";
-import { Bubble } from "@/screens/chats/MessageBubble";
 import { MessageSearchBar } from "@/screens/chats/MessageSearchBar";
 import { useMessageList } from "@/screens/chats/useMessageList";
 import { useAutoTranslateIncoming, useOrderedMessages } from "@/screens/chats/useOrderedMessages";
@@ -103,6 +107,8 @@ function Conversation({ session, chatId, onOpenChat }: { session: string; chatId
   const [contactId, setContactId] = useState<string | null>(null);
   const [summary, setSummary] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const chatPins = useChatPins(convKey(session, chatId));
+  const [pinIdx, setPinIdx] = useState(0);
 
   const presence = usePresence(session, chatId);
   const resolveName = useNameResolver(session, chatId);
@@ -188,6 +194,30 @@ function Conversation({ session, chatId, onOpenChat }: { session: string; chatId
           onSummary={() => setSummary(true)}
           onJumpToDate={jumpToDate}
         />
+        {chatPins.length > 0 &&
+          (() => {
+            const index = pinIdx % chatPins.length;
+            const id = chatPins[index]!;
+            const m = ordered.find((x) => bareId(x.id) === id);
+            return (
+              <PinBanner
+                key={id}
+                count={chatPins.length}
+                index={index}
+                who={m && (m.fromMe ? "You" : (resolveName(m.participant || m.from) ?? senderName(m)))}
+                text={m && (stripWaMarkdown(m.body) || "📎 Media")}
+                onJump={() => {
+                  if (m) jumpTo(m.id);
+                  // Like WhatsApp: each click moves on to the next (older) pin.
+                  setPinIdx((i) => (i + 1) % chatPins.length);
+                }}
+                onUnpin={async () => {
+                  await requireClient().unpinMessage(session, chatId, m?.id ?? id);
+                  usePins.getState().set(convKey(session, chatId), id, 0);
+                }}
+              />
+            );
+          })()}
         {searchOpen && (
           <MessageSearchBar
             ordered={ordered}

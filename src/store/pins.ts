@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { create } from "zustand";
 import { load, type Store } from "@tauri-apps/plugin-store";
 import { bareId } from "@/store/reactions";
@@ -44,6 +45,19 @@ export const usePins = create<State>((set, get) => ({
     flush = setTimeout(() => void store().then((s) => s.set("items", get().items)), 1000);
   },
 }));
+
+/** Bare ids of the messages pinned in one chat right now, newest pin first (expiry tracks when it was made). */
+export function useChatPins(chat: string) {
+  const items = usePins((s) => s.items);
+  return useMemo(() => {
+    const prefix = `${chat}:`;
+    const now = Date.now();
+    return Object.entries(items)
+      .filter(([k, exp]) => k.startsWith(prefix) && exp > now)
+      .sort((a, b) => b[1] - a[1])
+      .map(([k]) => k.slice(prefix.length));
+  }, [items, chat]);
+}
 
 /** Whether a message is pinned right now. */
 export const isPinned = (items: Record<string, number>, chat: string, messageId: string) =>

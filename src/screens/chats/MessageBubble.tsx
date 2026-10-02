@@ -1,5 +1,5 @@
 import { memo, useState } from "react";
-import { Check, CheckCheck, Clock, Copy, Languages, Loader2 as Spinner, ScanText, Sparkles, X } from "lucide-react";
+import { Check, CheckCheck, Clock, Copy, Languages, Loader2 as Spinner, Pin, ScanText, Sparkles, X } from "lucide-react";
 import { mediaKind, requireClient } from "@/store/settings";
 import { Avatar } from "@/components/ui";
 import { MediaView } from "@/components/MediaView";
@@ -8,13 +8,14 @@ import { QuoteView, type ReplyTo } from "@/components/QuoteView";
 import { LinkPreviewCard } from "@/components/LinkPreview";
 import { bareId, summarize, useReactions } from "@/store/reactions";
 import { usePolls } from "@/store/polls";
+import { isPinned, usePins } from "@/store/pins";
 import { useTranslations } from "@/store/translations";
 import { useImageNotes } from "@/store/imageNotes";
 import { langName } from "@/lib/ai";
 import type { MentionResolver } from "@/lib/waMarkdown";
 import { WaMarkdown } from "@/lib/waMarkdown";
 import type { ViewMessage, WAMessage } from "@/api/types";
-import { cn, displayId, formatTime, errMsg } from "@/lib/utils";
+import { cn, convKey, displayId, formatTime, errMsg } from "@/lib/utils";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
 export function senderName(m: WAMessage) {
@@ -53,6 +54,7 @@ export const Bubble = memo(function Bubble({
   // Hooks must run before the waiting/revoked early returns: a message can flip between
   // those states in place (same key), and a changing hook count would crash the bubble.
   const reactionMap = useReactions((s) => s.byMsg[bareId(m.id)]);
+  const pinned = usePins((s) => isPinned(s.items, convKey(session, chatId), m.id));
   if (waiting) {
     return (
       <div className={cn("flex", mine ? "justify-end" : "justify-start")}>
@@ -125,6 +127,11 @@ export const Bubble = memo(function Bubble({
             >
               {resolveName(m.participant || m.from) ?? senderName(m)}
             </button>
+          )}
+          {pinned && (
+            <div className="flex items-center gap-1 text-[10px] text-neutral-500 dark:text-neutral-300/70 mb-0.5">
+              <Pin size={10} /> Pinned
+            </div>
           )}
           {m.replyTo && (
             <QuoteView

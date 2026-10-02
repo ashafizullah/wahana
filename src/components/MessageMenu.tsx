@@ -30,6 +30,7 @@ import { Button, Input, Avatar } from "@/components/ui";
 import { useReactions } from "@/store/reactions";
 import { useHidden } from "@/store/hidden";
 import { useRevoked } from "@/store/revoked";
+import { PIN_MS, isPinned, usePins } from "@/store/pins";
 import { confirm } from "@/components/Confirm";
 
 const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
@@ -61,6 +62,8 @@ export function MessageMenu({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const qc = useQueryClient();
+  // WAHA doesn't report pins, so this knows the ones made from this app.
+  const pinned = usePins((s) => isPinned(s.items, convKey(session, chatId), m.id));
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [forward, setForward] = useState(false);
@@ -160,8 +163,6 @@ export function MessageMenu({
       onClose();
     }
   };
-
-  const pinned = Boolean((m._data as { Info?: { Pinned?: boolean } } | undefined)?.Info?.Pinned);
 
   if (forward) {
     return <ForwardDialog session={session} messageId={m.id} onClose={onClose} />;
@@ -265,9 +266,10 @@ export function MessageMenu({
         icon={Pin}
         label={pinned ? "Unpin" : "Pin (7 days)"}
         onClick={() =>
-          run("pin", () =>
-            pinned ? requireClient().unpinMessage(session, chatId, m.id) : requireClient().pinMessage(session, chatId, m.id),
-          )
+          run("pin", async () => {
+            await (pinned ? requireClient().unpinMessage(session, chatId, m.id) : requireClient().pinMessage(session, chatId, m.id));
+            usePins.getState().set(convKey(session, chatId), m.id, pinned ? 0 : Date.now() + PIN_MS);
+          })
         }
       />
       {m.fromMe && m.body && (
