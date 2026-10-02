@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.4.9 — 2026-10-02
+
+### Added
+
+- Native WhatsApp accounts: link a number directly (no WAHA server), with chats, media, groups, status, labels, chat pins, message actions, and sent/delivered/read ticks.
+- Deleted and edited native messages stay visible, with their edit history.
+- Pinned-message banner for WAHA and native chats. On WAHA it loads older history to reach the pin.
+- Typing bubble in the open chat when the other side is typing or recording (WAHA and native).
+
+### Changed
+
+- Scheduler, Broadcast, Auto-reply, Sessions, and per-account settings (read receipts, typing, AI persona, quick replies, auto-label, link previews) work for both WAHA sessions and native accounts.
+- WAHA auto-reply runs for every configured server, listening only to sessions with an enabled rule.
+
+### Fixed
+
+- Message action permissions, multi-server send routing, and backups missing some AI settings.
+
 ## 0.4.8 — 2026-09-18
 
 ### Fixed
