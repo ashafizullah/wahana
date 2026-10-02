@@ -274,7 +274,9 @@ export const nativeWa = {
     invoke<void>("wa_native_react", { id, chatId, messageId, emoji }),
   /** Edit one of your own messages. */
   edit: (id: string, chatId: string, messageId: string, text: string) => invoke<void>("wa_native_edit", { id, chatId, messageId, text }),
-  /** Delete one of your own messages for everyone. */
+  /** Remove a message from this device only. */
+  deleteLocal: (id: string, chatId: string, messageId: string) => invoke<void>("wa_native_delete_local", { id, chatId, messageId }),
+  /** Delete a message for everyone: your own, or (as a group admin) someone else's. */
   deleteMessage: (id: string, chatId: string, messageId: string) => invoke<void>("wa_native_delete", { id, chatId, messageId }),
   /** Pin a message for everyone (7 days) or unpin it. */
   pinMessage: (id: string, chatId: string, messageId: string, on: boolean) =>

@@ -101,6 +101,7 @@ pub fn run() {
             whatsapp::wa_native_react,
             whatsapp::wa_native_edit,
             whatsapp::wa_native_delete,
+            whatsapp::wa_native_delete_local,
             whatsapp::wa_native_pin_message,
             whatsapp::wa_native_forward,
             whatsapp::wa_native_chats,

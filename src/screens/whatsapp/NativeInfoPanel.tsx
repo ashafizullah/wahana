@@ -3,6 +3,8 @@ import {
   BadgeCheck,
   ChevronLeft,
   ChevronRight,
+  Check,
+  Copy,
   Crown,
   FileText,
   Globe,
@@ -169,6 +171,7 @@ function Header({ chatId, details, picture }: { chatId: string; details: NativeC
   let name = chatId.split("@")[0]!;
   let sub: string | null = chatId;
   let pushName: string | null = null;
+  const phone = details?.type === "contact" ? details.phone : null;
   if (details?.type === "group") {
     name = details.subject;
     sub = `Group · ${details.members.length} participants`;
@@ -190,11 +193,36 @@ function Header({ chatId, details, picture }: { chatId: string; details: NativeC
       <button onClick={() => full && setOpen(true)} disabled={!full} title={full ? "View photo" : undefined}>
         <Avatar src={full ?? picture} name={pushName ?? name} size={88} />
       </button>
-      <div className="font-semibold text-center selectable">{name}</div>
-      {sub && <div className="text-xs text-neutral-500 selectable">{sub}</div>}
+      <div className="flex items-center gap-1.5 font-semibold text-center selectable">
+        {name}
+        {phone && name === phone && <CopyButton text={phone} />}
+      </div>
+      {sub && (
+        <div className="flex items-center gap-1.5 text-xs text-neutral-500 selectable">
+          {sub}
+          {phone && sub === phone && <CopyButton text={phone} />}
+        </div>
+      )}
       {pushName && <div className="text-xs text-neutral-500">~{pushName}</div>}
       {open && full && <Lightbox item={{ blobUrl: full, kind: "image", filename: `${name}.jpg` }} onClose={() => setOpen(false)} />}
     </div>
+  );
+}
+
+function CopyButton({ text }: { text: string }) {
+  const [done, setDone] = useState(false);
+  return (
+    <button
+      title="Copy number"
+      className="text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"
+      onClick={() => {
+        void navigator.clipboard.writeText(text);
+        setDone(true);
+        setTimeout(() => setDone(false), 1500);
+      }}
+    >
+      {done ? <Check size={13} /> : <Copy size={13} />}
+    </button>
   );
 }
 

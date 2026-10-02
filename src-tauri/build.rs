@@ -22,6 +22,7 @@ const COMMANDS: &[&str] = &[
     "wa_native_react",
     "wa_native_edit",
     "wa_native_delete",
+    "wa_native_delete_local",
     "wa_native_pin_message",
     "wa_native_forward",
     "wa_native_chats",

@@ -1,15 +1,5 @@
 import { useEffect, useState } from "react";
-import {
-  MessageSquare,
-  Radio,
-  Settings as SettingsIcon,
-  Loader2,
-  Download,
-  X,
-  Activity,
-  CircleDashed,
-  Sparkles,
-} from "lucide-react";
+import { MessageSquare, Radio, Settings as SettingsIcon, Loader2, Download, X, Activity, CircleDashed, Sparkles } from "lucide-react";
 import { useSettings } from "@/store/settings";
 import { useWahaSocket } from "@/realtime/useWahaSocket";
 import { SettingsScreen } from "@/screens/SettingsScreen";

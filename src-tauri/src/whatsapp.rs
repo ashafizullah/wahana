@@ -649,6 +649,26 @@ fn message_content(message: &wa::Message) -> Option<(MessageKind, String, Option
     {
         return message_content(child);
     }
+    // A story mention wraps the story it mentions; show that, or a label when the story
+    // itself is not carried.
+    let mention = message
+        .status_mention_message
+        .as_option()
+        .or(message.group_status_mention_message.as_option());
+    if let Some(wrapper) = mention {
+        let inner = wrapper
+            .message
+            .as_option()
+            .and_then(message_content)
+            .filter(|(kind, _, _)| !matches!(kind, MessageKind::Unsupported));
+        return Some(inner.unwrap_or_else(|| {
+            (
+                MessageKind::Text,
+                "📣 Mentioned you in a story".to_string(),
+                None,
+            )
+        }));
+    }
     if let Some(media) = extract_media(message) {
         let caption = message.get_caption().unwrap_or_default().to_string();
         return Some((MessageKind::Media, caption, Some(media)));
@@ -1865,7 +1885,7 @@ pub async fn wa_native_edit(
     Ok(())
 }
 
-/// Deletes one of our own messages for everyone (revoke).
+/// Deletes a message for everyone (revoke): our own, or, as a group admin, someone else's.
 #[tauri::command]
 pub async fn wa_native_delete(
     app: AppHandle,
@@ -1892,8 +1912,23 @@ pub async fn wa_native_delete(
             .await
             .map_err(|e| e.to_string())?;
     } else {
+        let target = account
+            .db
+            .lock()
+            .unwrap()
+            .message_target(&chat_id, &message_id)
+            .map_err(|e| e.to_string())?;
+        let revoke_type = match target {
+            Some(t) if !t.from_me && !t.sender_id.is_empty() => RevokeType::Admin {
+                original_sender: t
+                    .sender_id
+                    .parse()
+                    .map_err(|_| format!("invalid sender id: {}", t.sender_id))?,
+            },
+            _ => RevokeType::Sender,
+        };
         client
-            .revoke_message(to, message_id.clone(), RevokeType::Sender)
+            .revoke_message(to, message_id.clone(), revoke_type)
             .await
             .map_err(|e| e.to_string())?;
     }
@@ -1906,6 +1941,26 @@ pub async fn wa_native_delete(
     if stored.is_some() {
         emit_chats(&app, &account);
     }
+    Ok(())
+}
+
+/// Removes a message from this device only.
+#[tauri::command]
+pub async fn wa_native_delete_local(
+    app: AppHandle,
+    state: State<'_, WaState>,
+    id: String,
+    chat_id: String,
+    message_id: String,
+) -> Result<(), String> {
+    let account = state.get(&id)?;
+    account
+        .db
+        .lock()
+        .unwrap()
+        .delete_message(&chat_id, &message_id)
+        .map_err(|e| e.to_string())?;
+    emit_chats(&app, &account);
     Ok(())
 }
 

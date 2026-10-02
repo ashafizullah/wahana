@@ -27,6 +27,7 @@
     "allow-wa-native-react",
     "allow-wa-native-edit",
     "allow-wa-native-delete",
+    "allow-wa-native-delete-local",
     "allow-wa-native-pin-message",
     "allow-wa-native-forward",
     "allow-wa-native-chats",

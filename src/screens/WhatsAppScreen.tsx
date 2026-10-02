@@ -95,6 +95,7 @@ export function WhatsAppScreen({ account, header }: { account: NativeAccount; he
   const [listWidth, setListWidth] = usePaneWidth("chatList", 320, 240, 560);
   const [chats, setChats] = useState<NativeChat[]>([]);
   const [chatId, setChatId] = useState<string | null>(null);
+  const [draft, setDraft] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // A chat id belongs to one account: switching accounts drops the selection.
@@ -152,7 +153,12 @@ export function WhatsAppScreen({ account, header }: { account: NativeAccount; he
           chatId={chatId}
           chat={chat}
           tick={tick}
-          onOpenChat={(ids) => setChatId(ids.find((id) => chats.some((c) => c.id === id)) ?? ids[ids.length - 1]!)}
+          onOpenChat={(ids, draft) => {
+            setDraft(draft ?? null);
+            setChatId(ids.find((id) => chats.some((c) => c.id === id)) ?? ids[ids.length - 1]!);
+          }}
+          initialDraft={draft}
+          onDraftUsed={() => setDraft(null)}
           onError={setError}
         />
       ) : (
@@ -637,17 +643,24 @@ function Conversation({
   chat,
   tick,
   onOpenChat,
+  initialDraft,
+  onDraftUsed,
   onError,
 }: {
   account: NativeAccount;
   chatId: string;
   chat: NativeChat | undefined;
   tick: number;
-  /** Open a direct chat: candidate chat ids, best first. */
-  onOpenChat: (ids: string[]) => void;
+  /** Open a direct chat: candidate chat ids, best first, optionally with a draft to start the composer with. */
+  onOpenChat: (ids: string[], draft?: string) => void;
+  /** Text waiting for this chat's composer (a private reply), taken once. */
+  initialDraft: string | null;
+  onDraftUsed: () => void;
   onError: (e: string) => void;
 }) {
   const [info, setInfo] = useState(false);
+  /** A group member whose profile was opened from a bubble; replaces the chat's own info panel. */
+  const [profileId, setProfileId] = useState<string | null>(null);
   const readMode = useReadReceipts(nativeAccountKey(account.id));
   const { title, pushName } = chatLabel(chat, chatId);
   const name = pushName ?? title;
@@ -686,6 +699,25 @@ function Conversation({
       cancelled = true;
     };
   }, [channel, connected, account.id, chatId]);
+  /** Group admins can delete other people's messages for everyone. */
+  const [amAdmin, setAmAdmin] = useState(false);
+  useEffect(() => {
+    setAmAdmin(false);
+    if (!group || !connected) return;
+    let cancelled = false;
+    nativeWa
+      .chatInfo(account.id, chatId)
+      .then((d) => !cancelled && setAmAdmin(d.type === "group" && d.members.some((m) => m.isMe && m.admin)))
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [group, connected, account.id, chatId]);
+  useEffect(() => {
+    if (initialDraft == null) return;
+    setDraftPick(initialDraft);
+    onDraftUsed();
+  }, [initialDraft]); // eslint-disable-line react-hooks/exhaustive-deps
   const picture = usePicture(account.id, chatId, connected);
   const typists = Object.values(useNativeTyping(account.id, chatId, connected && !channel));
   const moreStored = messages.length >= limit;
@@ -774,7 +806,9 @@ function Conversation({
         {
           id: "everyone",
           label: "Delete for everyone",
-          hint: "Removes it from the chat for all participants (own messages only).",
+          hint: m.fromMe
+            ? "Removes it from the chat for all participants."
+            : "Removes it from the chat for all participants, as a group admin.",
           danger: true,
         },
       ],
@@ -786,6 +820,17 @@ function Conversation({
       onError(errMsg(e));
     }
   };
+
+  const deleteForMe = async (m: NativeMessage) => {
+    try {
+      await nativeWa.deleteLocal(account.id, chatId, m.id);
+      setMessages((list) => list.filter((x) => x.id !== m.id));
+    } catch (e) {
+      onError(errMsg(e));
+    }
+  };
+
+  const senderChatIds = (m: NativeMessage) => (m.senderPhone ? [`${m.senderPhone.replace(/\D/g, "")}@s.whatsapp.net`] : null);
 
   const pinMessage = async (m: NativeMessage) => {
     const on = !isPinned(pins, prefsKey, m.id);
@@ -838,7 +883,10 @@ function Conversation({
         <header className="h-14 shrink-0 flex items-center gap-3 px-4 bg-white dark:bg-neutral-900 border-b border-neutral-200 dark:border-neutral-800">
           <button
             className="flex items-center gap-3 min-w-0 flex-1 text-left"
-            onClick={() => setInfo((v) => !v)}
+            onClick={() => {
+              setProfileId(null);
+              setInfo((v) => !v);
+            }}
             title={group ? "Group info" : channel ? "Channel info" : "Contact info"}
           >
             <Avatar src={picture} name={name} size={36} />
@@ -977,6 +1025,7 @@ function Conversation({
                     pinned={isPinned(pins, prefsKey, m.id)}
                     onMenu={onMenu}
                     onJumpTo={setJumpTo}
+                    onProfile={setProfileId}
                   />
                 </ErrorBoundary>
               </div>
@@ -1037,7 +1086,18 @@ function Conversation({
                   }
                 : undefined
             }
-            onDelete={(!channel || canPost) && !menu.m.revokedAt && menu.m.fromMe ? () => void deleteMessage(menu.m) : undefined}
+            onDelete={
+              (!channel || canPost) && !menu.m.revokedAt && (menu.m.fromMe || (group && amAdmin))
+                ? () => void deleteMessage(menu.m)
+                : undefined
+            }
+            onDeleteLocal={channel ? undefined : () => void deleteForMe(menu.m)}
+            onChat={group && !menu.m.fromMe && senderChatIds(menu.m) ? () => onOpenChat(senderChatIds(menu.m)!) : undefined}
+            onReplyPrivately={
+              group && !menu.m.fromMe && !menu.m.revokedAt && senderChatIds(menu.m)
+                ? () => onOpenChat(senderChatIds(menu.m)!, quoteForPrivateReply(menu.m))
+                : undefined
+            }
             onPin={channel || menu.m.revokedAt ? undefined : () => void pinMessage(menu.m)}
             onForward={menu.m.revokedAt ? undefined : () => setForward(menu.m)}
             onInfo={menu.m.fromMe && !channel ? () => setInfoFor(menu.m) : undefined}
@@ -1067,14 +1127,18 @@ function Conversation({
           />
         )}
       </div>
-      {info && (
+      {(profileId || info) && (
         <NativeInfoPanel
+          key={profileId ?? chatId}
           accountId={account.id}
-          chatId={chatId}
+          chatId={profileId ?? chatId}
           connected={connected}
-          picture={picture}
+          picture={profileId ? null : picture}
           onOpenChat={onOpenChat}
-          onClose={() => setInfo(false)}
+          onClose={() => {
+            setProfileId(null);
+            setInfo(false);
+          }}
         />
       )}
     </>
@@ -1156,9 +1220,39 @@ function AutoTranslateButton({ prefsKey }: { prefsKey: string }) {
 }
 
 /** The sender's round profile photo, loaded on demand and shared with the chat list. */
-function BubbleAvatar({ accountId, chatId, connected, name }: { accountId: string; chatId: string | null; connected: boolean; name: string }) {
+/** The draft a private reply starts with: the message being answered, quoted. */
+function quoteForPrivateReply(m: NativeMessage) {
+  const text = m.body || (m.media ? `[${m.media.kind}]` : "");
+  return text
+    ? `${text
+        .split("\n")
+        .map((l) => `> ${l}`)
+        .join("\n")}\n`
+    : "";
+}
+
+function BubbleAvatar({
+  accountId,
+  chatId,
+  connected,
+  name,
+  onClick,
+}: {
+  accountId: string;
+  chatId: string | null;
+  connected: boolean;
+  name: string;
+  onClick?: () => void;
+}) {
   const picture = usePicture(accountId, chatId ?? "", connected && !!chatId);
-  return <Avatar src={picture} name={name} size={28} />;
+  const avatar = <Avatar src={picture} name={name} size={28} />;
+  return onClick ? (
+    <button className="rounded-full" onClick={onClick} title="Profile">
+      {avatar}
+    </button>
+  ) : (
+    avatar
+  );
 }
 
 const Bubble = memo(function Bubble({
@@ -1172,6 +1266,7 @@ const Bubble = memo(function Bubble({
   pinned,
   onMenu,
   onJumpTo,
+  onProfile,
 }: {
   accountId: string;
   connected: boolean;
@@ -1185,6 +1280,7 @@ const Bubble = memo(function Bubble({
   pinned: boolean;
   onMenu: (m: NativeMessage, pos: { x: number; y: number }) => void;
   onJumpTo: (bareId: string) => void;
+  onProfile: (chatId: string) => void;
 }) {
   const mine = m.fromMe;
   const sticker = m.media?.kind === "sticker";
@@ -1203,7 +1299,15 @@ const Bubble = memo(function Bubble({
     <div className={cn("flex items-end gap-1.5", mine ? "justify-end" : "justify-start")}>
       {!mine && avatar !== "none" && (
         <div className="w-7 shrink-0">
-          {avatar === "show" && <BubbleAvatar accountId={accountId} chatId={avatarChatId} connected={connected} name={m.senderName || m.senderPhone || ""} />}
+          {avatar === "show" && (
+            <BubbleAvatar
+              accountId={accountId}
+              chatId={avatarChatId}
+              connected={connected}
+              name={m.senderName || m.senderPhone || ""}
+              onClick={avatarChatId ? () => onProfile(avatarChatId) : undefined}
+            />
+          )}
         </div>
       )}
       <div className={cn("flex flex-col max-w-[70%]", mine ? "items-end" : "items-start")}>
@@ -1237,7 +1341,13 @@ const Bubble = memo(function Bubble({
           )}
           {showSender && (m.senderName || m.senderPhone) && (
             <div className="flex items-baseline gap-1.5 text-[11px] mb-0.5">
-              <span className="font-semibold text-wa-dark dark:text-wa">{m.senderName || m.senderPhone}</span>
+              <button
+                className="font-semibold text-wa-dark dark:text-wa hover:underline disabled:no-underline"
+                disabled={!avatarChatId}
+                onClick={() => avatarChatId && onProfile(avatarChatId)}
+              >
+                {m.senderName || m.senderPhone}
+              </button>
               {m.senderPhone && m.senderName && m.senderName !== m.senderPhone && <span className="text-neutral-400">{m.senderPhone}</span>}
             </div>
           )}
@@ -1254,7 +1364,9 @@ const Bubble = memo(function Bubble({
                 mine ? "bg-black/5 dark:bg-black/20" : "bg-neutral-100 dark:bg-neutral-700/60",
               )}
             >
-              <div className="font-semibold text-wa-dark dark:text-wa truncate">{m.replyTo.fromMe ? "You" : m.replyTo.senderName || "Message"}</div>
+              <div className="font-semibold text-wa-dark dark:text-wa truncate">
+                {m.replyTo.fromMe ? "You" : m.replyTo.senderName || "Message"}
+              </div>
               <div className="line-clamp-2 break-words text-neutral-600 dark:text-neutral-300">{m.replyTo.text || "Message"}</div>
             </button>
           )}

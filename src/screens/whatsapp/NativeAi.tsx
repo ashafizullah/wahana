@@ -1,3 +1,4 @@
+import { createPortal } from "react-dom";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
@@ -16,6 +17,7 @@ import {
   ScanText,
   SmilePlus,
   Sparkles,
+  MessageCircle,
   Trash2,
   X,
 } from "lucide-react";
@@ -132,6 +134,9 @@ export function NativeMessageMenu({
   onReply,
   onEdit,
   onDelete,
+  onDeleteLocal,
+  onChat,
+  onReplyPrivately,
   onPin,
   onForward,
   onInfo,
@@ -145,6 +150,12 @@ export function NativeMessageMenu({
   onReply?: () => void;
   onEdit?: () => void;
   onDelete?: () => void;
+  /** Remove it from this device only. */
+  onDeleteLocal?: () => void;
+  /** Group: open the direct chat with the sender. */
+  onChat?: () => void;
+  /** Group: reply to the sender in a direct chat. */
+  onReplyPrivately?: () => void;
   onPin?: () => void;
   onForward?: () => void;
   onInfo?: () => void;
@@ -160,16 +171,23 @@ export function NativeMessageMenu({
   const myReaction = useReactions((s) => s.byMsg[bareId(m.id)]?.me);
   const [at, setAt] = useState({ left: pos.x, top: pos.y });
 
-  // Keep the whole menu on screen: measure it and flip/shift it inside the window.
+  // Keep the whole menu on screen: measure it and flip/shift it inside the window, again
+  // whenever its size changes (language list, status line).
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const { width, height } = el.getBoundingClientRect();
-    const margin = 8;
-    const left = pos.x + width + margin > window.innerWidth ? Math.max(margin, pos.x - width) : pos.x;
-    const top = pos.y + height + margin > window.innerHeight ? Math.max(margin, window.innerHeight - height - margin) : pos.y;
-    setAt({ left, top });
-  }, [pos.x, pos.y, langs]);
+    const place = () => {
+      const { width, height } = el.getBoundingClientRect();
+      const margin = 8;
+      const left = pos.x + width + margin > window.innerWidth ? Math.max(margin, pos.x - width) : pos.x;
+      const top = pos.y + height + margin > window.innerHeight ? Math.max(margin, window.innerHeight - height - margin) : pos.y;
+      setAt((cur) => (cur.left === left && cur.top === top ? cur : { left, top }));
+    };
+    place();
+    const observer = new ResizeObserver(place);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [pos.x, pos.y]);
 
   // Stays open while the reaction is sent, so a failure is shown here.
   const react = async (emoji: string) => {
@@ -216,7 +234,8 @@ export function NativeMessageMenu({
     </button>
   );
 
-  return (
+  // In a portal so no ancestor's overflow or stacking context can clip it.
+  return createPortal(
     <div
       ref={ref}
       style={{ ...at, maxHeight: "calc(100vh - 16px)" }}
@@ -242,6 +261,8 @@ export function NativeMessageMenu({
       </div>
       {onInfo && item(<Info size={14} />, "Info", onInfo)}
       {onReply && item(<Reply size={14} />, "Reply", onReply)}
+      {onReplyPrivately && item(<Reply size={14} />, "Reply privately", onReplyPrivately)}
+      {onChat && item(<MessageCircle size={14} />, "Chat", onChat)}
       {onPin && item(<Pin size={14} />, pinned ? "Unpin" : "Pin (7 days)", onPin)}
       {onForward && item(<Forward size={14} />, "Forward…", onForward)}
       {m.body && item(<Copy size={14} />, "Copy text", () => void navigator.clipboard.writeText(m.body))}
@@ -303,13 +324,15 @@ export function NativeMessageMenu({
           <SmilePlus size={14} /> Remove reaction {myReaction}
         </button>
       )}
-      {onDelete && item(<Trash2 size={14} />, "Delete", onDelete, false, true)}
+      {onDeleteLocal && item(<Trash2 size={14} />, "Delete for me", onDeleteLocal, false, true)}
+      {onDelete && item(<Trash2 size={14} />, "Delete for everyone", onDelete, false, true)}
       {(busy || err) && (
         <div className="px-3 py-1.5 text-xs text-neutral-500 flex items-center gap-1 selectable">
           {busy ? <Loader2 size={12} className="animate-spin" /> : <span className="text-red-600">{err}</span>}
         </div>
       )}
-    </div>
+    </div>,
+    document.body,
   );
 }
 

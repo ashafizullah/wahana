@@ -21,7 +21,9 @@ export function AppearanceSection() {
             onClick={() => setMode(value)}
             className={
               "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm " +
-              (mode === value ? "bg-wa-dark text-white" : "text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800")
+              (mode === value
+                ? "bg-wa-dark text-white"
+                : "text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800")
             }
           >
             <Icon size={14} />

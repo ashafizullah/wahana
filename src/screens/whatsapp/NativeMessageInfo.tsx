@@ -7,15 +7,7 @@ const fmt = (ms: number) =>
   new Date(ms).toLocaleString([], { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
 /** Sent, delivered, read and played times of a message I sent; per recipient in a group. */
-export function NativeMessageInfo({
-  accountId,
-  message: m,
-  onClose,
-}: {
-  accountId: string;
-  message: NativeMessage;
-  onClose: () => void;
-}) {
+export function NativeMessageInfo({ accountId, message: m, onClose }: { accountId: string; message: NativeMessage; onClose: () => void }) {
   const [rows, setRows] = useState<NativeReceipt[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const group = isGroup(m.chatId);
@@ -64,28 +56,37 @@ export function NativeMessageInfo({
           {err && <div className="text-xs text-red-600 py-2 selectable">{err}</div>}
           {rows && !group && (
             <>
-              {line(grey, "Delivered", first((r) => r.deliveredAt), m.ack >= 2)}
-              {line(blue, "Read", first((r) => r.readAt), m.ack >= 3)}
-              {m.media?.kind === "audio" && line(blue, "Played", first((r) => r.playedAt), m.ack >= 4)}
+              {line(
+                grey,
+                "Delivered",
+                first((r) => r.deliveredAt),
+                m.ack >= 2,
+              )}
+              {line(
+                blue,
+                "Read",
+                first((r) => r.readAt),
+                m.ack >= 3,
+              )}
+              {m.media?.kind === "audio" &&
+                line(
+                  blue,
+                  "Played",
+                  first((r) => r.playedAt),
+                  m.ack >= 4,
+                )}
             </>
           )}
           {rows && group && (
             <>
               <Section title="Read by" rows={rows.filter((r) => r.readAt)} at={(r) => r.readAt} icon={blue} />
-              <Section
-                title="Delivered to"
-                rows={rows.filter((r) => r.deliveredAt && !r.readAt)}
-                at={(r) => r.deliveredAt}
-                icon={grey}
-              />
+              <Section title="Delivered to" rows={rows.filter((r) => r.deliveredAt && !r.readAt)} at={(r) => r.deliveredAt} icon={grey} />
               {rows.length === 0 && (
                 <div className="py-2 text-xs text-neutral-500">
                   {m.ack >= 2 ? "Per-person times were not recorded for this message." : "No receipts yet."}
                 </div>
               )}
-              <div className="py-2 text-[11px] text-neutral-400">
-                WhatsApp only reports a read when that person has read receipts on.
-              </div>
+              <div className="py-2 text-[11px] text-neutral-400">WhatsApp only reports a read when that person has read receipts on.</div>
             </>
           )}
         </div>
