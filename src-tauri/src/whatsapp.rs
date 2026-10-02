@@ -1692,10 +1692,18 @@ pub async fn wa_native_edit(
     let to: Jid = chat_id
         .parse()
         .map_err(|_| format!("invalid chat id: {chat_id}"))?;
-    client
-        .edit_message(to, message_id.clone(), wa::Message::text(text.clone()))
-        .await
-        .map_err(|e| e.to_string())?;
+    if chat_id.ends_with("@newsletter") {
+        client
+            .newsletter()
+            .edit_message(&to, message_id.clone(), wa::Message::text(text.clone()))
+            .await
+            .map_err(|e| e.to_string())?;
+    } else {
+        client
+            .edit_message(to, message_id.clone(), wa::Message::text(text.clone()))
+            .await
+            .map_err(|e| e.to_string())?;
+    }
     let updated = account
         .db
         .lock()
@@ -1728,10 +1736,18 @@ pub async fn wa_native_delete(
     let to: Jid = chat_id
         .parse()
         .map_err(|_| format!("invalid chat id: {chat_id}"))?;
-    client
-        .revoke_message(to, message_id.clone(), RevokeType::Sender)
-        .await
-        .map_err(|e| e.to_string())?;
+    if chat_id.ends_with("@newsletter") {
+        client
+            .newsletter()
+            .revoke_message(&to, message_id.clone())
+            .await
+            .map_err(|e| e.to_string())?;
+    } else {
+        client
+            .revoke_message(to, message_id.clone(), RevokeType::Sender)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
     let stored = account
         .db
         .lock()
@@ -2134,6 +2150,35 @@ pub async fn wa_native_channel_leave(
         .delete_chat(&chat_id)
         .map_err(|e| e.to_string())?;
     emit_account(&app, &account);
+    emit_chats(&app, &account);
+    Ok(())
+}
+
+/// Renames a channel or changes its description (owners and admins only).
+#[tauri::command]
+pub async fn wa_native_channel_update(
+    app: AppHandle,
+    state: State<'_, WaState>,
+    id: String,
+    chat_id: String,
+    name: Option<String>,
+    description: Option<String>,
+) -> Result<(), String> {
+    let account = state.get(&id)?;
+    let client = running_client(&account)?;
+    let jid: Jid = chat_id
+        .parse()
+        .map_err(|_| format!("invalid chat id: {chat_id}"))?;
+    let meta = client
+        .newsletter()
+        .update(&jid, name.as_deref(), description.as_deref())
+        .await
+        .map_err(|e| e.to_string())?;
+    let _ = account
+        .db
+        .lock()
+        .unwrap()
+        .set_name(&chat_id, &meta.name, NameSource::GroupSubject);
     emit_chats(&app, &account);
     Ok(())
 }

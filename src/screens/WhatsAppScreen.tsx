@@ -672,6 +672,20 @@ function Conversation({
   const group = isGroup(chatId);
   const channel = isChannel(chatId);
   const connected = account.status === "working";
+  /** Owners and admins of a channel can post, edit and delete; everyone else only reads. */
+  const [canPost, setCanPost] = useState(false);
+  useEffect(() => {
+    setCanPost(false);
+    if (!channel || !connected) return;
+    let cancelled = false;
+    nativeWa
+      .chatInfo(account.id, chatId)
+      .then((d) => !cancelled && setCanPost(d.type === "channel" && (d.role === "owner" || d.role === "admin")))
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [channel, connected, account.id, chatId]);
   const picture = usePicture(account.id, chatId, connected);
   const typists = Object.values(useNativeTyping(account.id, chatId, connected && !channel));
   const moreStored = messages.length >= limit;
@@ -951,7 +965,7 @@ function Conversation({
           ))}
         </div>
 
-        {channel ? (
+        {channel && !canPost ? (
           <div className="shrink-0 flex items-center justify-center gap-2 bg-white dark:bg-neutral-900 border-t border-neutral-200 dark:border-neutral-800 px-4 py-3 text-xs text-neutral-500">
             <Megaphone size={14} /> Channels are read-only — only the channel can post.
           </div>
@@ -990,14 +1004,18 @@ function Conversation({
             onEdit={
               // Only plain text can be edited (a caption edit needs the media message), and
               // only within WhatsApp's edit window.
-              !channel && !menu.m.revokedAt && menu.m.fromMe && menu.m.kind === "text" && Date.now() - menu.m.timestamp < EDIT_WINDOW_MS
+              (!channel || canPost) &&
+              !menu.m.revokedAt &&
+              menu.m.fromMe &&
+              menu.m.kind === "text" &&
+              Date.now() - menu.m.timestamp < EDIT_WINDOW_MS
                 ? () => {
                     setReplyTo(null);
                     setEditing(menu.m);
                   }
                 : undefined
             }
-            onDelete={!channel && !menu.m.revokedAt && menu.m.fromMe ? () => void deleteMessage(menu.m) : undefined}
+            onDelete={(!channel || canPost) && !menu.m.revokedAt && menu.m.fromMe ? () => void deleteMessage(menu.m) : undefined}
             onPin={channel || menu.m.revokedAt ? undefined : () => void pinMessage(menu.m)}
             onForward={menu.m.revokedAt ? undefined : () => setForward(menu.m)}
             onInfo={menu.m.fromMe && !channel ? () => setInfoFor(menu.m) : undefined}

@@ -39,6 +39,7 @@
     "allow-wa-native-channel-follow",
     "allow-wa-native-channel-leave",
     "allow-wa-native-channel-mute",
+    "allow-wa-native-channel-update",
     "allow-wa-native-media",
     "allow-wa-native-send-media",
     "allow-wa-native-chat-info",

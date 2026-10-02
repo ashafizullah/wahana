@@ -265,6 +265,9 @@ export const nativeWa = {
   /** Follow a channel from its invite link or code; resolves to its chat id. */
   channelFollow: (id: string, invite: string) => invoke<string>("wa_native_channel_follow", { id, invite }),
   channelLeave: (id: string, chatId: string) => invoke<void>("wa_native_channel_leave", { id, chatId }),
+  /** Rename a channel or change its description (owners and admins). */
+  channelUpdate: (id: string, chatId: string, name: string | null, description: string | null) =>
+    invoke<void>("wa_native_channel_update", { id, chatId, name, description }),
   channelMute: (id: string, chatId: string, muted: boolean) => invoke<void>("wa_native_channel_mute", { id, chatId, muted }),
   channelSync: (id: string, chatId: string, older: boolean) => invoke<number>("wa_native_channel_sync", { id, chatId, older }),
   markRead: (id: string, chatId: string) => invoke<void>("wa_native_mark_read", { id, chatId }),

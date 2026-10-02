@@ -123,7 +123,7 @@ export function NativeInfoPanel({
           {details?.type === "channel" && (
             <>
               {details.description && <Description text={details.description} />}
-              <NativeChannelRows accountId={accountId} details={details} connected={connected} onLeft={onClose} />
+              <NativeChannelRows accountId={accountId} details={details} connected={connected} onLeft={onClose} onChanged={refresh} />
             </>
           )}
           {details?.type === "group" && (

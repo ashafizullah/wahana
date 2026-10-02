@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { BadgeCheck, BellOff, Calendar, Copy, LogOut, Megaphone, Users } from "lucide-react";
+import { BadgeCheck, BellOff, Calendar, Copy, LogOut, Megaphone, Pencil, Users } from "lucide-react";
 import { Dialog } from "@/components/AttachMenu";
 import { confirm } from "@/components/Confirm";
 import { Button, Input } from "@/components/ui";
@@ -32,12 +32,16 @@ export function NativeChannelRows({
   details: d,
   connected,
   onLeft,
+  onChanged,
 }: {
   accountId: string;
   details: NativeChannelDetails;
   connected: boolean;
   onLeft: () => void;
+  /** The name or description was changed: reload the details. */
+  onChanged: () => void;
 }) {
+  const [editing, setEditing] = useState(false);
   const [muted, setMuted] = useState(() => readMuted(accountId, d.id));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -99,6 +103,16 @@ export function NativeChannelRows({
         {d.createdAt && <Row icon={Calendar}>Created {new Date(d.createdAt).toLocaleDateString()}</Row>}
       </div>
       <div className="py-1 border-b border-neutral-100 dark:border-neutral-800">
+        {manager && (
+          <button
+            onClick={() => setEditing(true)}
+            disabled={!connected}
+            className="w-full flex items-center gap-3 px-4 py-2 text-sm text-left hover:bg-neutral-50 dark:hover:bg-neutral-800/60 disabled:opacity-50"
+          >
+            <Pencil size={15} className="text-wa-dark shrink-0" />
+            <span className="flex-1">Edit name and description</span>
+          </button>
+        )}
         {d.inviteLink && (
           <button
             onClick={() => void copyLink()}
@@ -126,7 +140,75 @@ export function NativeChannelRows({
         </button>
       </div>
       {error && <div className="p-4 text-xs text-red-600 selectable">{error}</div>}
+      {editing && (
+        <EditChannel
+          accountId={accountId}
+          details={d}
+          onSaved={() => {
+            setEditing(false);
+            onChanged();
+          }}
+          onClose={() => setEditing(false)}
+        />
+      )}
     </>
+  );
+}
+
+/** Rename a channel or change its description (owners and admins). */
+function EditChannel({
+  accountId,
+  details: d,
+  onSaved,
+  onClose,
+}: {
+  accountId: string;
+  details: NativeChannelDetails;
+  onSaved: () => void;
+  onClose: () => void;
+}) {
+  const [name, setName] = useState(d.name);
+  const [description, setDescription] = useState(d.description ?? "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const save = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await nativeWa.channelUpdate(
+        accountId,
+        d.id,
+        name.trim() !== d.name ? name.trim() : null,
+        description.trim() !== (d.description ?? "") ? description.trim() : null,
+      );
+      onSaved();
+    } catch (e) {
+      setError(errMsg(e));
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Dialog title="Edit channel" onClose={onClose}>
+      <div className="p-4 space-y-3">
+        <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Channel name" maxLength={100} />
+        <textarea
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          placeholder="Description"
+          rows={4}
+          maxLength={2048}
+          className="w-full rounded-lg border border-neutral-200 dark:border-neutral-700 bg-transparent px-3 py-2 text-sm outline-none"
+        />
+        {error && <div className="text-xs text-red-600 selectable">{error}</div>}
+        <div className="flex justify-end">
+          <Button onClick={() => void save()} disabled={busy || !name.trim()}>
+            {busy ? "Saving…" : "Save"}
+          </Button>
+        </div>
+      </div>
+    </Dialog>
   );
 }
 

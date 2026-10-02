@@ -112,6 +112,7 @@ pub fn run() {
             whatsapp::wa_native_channel_follow,
             whatsapp::wa_native_channel_leave,
             whatsapp::wa_native_channel_mute,
+            whatsapp::wa_native_channel_update,
             whatsapp::wa_native_media,
             whatsapp::wa_native_send_media,
             whatsapp::wa_native_chat_info,

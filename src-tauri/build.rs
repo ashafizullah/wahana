@@ -34,6 +34,7 @@ const COMMANDS: &[&str] = &[
     "wa_native_channel_follow",
     "wa_native_channel_leave",
     "wa_native_channel_mute",
+    "wa_native_channel_update",
     "wa_native_media",
     "wa_native_send_media",
     "wa_native_chat_info",
