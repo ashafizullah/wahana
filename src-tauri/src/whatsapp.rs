@@ -121,6 +121,20 @@ pub struct MessageView {
     pub reply_to: Option<ReplyView>,
     /// The album this photo or video was sent in, shared by all its members.
     pub album_id: Option<String>,
+    /// The link preview WhatsApp embedded in the message, when it has one.
+    pub preview: Option<PreviewInfo>,
+}
+
+/// A link preview as WhatsApp embedded it: the first URL in the text plus the title,
+/// description and thumbnail its servers fetched. Absent for plain text and older messages.
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PreviewInfo {
+    pub url: String,
+    pub title: Option<String>,
+    pub description: Option<String>,
+    /// The thumbnail as a data URL.
+    pub image: Option<String>,
 }
 
 /// A quoted message as shown above a reply.
@@ -670,6 +684,32 @@ fn album_of(message: &wa::Message) -> Option<String> {
         .and_then(|k| k.id.clone())
 }
 
+/// The link preview WhatsApp embedded in a message. The extended text message carries the
+/// first URL plus the title, description and a small JPEG its servers fetched, so the bubble
+/// can draw the same card without fetching the page itself.
+fn link_preview(message: &wa::Message) -> Option<PreviewInfo> {
+    use base64::Engine as _;
+    let ext = message
+        .get_base_message()
+        .extended_text_message
+        .as_option()?;
+    let url = ext.matched_text.clone().filter(|u| !u.is_empty())?;
+    if ext.title.is_none() && ext.description.is_none() && ext.jpeg_thumbnail.is_none() {
+        return None;
+    }
+    Some(PreviewInfo {
+        url,
+        title: ext.title.clone(),
+        description: ext.description.clone(),
+        image: ext.jpeg_thumbnail.as_deref().map(|bytes| {
+            format!(
+                "data:image/jpeg;base64,{}",
+                base64::engine::general_purpose::STANDARD.encode(bytes)
+            )
+        }),
+    })
+}
+
 /// The message a reply quotes, from the reply context any message type may carry.
 fn quote_of(message: &wa::Message) -> Option<QuoteRef> {
     let base = message.get_base_message();
@@ -899,6 +939,7 @@ fn history_message(chat_id: &str, info: &wa::WebMessageInfo) -> Option<IncomingM
             channel_reactions: Vec::new(),
             reply_to: None,
             album_id: None,
+            preview: info.message.as_option().and_then(link_preview),
         },
         sender_id,
         media,
@@ -1362,6 +1403,7 @@ async fn run_account(
                     channel_reactions: Vec::new(),
                     reply_to: None,
                     album_id: None,
+                    preview: link_preview(&ctx.message),
                 },
                 sender_id: if from_me { String::new() } else { sender },
                 media,
@@ -1722,6 +1764,7 @@ pub async fn wa_native_send_text(
             channel_reactions: Vec::new(),
             reply_to: None,
             album_id: None,
+            preview: None,
         },
         sender_id: String::new(),
         media: None,
@@ -1964,6 +2007,7 @@ pub async fn wa_native_forward(
         channel_reactions: Vec::new(),
         reply_to: None,
         album_id: None,
+        preview: link_preview(&message),
     };
     record_message(
         &app,
@@ -2165,6 +2209,7 @@ pub async fn wa_native_channel_sync(
                         channel_reactions: Vec::new(),
                         reply_to: None,
                         album_id: None,
+                        preview: m.message.as_ref().and_then(link_preview),
                     },
                     sender_id: String::new(),
                     media,
@@ -2817,6 +2862,7 @@ pub async fn wa_native_send_media(
             channel_reactions: Vec::new(),
             reply_to: None,
             album_id: None,
+            preview: None,
         },
         sender_id: String::new(),
         media,

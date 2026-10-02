@@ -12,11 +12,12 @@ use base64::Engine as _;
 use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::whatsapp::{
-    ChannelReaction, ChatInfo, EditView, MediaInfo, MessageKind, MessageView, ReplyView,
+    ChannelReaction, ChatInfo, EditView, MediaInfo, MessageKind, MessageView, PreviewInfo,
+    ReplyView,
 };
 
 /// Bumped with every schema change; `open` migrates older files up to it.
-const SCHEMA_VERSION: i64 = 10;
+const SCHEMA_VERSION: i64 = 11;
 
 /// How much a name source is trusted. A name only replaces one from an equal or lower
 /// source, so a push name never overwrites a contact's saved name.
@@ -256,6 +257,16 @@ impl ChatDb {
         if version < 10 {
             conn.execute_batch("ALTER TABLE messages ADD COLUMN album_id TEXT;")?;
         }
+        if version < 11 {
+            // The link preview WhatsApp embedded in a message: the first URL plus the title,
+            // description and a small JPEG thumbnail, all copied from the message proto.
+            conn.execute_batch(
+                "ALTER TABLE messages ADD COLUMN preview_url TEXT;
+                 ALTER TABLE messages ADD COLUMN preview_title TEXT;
+                 ALTER TABLE messages ADD COLUMN preview_description TEXT;
+                 ALTER TABLE messages ADD COLUMN preview_image TEXT;",
+            )?;
+        }
         conn.execute_batch(&format!("PRAGMA user_version = {SCHEMA_VERSION}"))?;
         // Statuses are stored as messages under `status@broadcast`, not as a chat; drop any
         // row an earlier build created for it.
@@ -330,8 +341,9 @@ impl ChatDb {
         let inserted = self.conn.execute(
             "INSERT OR IGNORE INTO messages (chat_id, id, from_me, sender_id, sender_name, kind, body, timestamp,
                  media_kind, mimetype, file_name, file_size, seconds, width, height, thumbnail, media_proto, ack,
-                 quote_id, quote_sender, quote_text, album_id)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)",
+                 quote_id, quote_sender, quote_text, album_id,
+                 preview_url, preview_title, preview_description, preview_image)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26)",
             params![
                 v.chat_id,
                 v.id,
@@ -355,6 +367,10 @@ impl ChatDb {
                 msg.quote.as_ref().map(|q| q.sender.as_str()),
                 msg.quote.as_ref().map(|q| q.text.as_str()),
                 msg.album,
+                v.preview.as_ref().map(|p| p.url.as_str()),
+                v.preview.as_ref().and_then(|p| p.title.as_deref()),
+                v.preview.as_ref().and_then(|p| p.description.as_deref()),
+                v.preview.as_ref().and_then(|p| p.image.as_deref()),
             ],
         )? > 0;
         if !inserted {
@@ -384,6 +400,21 @@ impl ChatDb {
                         m.height,
                         m.thumbnail,
                         m.proto,
+                    ],
+                )?;
+            }
+            // Likewise fill in a link preview when a later copy of the message carries one.
+            if let Some(p) = &v.preview {
+                self.conn.execute(
+                    "UPDATE messages SET preview_url = ?3, preview_title = ?4, preview_description = ?5, preview_image = ?6
+                     WHERE chat_id = ?1 AND id = ?2 AND preview_url IS NULL",
+                    params![
+                        v.chat_id,
+                        v.id,
+                        p.url.as_str(),
+                        p.title.as_deref(),
+                        p.description.as_deref(),
+                        p.image.as_deref(),
                     ],
                 )?;
             }
@@ -829,6 +860,7 @@ impl ChatDb {
                     channel_reactions: Vec::new(),
                     reply_to: None,
                     album_id: None,
+                    preview: None,
                 },
             ))
         })?;
@@ -879,7 +911,8 @@ impl ChatDb {
             "SELECT * FROM (
                  SELECT id, chat_id, from_me, sender_id, sender_name, kind, body, timestamp,
                         media_kind, mimetype, file_name, file_size, seconds, width, height, thumbnail, ack,
-                        revoked_at, edited_at, quote_id, quote_sender, quote_text, album_id
+                        revoked_at, edited_at, quote_id, quote_sender, quote_text, album_id,
+                        preview_url, preview_title, preview_description, preview_image
                  FROM messages
                  WHERE chat_id = ?1 {filter}
                  ORDER BY timestamp DESC
@@ -913,6 +946,15 @@ impl ChatDb {
                     })
                 })
                 .transpose()?;
+            let preview = match r.get::<_, Option<String>>(23)? {
+                Some(url) => Some(PreviewInfo {
+                    url,
+                    title: r.get(24)?,
+                    description: r.get(25)?,
+                    image: r.get(26)?,
+                }),
+                None => None,
+            };
             Ok((
                 r.get::<_, String>(3)?,
                 quote,
@@ -934,6 +976,7 @@ impl ChatDb {
                     channel_reactions: Vec::new(),
                     reply_to: None,
                     album_id: None,
+                    preview,
                 },
             ))
         })?;

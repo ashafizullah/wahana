@@ -6,8 +6,8 @@ import { useSettings } from "@/store/settings";
 
 export interface Preview {
   url: string;
-  title?: string;
-  description?: string;
+  title?: string | null;
+  description?: string | null;
   /** data: or blob: URL of the thumbnail */
   image?: string | null;
 }
@@ -21,8 +21,9 @@ interface ExtText {
   JPEGThumbnail?: string;
 }
 
-/** What a preview needs from a message: WAHA messages carry the raw proto in `_data`, native ones only the text. */
-type PreviewSource = { body?: string | null; _data?: unknown };
+/** What a preview needs from a message: WAHA messages carry the raw proto in `_data`, native
+ * ones the preview WhatsApp embedded (or only the text). */
+type PreviewSource = { body?: string | null; _data?: unknown; preview?: Preview | null };
 
 /** Preview data WhatsApp embedded in the message (sender generated it). */
 export function embeddedPreview(m: PreviewSource): Preview | null {
@@ -146,7 +147,7 @@ export function fetchPreview(url: string): Promise<Preview | null> {
 
 export function LinkPreviewCard({ message: m }: { message: PreviewSource }) {
   const fetchEnabled = useSettings((s) => s.linkPreviews);
-  const embedded = embeddedPreview(m);
+  const embedded = m.preview ?? embeddedPreview(m);
   const url = embedded?.url ?? firstUrl(m.body ?? undefined);
   const [preview, setPreview] = useState<Preview | null>(embedded);
 
@@ -169,14 +170,14 @@ export function LinkPreviewCard({ message: m }: { message: PreviewSource }) {
   return (
     <button
       onClick={() => openUrl(preview.url)}
-      className="mt-1 w-full max-w-[340px] flex items-stretch gap-2 rounded-lg overflow-hidden bg-black/5 dark:bg-white/10 text-left hover:bg-black/10 dark:hover:bg-white/15"
+      className="mb-1 w-full flex items-center gap-2 rounded-lg overflow-hidden bg-black/5 dark:bg-white/10 text-left hover:bg-black/10 dark:hover:bg-white/15"
       title={preview.url}
     >
       {preview.image ? (
-        <img src={preview.image} alt="" className="w-20 shrink-0 object-cover" />
+        <img src={preview.image} alt="" className="w-20 h-20 shrink-0 object-cover" />
       ) : (
-        <div className="w-14 shrink-0 grid place-items-center text-neutral-400">
-          <Globe size={18} />
+        <div className="w-20 h-20 shrink-0 grid place-items-center text-neutral-400">
+          <Globe size={20} />
         </div>
       )}
       <div className="min-w-0 py-1.5 pr-2">

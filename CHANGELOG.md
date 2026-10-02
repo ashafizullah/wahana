@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.0 — 2026-10-02
+
+### Added
+
+- Native chat: link messages show WhatsApp's own preview (thumbnail, title, description, URL) inside the bubble, with the live Open Graph fetch kept as a fallback.
+
+### Fixed
+
+- Native chat: opening a chat crashed with `undefined is not an object (evaluating 't.albumId')` when the newest messages were a photo/video album.
+
 ## 0.5.0 — 2026-10-02
 
 ### Added

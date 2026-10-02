@@ -66,7 +66,7 @@ export function ChatMedia({ session, chatId }: { session: string; chatId: string
       const url = firstUrl(m.body);
       if (url) {
         const p = embeddedPreview(m);
-        links.push({ m, url, title: p?.title, thumb: p?.image });
+        links.push({ m, url, title: p?.title ?? undefined, thumb: p?.image });
       }
     }
     return { media, docs, links };

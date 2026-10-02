@@ -163,6 +163,7 @@ export const Bubble = memo(function Bubble({
             <VCardView key={i} vcard={v} />
           ))}
           <PollView message={m} session={session} chatId={chatId} />
+          {m.body && !m.hasMedia && <LinkPreviewCard message={m} />}
           {m.body && (
             <div className="break-words">
               <WaMarkdown text={m.body} mentions={resolveName} />
@@ -170,7 +171,6 @@ export const Bubble = memo(function Bubble({
           )}
           <TranslationView id={m.id} />
           <ImageNoteView id={m.id} />
-          {m.body && !m.hasMedia && <LinkPreviewCard message={m} />}
           <div className="flex items-center justify-end gap-1 mt-0.5 text-[10px] text-neutral-500 dark:text-neutral-300/70">
             {isEdited(m) && <span className="italic">edited</span>}
             {formatTime(m.timestamp)}

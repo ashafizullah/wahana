@@ -74,6 +74,17 @@ export interface NativeMessage {
   replyTo: NativeReply | null;
   /** Shared by the photos and videos that were sent together as one album. */
   albumId: string | null;
+  /** The link preview WhatsApp embedded in the message, when it has one. */
+  preview: NativeLinkPreview | null;
+}
+
+/** A link preview WhatsApp fetched and embedded in the message. */
+export interface NativeLinkPreview {
+  url: string;
+  title: string | null;
+  description: string | null;
+  /** The thumbnail as a data URL. */
+  image: string | null;
 }
 
 /** A quoted message as shown above a reply. */

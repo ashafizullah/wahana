@@ -933,8 +933,8 @@ function Conversation({
           {messages.map((m, i) => {
             const prev = messages[i - 1];
             // Photos sent together are one bubble, drawn by the first of them.
-            const inAlbum = (a: NativeMessage | undefined, b: NativeMessage) =>
-              !!a && !!a.albumId && a.albumId === b.albumId && !!a.media && a.fromMe === b.fromMe && a.senderName === b.senderName;
+            const inAlbum = (a: NativeMessage | undefined, b: NativeMessage | undefined) =>
+              !!a && !!b && !!a.albumId && a.albumId === b.albumId && !!a.media && a.fromMe === b.fromMe && a.senderName === b.senderName;
             if (inAlbum(prev, m)) return <div key={m.id} data-msg={bareId(m.id)} />;
             let album: NativeMessage[] | undefined;
             if (m.albumId && m.media) {
@@ -1281,12 +1281,12 @@ const Bubble = memo(function Bubble({
                 </div>
               ) : null,
             )}
+            {m.body && !m.media && !revoked && <LinkPreviewCard message={m} />}
             {m.body && (
               <div className={cn("break-words", revoked && "line-through decoration-neutral-400")}>
                 <WaMarkdown text={m.body} />
               </div>
             )}
-            {m.body && !m.media && !revoked && <LinkPreviewCard message={m} />}
           </div>
           {showEdits && m.edits.length > 0 && (
             <div className="mt-1 space-y-1 border-l-2 border-neutral-300 dark:border-neutral-600 pl-2">
