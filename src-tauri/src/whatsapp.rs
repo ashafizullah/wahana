@@ -705,7 +705,7 @@ async fn load_channel_names(
     generation: u64,
     client: &Client,
 ) {
-    let channels = match client.newsletter().list_subscribed().await {
+    let channels = match crate::channel_mex::subscribed(client).await {
         Ok(channels) => channels,
         Err(e) => {
             eprintln!("failed to list WhatsApp channels: {e}");
@@ -1922,7 +1922,7 @@ pub async fn wa_native_chats(
             let Ok(jid) = chat_id.parse::<Jid>() else {
                 continue;
             };
-            if let Ok(meta) = client.newsletter().get_metadata(&jid).await {
+            if let Ok(meta) = crate::channel_mex::get(&client, &jid).await {
                 if !account.is_current(generation) {
                     break;
                 }
@@ -2102,11 +2102,7 @@ pub async fn wa_native_channel_follow(
     if code.is_empty() {
         return Err("paste a channel link, like whatsapp.com/channel/…".into());
     }
-    let found = client
-        .newsletter()
-        .get_metadata_by_invite(&code)
-        .await
-        .map_err(|e| e.to_string())?;
+    let found = crate::channel_mex::by_invite(&client, &code).await?;
     let meta = client
         .newsletter()
         .join(&found.jid)
@@ -2497,9 +2493,7 @@ pub async fn wa_native_picture(
         .map_err(|_| format!("invalid chat id: {chat_id}"))?;
     // Channels carry their picture in their metadata; profile pictures are for contacts.
     let url = if chat_id.ends_with("@newsletter") {
-        client
-            .newsletter()
-            .get_metadata(&jid)
+        crate::channel_mex::get(&client, &jid)
             .await
             .ok()
             .and_then(|meta| meta.picture_url)
@@ -2790,18 +2784,6 @@ pub enum ChatDetails {
     Channel(ChannelDetails),
 }
 
-/// An error with its causes appended: library errors often hide the server's answer in `source()`.
-fn error_chain(e: &dyn std::error::Error) -> String {
-    let mut text = e.to_string();
-    let mut source = e.source();
-    while let Some(cause) = source {
-        text.push_str(": ");
-        text.push_str(&cause.to_string());
-        source = cause.source();
-    }
-    text
-}
-
 fn channel_details(meta: &NewsletterMetadata) -> ChannelDetails {
     ChannelDetails {
         id: bare_jid(&meta.jid.to_string()),
@@ -2868,19 +2850,14 @@ pub async fn wa_native_chat_info(
     if chat_id.ends_with("@newsletter") {
         // The single-channel lookup is sometimes refused; the subscribed list carries the same
         // data. If both fail, still open the panel (unfollow and mute work) and say why.
-        let newsletter = client.newsletter();
-        let meta = match newsletter.get_metadata(&jid).await {
+        let meta = match crate::channel_mex::get(&client, &jid).await {
             Ok(meta) => Ok(meta),
-            Err(first) => match newsletter.list_subscribed().await {
+            Err(first) => match crate::channel_mex::subscribed(&client).await {
                 Ok(all) => all
                     .into_iter()
                     .find(|m| bare_jid(&m.jid.to_string()) == chat_id)
-                    .ok_or_else(|| error_chain(&first)),
-                Err(second) => Err(format!(
-                    "{}; subscribed list: {}",
-                    error_chain(&first),
-                    error_chain(&second)
-                )),
+                    .ok_or(first),
+                Err(second) => Err(format!("{first}; subscribed list: {second}")),
             },
         };
         let meta = match meta {
