@@ -5,16 +5,11 @@ import {
   BellOff,
   Languages,
   Loader2,
-  LogOut,
-  MoreVertical,
   Paperclip,
   Pencil,
-  Play,
   Search,
   Send,
   Sparkles,
-  Square,
-  Trash2,
   Users,
   Megaphone,
   Pin,
@@ -32,7 +27,7 @@ import { LANGUAGES, aiConfigured, langName, translate } from "@/lib/ai";
 import { formatBytes } from "@/lib/mediaCache";
 import { cn, convKey, displayId, errMsg, formatDateDivider, formatTime, isChannel, isGroup } from "@/lib/utils";
 import { WaMarkdown, stripWaMarkdown } from "@/lib/waMarkdown";
-import { nativeWa, type NativeAccount, type NativeChat, type NativeLabel, type NativeMessage, type NativeWaStatus } from "@/lib/nativeWa";
+import { nativeWa, type NativeAccount, type NativeChat, type NativeLabel, type NativeMessage } from "@/lib/nativeWa";
 import { TranslateDraftButton, WriteAssistButton } from "@/screens/chats/Composer";
 import { QuickReplyPicker } from "@/components/QuickReplyPicker";
 import { LinkPreviewCard } from "@/components/LinkPreview";
@@ -62,24 +57,6 @@ import { useWhatsApp } from "@/store/whatsapp";
  * History comes from the local store (see `whatsapp_db.rs`); attachments download on
  * demand; the AI tools are the WAHA screen's, adapted in `whatsapp/NativeAi`.
  */
-
-const statusText: Record<NativeWaStatus, string> = {
-  working: "Connected",
-  starting: "Connecting…",
-  qr: "Waiting for QR scan",
-  failed: "Failed",
-  logged_out: "Logged out",
-  stopped: "Disconnected",
-};
-
-const statusDot: Record<NativeWaStatus, string> = {
-  working: "bg-emerald-500",
-  starting: "bg-amber-400 animate-pulse",
-  qr: "bg-sky-500",
-  failed: "bg-red-500",
-  logged_out: "bg-red-500",
-  stopped: "bg-neutral-400",
-};
 
 /** Timestamps from the backend are milliseconds; the shared formatters take seconds. */
 const secs = (ms: number) => Math.floor(ms / 1000);
@@ -149,16 +126,7 @@ export function WhatsAppScreen({ account, header }: { account: NativeAccount; he
 
   return (
     <>
-      <ChatList
-        account={account}
-        header={header}
-        chats={chats}
-        selected={chatId}
-        onSelect={setChatId}
-        error={error}
-        onError={setError}
-        width={listWidth}
-      />
+      <ChatList account={account} header={header} chats={chats} selected={chatId} onSelect={setChatId} error={error} width={listWidth} />
       <ResizeHandle onDrag={(dx) => setListWidth((w) => w + dx)} onReset={() => setListWidth(320)} />
       {account.status === "qr" ? (
         <Pairing accountId={account.id} />
@@ -196,7 +164,6 @@ function ChatList({
   selected,
   onSelect,
   error,
-  onError,
   width,
 }: {
   account: NativeAccount;
@@ -205,7 +172,6 @@ function ChatList({
   selected: string | null;
   onSelect: (id: string) => void;
   error: string | null;
-  onError: (e: string | null) => void;
   width: number;
 }) {
   const [q, setQ] = useState("");
@@ -265,7 +231,7 @@ function ChatList({
     >
       <div className="p-3 border-b border-neutral-200 dark:border-neutral-800 space-y-2">
         {header}
-        <AccountBar account={account} onError={onError} />
+        {account.syncing != null && <div className="px-1 text-xs text-neutral-500">Syncing history… {account.syncing}%</div>}
         <div className="relative">
           <Search size={14} className="absolute left-2.5 top-2.5 text-neutral-400" />
           <input
@@ -424,131 +390,6 @@ function RowMenu({
         </button>
       </div>
     </div>
-  );
-}
-
-/** Status line under the picker, with the account's actions in a menu. */
-function AccountBar({ account, onError }: { account: NativeAccount; onError: (e: string | null) => void }) {
-  const rename = useWhatsApp((s) => s.rename);
-  const remove = useWhatsApp((s) => s.remove);
-  const [open, setOpen] = useState(false);
-  const [renaming, setRenaming] = useState(false);
-  const [name, setName] = useState(account.name);
-  useEffect(() => setName(account.name), [account.name]);
-
-  const run = (action: () => Promise<unknown>) => () => {
-    setOpen(false);
-    onError(null);
-    action().catch((e) => onError(errMsg(e)));
-  };
-  const commit = () => {
-    setRenaming(false);
-    const next = name.trim();
-    if (!next || next === account.name) return setName(account.name);
-    rename(account.id, next).catch((e) => {
-      setName(account.name);
-      onError(errMsg(e));
-    });
-  };
-  const live = account.status === "starting" || account.status === "qr" || account.status === "working";
-
-  return (
-    <div className="flex items-center gap-2 px-1 text-xs text-neutral-500">
-      <span className={cn("w-2 h-2 rounded-full shrink-0", statusDot[account.status])} />
-      {renaming ? (
-        <input
-          autoFocus
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          onBlur={commit}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") commit();
-            if (e.key === "Escape") {
-              setName(account.name);
-              setRenaming(false);
-            }
-          }}
-          className="flex-1 min-w-0 rounded bg-neutral-100 dark:bg-neutral-800 px-1.5 py-0.5 text-neutral-800 dark:text-neutral-100 outline-none"
-        />
-      ) : (
-        <span className="flex-1 min-w-0 truncate">
-          {account.syncing != null ? `Syncing history… ${account.syncing}%` : statusText[account.status]}
-          {account.me?.pushName && ` · ${account.me.pushName}`}
-        </span>
-      )}
-      <Popover
-        open={open}
-        onClose={() => setOpen(false)}
-        align="right"
-        className="w-52 py-1"
-        trigger={
-          <Button variant="ghost" size="sm" onClick={() => setOpen((v) => !v)} title="Account">
-            <MoreVertical size={14} />
-          </Button>
-        }
-      >
-        <MenuButton
-          icon={Pencil}
-          label="Rename…"
-          onClick={() => {
-            setOpen(false);
-            setRenaming(true);
-          }}
-        />
-        {live ? (
-          <MenuButton icon={Square} label="Disconnect" onClick={run(() => nativeWa.stop(account.id))} />
-        ) : (
-          <MenuButton icon={Play} label="Connect" onClick={run(() => nativeWa.start(account.id))} />
-        )}
-        <MenuButton
-          icon={LogOut}
-          label="Log out"
-          disabled={account.status !== "working"}
-          onClick={run(() => nativeWa.logout(account.id))}
-        />
-        <MenuButton
-          icon={Trash2}
-          label="Remove account…"
-          danger
-          onClick={run(async () => {
-            const ok = await confirm({
-              title: `Remove “${account.name}”?`,
-              message: "Its session data is deleted from this computer. Log out first to also remove it from your phone's linked devices.",
-              danger: true,
-              confirmLabel: "Remove",
-            });
-            if (ok) await remove(account.id);
-          })}
-        />
-      </Popover>
-    </div>
-  );
-}
-
-function MenuButton({
-  icon: Icon,
-  label,
-  onClick,
-  disabled,
-  danger,
-}: {
-  icon: typeof Pencil;
-  label: string;
-  onClick: () => void;
-  disabled?: boolean;
-  danger?: boolean;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      className={cn(
-        "w-full flex items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-neutral-100 dark:hover:bg-neutral-800 disabled:opacity-40 disabled:hover:bg-transparent",
-        danger && "text-red-600",
-      )}
-    >
-      <Icon size={14} /> {label}
-    </button>
   );
 }
 

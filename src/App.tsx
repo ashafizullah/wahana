@@ -8,9 +8,7 @@ import {
   X,
   Activity,
   CircleDashed,
-  CalendarClock,
-  Megaphone,
-  Bot,
+  Sparkles,
 } from "lucide-react";
 import { useSettings } from "@/store/settings";
 import { useWahaSocket } from "@/realtime/useWahaSocket";
@@ -20,9 +18,7 @@ import { SessionsScreen } from "@/screens/SessionsScreen";
 import { ChatScreen } from "@/screens/ChatScreen";
 import { EventsScreen } from "@/screens/EventsScreen";
 import { StatusScreen } from "@/screens/StatusScreen";
-import { SchedulerScreen } from "@/screens/SchedulerScreen";
-import { BroadcastScreen } from "@/screens/BroadcastScreen";
-import { AutoReplyScreen } from "@/screens/AutoReplyScreen";
+import { FeaturesScreen } from "@/screens/FeaturesScreen";
 import { useBroadcastRunner } from "@/realtime/useBroadcastRunner";
 import { pruneLogs } from "@/store/scheduler";
 import { useAutoLabel } from "@/realtime/useAutoLabel";
@@ -50,7 +46,7 @@ import { useReceipts } from "@/store/receipts";
 import { useUpdater } from "@/realtime/useUpdater";
 import { Button } from "@/components/ui";
 
-type Tab = "chats" | "status" | "scheduler" | "broadcast" | "autoreply" | "sessions" | "events" | "settings";
+type Tab = "chats" | "status" | "features" | "sessions" | "events" | "settings";
 
 export default function App() {
   const { hydrated, hydrate, client, profiles } = useSettings();
@@ -135,12 +131,10 @@ export default function App() {
       const tabs: Record<string, Tab> = {
         "1": "chats",
         "2": "status",
-        "3": "scheduler",
-        "4": "broadcast",
-        "5": "autoreply",
-        "6": "sessions",
-        "7": "events",
-        "8": "settings",
+        "3": "features",
+        "4": "sessions",
+        "5": "events",
+        "6": "settings",
       };
       if (tabs[e.key]) {
         e.preventDefault();
@@ -177,12 +171,10 @@ export default function App() {
   const allNav: { id: Tab; icon: typeof MessageSquare; label: string }[] = [
     { id: "chats", icon: MessageSquare, label: "Chats (⌘1)" },
     { id: "status", icon: CircleDashed, label: "Status (⌘2)" },
-    { id: "scheduler", icon: CalendarClock, label: "Scheduler (⌘3)" },
-    { id: "broadcast", icon: Megaphone, label: "Broadcast (⌘4)" },
-    { id: "autoreply", icon: Bot, label: "Auto-reply (⌘5)" },
-    { id: "sessions", icon: Radio, label: "Sessions (⌘6)" },
-    { id: "events", icon: Activity, label: "Events (⌘7)" },
-    { id: "settings", icon: SettingsIcon, label: "Settings (⌘8)" },
+    { id: "features", icon: Sparkles, label: "Features: Scheduler, Broadcast, Auto-reply, Tweaks (⌘3)" },
+    { id: "sessions", icon: Radio, label: "Sessions (⌘4)" },
+    { id: "events", icon: Activity, label: "Events (⌘5)" },
+    { id: "settings", icon: SettingsIcon, label: "Settings (⌘6)" },
   ];
   // Events is the WAHA websocket stream; native accounts have no equivalent.
   const nav = allNav.filter((n) => n.id !== "events" || !!client);
@@ -255,9 +247,7 @@ export default function App() {
             )}
             {!welcome && tab === "chats" && <ChatScreen />}
             {!welcome && tab === "status" && <StatusScreen />}
-            {!welcome && tab === "scheduler" && <SchedulerScreen />}
-            {!welcome && tab === "broadcast" && <BroadcastScreen />}
-            {!welcome && tab === "autoreply" && <AutoReplyScreen />}
+            {!welcome && tab === "features" && <FeaturesScreen />}
             {!welcome && tab === "sessions" && <SessionsScreen />}
             {!welcome && tab === "events" && <EventsScreen />}
             {!welcome && tab === "settings" && <SettingsScreen onSaved={() => setTab("sessions")} />}
