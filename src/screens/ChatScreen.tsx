@@ -32,6 +32,9 @@ import { MessageSearchBar } from "@/screens/chats/MessageSearchBar";
 import { useMessageList } from "@/screens/chats/useMessageList";
 import { useAutoTranslateIncoming, useOrderedMessages } from "@/screens/chats/useOrderedMessages";
 
+/** Most history pages a click on the pin banner fetches while looking for the pinned message. */
+const PIN_SEARCH_PAGES = 20;
+
 export function ChatScreen() {
   const { client, session } = useSettings();
   const { data: sessions } = useSessions();
@@ -109,6 +112,8 @@ function Conversation({ session, chatId, onOpenChat }: { session: string; chatId
   const [searchOpen, setSearchOpen] = useState(false);
   const chatPins = useChatPins(convKey(session, chatId));
   const [pinIdx, setPinIdx] = useState(0);
+  /** Pinned message being looked for in older history, and whether that search came up empty. */
+  const [pinSearch, setPinSearch] = useState<{ id: string; pages: number; missing?: boolean } | null>(null);
 
   const presence = usePresence(session, chatId);
   const resolveName = useNameResolver(session, chatId);
@@ -135,6 +140,22 @@ function Conversation({ session, chatId, onOpenChat }: { session: string; chatId
     jumpToDate,
     backToLatest,
   } = useMessageList(session, chatId, ordered);
+
+  // Page older history in until the pinned message shows up (bounded: each page is a server round trip).
+  useEffect(() => {
+    if (!pinSearch || pinSearch.missing) return;
+    const m = ordered.find((x) => bareId(x.id) === pinSearch.id);
+    if (m) {
+      setPinSearch(null);
+      jumpTo(m.id);
+      setPinIdx((i) => i + 1);
+    } else if (!hasMore || pinSearch.pages >= PIN_SEARCH_PAGES) {
+      setPinSearch({ ...pinSearch, missing: true });
+    } else if (!loadingOlder) {
+      setPinSearch({ ...pinSearch, pages: pinSearch.pages + 1 });
+      void loadOlder();
+    }
+  }, [pinSearch, ordered, hasMore, loadingOlder, loadOlder, jumpTo]);
 
   useAutoTranslateIncoming(
     ordered,
@@ -205,9 +226,21 @@ function Conversation({ session, chatId, onOpenChat }: { session: string; chatId
                 count={chatPins.length}
                 index={index}
                 who={m && (m.fromMe ? "You" : (resolveName(m.participant || m.from) ?? senderName(m)))}
-                text={m && (stripWaMarkdown(m.body) || "📎 Media")}
+                text={
+                  m
+                    ? stripWaMarkdown(m.body) || "📎 Media"
+                    : pinSearch?.id === id
+                      ? pinSearch.missing
+                        ? "Couldn't find it in the loaded history"
+                        : "Loading older messages to find it…"
+                      : undefined
+                }
                 onJump={() => {
-                  if (m) jumpTo(m.id);
+                  if (!m) {
+                    setPinSearch({ id, pages: 0 });
+                    return;
+                  }
+                  jumpTo(m.id);
                   // Like WhatsApp: each click moves on to the next (older) pin.
                   setPinIdx((i) => (i + 1) % chatPins.length);
                 }}
