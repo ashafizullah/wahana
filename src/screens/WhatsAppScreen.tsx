@@ -932,8 +932,26 @@ function Conversation({
           </div>
           {messages.map((m, i) => {
             const prev = messages[i - 1];
+            // Photos sent together are one bubble, drawn by the first of them.
+            const inAlbum = (a: NativeMessage | undefined, b: NativeMessage) =>
+              !!a && !!a.albumId && a.albumId === b.albumId && !!a.media && a.fromMe === b.fromMe && a.senderName === b.senderName;
+            if (inAlbum(prev, m)) return <div key={m.id} data-msg={bareId(m.id)} />;
+            let album: NativeMessage[] | undefined;
+            if (m.albumId && m.media) {
+              album = [m];
+              while (inAlbum(m, messages[i + album.length])) album.push(messages[i + album.length]!);
+              if (album.length < 2) album = undefined;
+            }
             const newDay = !prev || new Date(prev.timestamp).toDateString() !== new Date(m.timestamp).toDateString();
             const showSender = group && !m.fromMe && (newDay || prev?.fromMe || prev?.senderName !== m.senderName);
+            const next = messages[i + (album?.length ?? 1)];
+            const showAvatar =
+              !m.fromMe &&
+              group &&
+              (!next ||
+                next.fromMe ||
+                new Date(next.timestamp).toDateString() !== new Date(m.timestamp).toDateString() ||
+                next.senderName !== m.senderName);
             return (
               <div
                 key={m.id}
@@ -952,9 +970,13 @@ function Conversation({
                     accountId={account.id}
                     connected={connected}
                     message={m}
+                    album={album}
                     showSender={showSender}
+                    avatar={!group ? "none" : showAvatar ? "show" : "space"}
+                    avatarChatId={m.senderPhone ? `${m.senderPhone.replace(/\D/g, "")}@s.whatsapp.net` : null}
                     pinned={isPinned(pins, prefsKey, m.id)}
                     onMenu={onMenu}
+                    onJumpTo={setJumpTo}
                   />
                 </ErrorBoundary>
               </div>
@@ -1133,20 +1155,36 @@ function AutoTranslateButton({ prefsKey }: { prefsKey: string }) {
   );
 }
 
+/** The sender's round profile photo, loaded on demand and shared with the chat list. */
+function BubbleAvatar({ accountId, chatId, connected, name }: { accountId: string; chatId: string | null; connected: boolean; name: string }) {
+  const picture = usePicture(accountId, chatId ?? "", connected && !!chatId);
+  return <Avatar src={picture} name={name} size={28} />;
+}
+
 const Bubble = memo(function Bubble({
   accountId,
   connected,
   message: m,
+  album,
   showSender,
+  avatar,
+  avatarChatId,
   pinned,
   onMenu,
+  onJumpTo,
 }: {
   accountId: string;
   connected: boolean;
   message: NativeMessage;
+  /** The photos and videos sent together with this one, when it leads an album. */
+  album?: NativeMessage[];
   showSender: boolean;
+  /** Their round profile photo beside the bubble: shown, kept as blank space, or absent. */
+  avatar: "show" | "space" | "none";
+  avatarChatId: string | null;
   pinned: boolean;
   onMenu: (m: NativeMessage, pos: { x: number; y: number }) => void;
+  onJumpTo: (bareId: string) => void;
 }) {
   const mine = m.fromMe;
   const sticker = m.media?.kind === "sticker";
@@ -1162,7 +1200,12 @@ const Bubble = memo(function Bubble({
       ? m.channelReactions.map((r) => ({ emoji: r.emoji, count: r.count, me: reactionMap?.me === r.emoji }))
       : summarize(reactionMap, []);
   return (
-    <div className={cn("flex", mine ? "justify-end" : "justify-start")}>
+    <div className={cn("flex items-end gap-1.5", mine ? "justify-end" : "justify-start")}>
+      {!mine && avatar !== "none" && (
+        <div className="w-7 shrink-0">
+          {avatar === "show" && <BubbleAvatar accountId={accountId} chatId={avatarChatId} connected={connected} name={m.senderName || m.senderPhone || ""} />}
+        </div>
+      )}
       <div className={cn("flex flex-col max-w-[70%]", mine ? "items-end" : "items-start")}>
         <div
           onContextMenu={(e) => {
@@ -1203,8 +1246,26 @@ const Bubble = memo(function Bubble({
               <Pin size={10} /> Pinned
             </div>
           )}
+          {m.replyTo && (
+            <button
+              onClick={() => onJumpTo(bareId(m.replyTo!.id))}
+              className={cn(
+                "mb-1 block w-full min-w-[140px] rounded-md border-l-4 border-wa-dark px-2 py-1 text-left text-xs",
+                mine ? "bg-black/5 dark:bg-black/20" : "bg-neutral-100 dark:bg-neutral-700/60",
+              )}
+            >
+              <div className="font-semibold text-wa-dark dark:text-wa truncate">{m.replyTo.fromMe ? "You" : m.replyTo.senderName || "Message"}</div>
+              <div className="line-clamp-2 break-words text-neutral-600 dark:text-neutral-300">{m.replyTo.text || "Message"}</div>
+            </button>
+          )}
           <div className={cn(revoked && "opacity-60")}>
-            {m.media ? (
+            {album ? (
+              <div className="mb-1 grid grid-cols-2 gap-0.5 w-[300px]">
+                {album.map((a) => (
+                  <NativeMediaView key={a.id} accountId={accountId} message={a} connected={connected} tile />
+                ))}
+              </div>
+            ) : m.media ? (
               <div className={cn(m.body && "mb-1")}>
                 <NativeMediaView accountId={accountId} message={m} connected={connected} />
               </div>
@@ -1213,6 +1274,13 @@ const Bubble = memo(function Bubble({
                 {m.kind === "media" ? "📎 Media (not available for this older message)" : "Unsupported message"}
               </div>
             ) : null}
+            {album?.slice(1).map((a) =>
+              a.body ? (
+                <div key={a.id} className="break-words">
+                  <WaMarkdown text={a.body} />
+                </div>
+              ) : null,
+            )}
             {m.body && (
               <div className={cn("break-words", revoked && "line-through decoration-neutral-400")}>
                 <WaMarkdown text={m.body} />
@@ -1424,6 +1492,13 @@ function Composer({
   useEffect(() => {
     taRef.current?.focus();
   }, [chatId]);
+
+  // Choosing Reply puts the cursor in the composer.
+  useEffect(() => {
+    if (!replyTo) return;
+    const frame = requestAnimationFrame(() => taRef.current?.focus());
+    return () => cancelAnimationFrame(frame);
+  }, [replyTo]);
 
   useEffect(() => {
     if (picked === null) return;

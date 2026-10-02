@@ -11,10 +11,12 @@ use std::path::Path;
 use base64::Engine as _;
 use rusqlite::{params, Connection, OptionalExtension};
 
-use crate::whatsapp::{ChannelReaction, ChatInfo, EditView, MediaInfo, MessageKind, MessageView};
+use crate::whatsapp::{
+    ChannelReaction, ChatInfo, EditView, MediaInfo, MessageKind, MessageView, ReplyView,
+};
 
 /// Bumped with every schema change; `open` migrates older files up to it.
-const SCHEMA_VERSION: i64 = 8;
+const SCHEMA_VERSION: i64 = 10;
 
 /// How much a name source is trusted. A name only replaces one from an equal or lower
 /// source, so a push name never overwrites a contact's saved name.
@@ -65,6 +67,27 @@ pub struct IncomingMessage {
     pub view: MessageView,
     pub sender_id: String,
     pub media: Option<StoredMedia>,
+    pub quote: Option<QuoteRef>,
+    pub album: Option<String>,
+}
+
+/// The message a reply quotes. `sender` and `text` are what the reply itself carried, used
+/// when the quoted message isn't stored here.
+pub struct QuoteRef {
+    pub id: String,
+    pub sender: String,
+    pub text: String,
+}
+
+impl QuoteRef {
+    /// A quote of one of my own stored messages, resolved from the database when read.
+    pub fn by_id(id: &str) -> Self {
+        Self {
+            id: id.to_string(),
+            sender: String::new(),
+            text: String::new(),
+        }
+    }
 }
 
 /// What a message action (react, pin, quote, forward) needs about its target.
@@ -223,6 +246,16 @@ impl ChatDb {
                  );",
             )?;
         }
+        if version < 9 {
+            conn.execute_batch(
+                "ALTER TABLE messages ADD COLUMN quote_id TEXT;
+                 ALTER TABLE messages ADD COLUMN quote_sender TEXT;
+                 ALTER TABLE messages ADD COLUMN quote_text TEXT;",
+            )?;
+        }
+        if version < 10 {
+            conn.execute_batch("ALTER TABLE messages ADD COLUMN album_id TEXT;")?;
+        }
         conn.execute_batch(&format!("PRAGMA user_version = {SCHEMA_VERSION}"))?;
         // Statuses are stored as messages under `status@broadcast`, not as a chat; drop any
         // row an earlier build created for it.
@@ -296,8 +329,9 @@ impl ChatDb {
         let m = msg.media.as_ref();
         let inserted = self.conn.execute(
             "INSERT OR IGNORE INTO messages (chat_id, id, from_me, sender_id, sender_name, kind, body, timestamp,
-                 media_kind, mimetype, file_name, file_size, seconds, width, height, thumbnail, media_proto, ack)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
+                 media_kind, mimetype, file_name, file_size, seconds, width, height, thumbnail, media_proto, ack,
+                 quote_id, quote_sender, quote_text, album_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)",
             params![
                 v.chat_id,
                 v.id,
@@ -317,6 +351,10 @@ impl ChatDb {
                 m.and_then(|m| m.thumbnail.as_deref()),
                 m.map(|m| m.proto.as_slice()),
                 v.ack,
+                msg.quote.as_ref().map(|q| q.id.as_str()),
+                msg.quote.as_ref().map(|q| q.sender.as_str()),
+                msg.quote.as_ref().map(|q| q.text.as_str()),
+                msg.album,
             ],
         )? > 0;
         if !inserted {
@@ -789,6 +827,8 @@ impl ChatDb {
                     edited_at: None,
                     edits: Vec::new(),
                     channel_reactions: Vec::new(),
+                    reply_to: None,
+                    album_id: None,
                 },
             ))
         })?;
@@ -839,7 +879,7 @@ impl ChatDb {
             "SELECT * FROM (
                  SELECT id, chat_id, from_me, sender_id, sender_name, kind, body, timestamp,
                         media_kind, mimetype, file_name, file_size, seconds, width, height, thumbnail, ack,
-                        revoked_at, edited_at
+                        revoked_at, edited_at, quote_id, quote_sender, quote_text, album_id
                  FROM messages
                  WHERE chat_id = ?1 {filter}
                  ORDER BY timestamp DESC
@@ -863,8 +903,20 @@ impl ChatDb {
                         .map(thumbnail_url),
                 })
             });
+            let quote = r
+                .get::<_, Option<String>>(19)?
+                .map(|id| -> rusqlite::Result<QuoteRef> {
+                    Ok(QuoteRef {
+                        id,
+                        sender: r.get::<_, Option<String>>(20)?.unwrap_or_default(),
+                        text: r.get::<_, Option<String>>(21)?.unwrap_or_default(),
+                    })
+                })
+                .transpose()?;
             Ok((
                 r.get::<_, String>(3)?,
+                quote,
+                r.get::<_, Option<String>>(22)?,
                 MessageView {
                     id: r.get(0)?,
                     chat_id: r.get(1)?,
@@ -880,6 +932,8 @@ impl ChatDb {
                     edited_at: r.get(18)?,
                     edits: Vec::new(),
                     channel_reactions: Vec::new(),
+                    reply_to: None,
+                    album_id: None,
                 },
             ))
         })?;
@@ -892,7 +946,9 @@ impl ChatDb {
             HashMap::new()
         };
         for row in rows {
-            let (sender_id, mut view) = row?;
+            let (sender_id, quote, album_id, mut view) = row?;
+            view.album_id = album_id;
+            view.reply_to = quote.map(|q| self.reply_view(chat_id, q)).transpose()?;
             if let Some(reactions) = channel_reactions.remove(&view.id) {
                 view.channel_reactions = reactions;
             }
@@ -912,6 +968,55 @@ impl ChatDb {
             messages.push(view);
         }
         Ok(messages)
+    }
+
+    /// What to show for a quoted message: the stored copy when there is one, else what
+    /// the reply itself carried.
+    fn reply_view(&self, chat_id: &str, quote: QuoteRef) -> rusqlite::Result<ReplyView> {
+        let stored = self
+            .conn
+            .query_row(
+                "SELECT from_me, sender_id, sender_name, kind, body, media_kind
+                 FROM messages WHERE chat_id = ?1 AND id = ?2",
+                params![chat_id, quote.id],
+                |r| {
+                    Ok((
+                        r.get::<_, bool>(0)?,
+                        r.get::<_, String>(1)?,
+                        r.get::<_, String>(2)?,
+                        r.get::<_, String>(3)?,
+                        r.get::<_, String>(4)?,
+                        r.get::<_, Option<String>>(5)?,
+                    ))
+                },
+            )
+            .optional()?;
+        let (from_me, sender_id, push_name, text) = match stored {
+            Some((from_me, sender_id, push_name, kind, body, media_kind)) => (
+                from_me,
+                sender_id,
+                push_name,
+                preview(kind_from(&kind), &body, media_kind.as_deref()),
+            ),
+            None => (false, quote.sender, String::new(), quote.text),
+        };
+        let sender_name = if from_me {
+            String::new()
+        } else if sender_id.is_empty() {
+            push_name
+        } else {
+            match self.resolve(&sender_id)?.name {
+                Some((name, _)) => name,
+                None if !push_name.is_empty() => push_name,
+                None => fallback_name(&sender_id),
+            }
+        };
+        Ok(ReplyView {
+            id: quote.id,
+            from_me,
+            sender_name,
+            text,
+        })
     }
 
     /// The encoded media message of one message, for downloading its attachment.

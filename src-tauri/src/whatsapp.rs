@@ -29,7 +29,9 @@ use whatsapp_rust::waproto::buffa::{self, Message as _};
 use whatsapp_rust::waproto::whatsapp as wa;
 use whatsapp_rust_sqlite_storage::SqliteStore;
 
-use crate::whatsapp_db::{ChatDb, IncomingMessage, MessageTarget, NameSource, StoredMedia};
+use crate::whatsapp_db::{
+    preview, ChatDb, IncomingMessage, MessageTarget, NameSource, QuoteRef, StoredMedia,
+};
 
 /// The account list, next to the per-account session databases. The databases alone
 /// cannot rebuild it: they hold no display name, and a half-written one is
@@ -115,6 +117,21 @@ pub struct MessageView {
     pub edits: Vec<EditView>,
     /// Reaction totals on a channel message (the server reports counts, not who reacted).
     pub channel_reactions: Vec<ChannelReaction>,
+    /// The message this one replies to.
+    pub reply_to: Option<ReplyView>,
+    /// The album this photo or video was sent in, shared by all its members.
+    pub album_id: Option<String>,
+}
+
+/// A quoted message as shown above a reply.
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReplyView {
+    pub id: String,
+    pub from_me: bool,
+    pub sender_name: String,
+    /// Its text, or a label for its attachment.
+    pub text: String,
 }
 
 /// How many times one emoji was used on a channel message.
@@ -610,6 +627,14 @@ fn extract_media(message: &wa::Message) -> Option<StoredMedia> {
 /// revokes, key distribution) that rides on the message channel but is not a message of
 /// its own.
 fn message_content(message: &wa::Message) -> Option<(MessageKind, String, Option<StoredMedia>)> {
+    // An album member can arrive wrapped; the wrapper holds the photo or video itself.
+    if let Some(child) = message
+        .associated_child_message
+        .as_option()
+        .and_then(|f| f.message.as_option())
+    {
+        return message_content(child);
+    }
     if let Some(media) = extract_media(message) {
         let caption = message.get_caption().unwrap_or_default().to_string();
         return Some((MessageKind::Media, caption, Some(media)));
@@ -621,10 +646,78 @@ fn message_content(message: &wa::Message) -> Option<(MessageKind, String, Option
     if base.protocol_message.is_set()
         || base.reaction_message.is_set()
         || base.sender_key_distribution_message.is_set()
+        || base.album_message.is_set()
     {
         return None;
     }
     Some((MessageKind::Unsupported, String::new(), None))
+}
+
+/// The album a photo or video was sent in: the id of its album message, which every member
+/// names as its parent.
+fn album_of(message: &wa::Message) -> Option<String> {
+    let association = message
+        .message_context_info
+        .as_option()
+        .or_else(|| message.get_base_message().message_context_info.as_option())
+        .and_then(|c| c.message_association.as_option())?;
+    if association.association_type != Some(wa::message_association::AssociationType::MEDIA_ALBUM) {
+        return None;
+    }
+    association
+        .parent_message_key
+        .as_option()
+        .and_then(|k| k.id.clone())
+}
+
+/// The message a reply quotes, from the reply context any message type may carry.
+fn quote_of(message: &wa::Message) -> Option<QuoteRef> {
+    let base = message.get_base_message();
+    let context = base
+        .extended_text_message
+        .as_option()
+        .and_then(|m| m.context_info.as_option())
+        .or_else(|| {
+            base.image_message
+                .as_option()
+                .and_then(|m| m.context_info.as_option())
+        })
+        .or_else(|| {
+            base.video_message
+                .as_option()
+                .and_then(|m| m.context_info.as_option())
+        })
+        .or_else(|| {
+            base.audio_message
+                .as_option()
+                .and_then(|m| m.context_info.as_option())
+        })
+        .or_else(|| {
+            base.document_message
+                .as_option()
+                .and_then(|m| m.context_info.as_option())
+        })
+        .or_else(|| {
+            base.sticker_message
+                .as_option()
+                .and_then(|m| m.context_info.as_option())
+        })?;
+    let id = context.stanza_id.clone().filter(|id| !id.is_empty())?;
+    let text = context
+        .quoted_message
+        .as_option()
+        .and_then(message_content)
+        .map(|(kind, body, media)| preview(kind, &body, media.as_ref().map(|m| m.kind)))
+        .unwrap_or_default();
+    Some(QuoteRef {
+        id,
+        sender: context
+            .participant
+            .as_deref()
+            .map(bare_jid)
+            .unwrap_or_default(),
+        text,
+    })
 }
 
 /// Stores a live message, sent or received, and notifies the frontend.
@@ -661,6 +754,7 @@ fn record_message(
     }
     let mut view = message.view;
     view.media = message.media.as_ref().map(StoredMedia::info);
+    view.album_id = message.album.clone();
     let _ = app.emit_to(
         "main",
         "wa_native:messages",
@@ -803,9 +897,13 @@ fn history_message(chat_id: &str, info: &wa::WebMessageInfo) -> Option<IncomingM
             edited_at: None,
             edits: Vec::new(),
             channel_reactions: Vec::new(),
+            reply_to: None,
+            album_id: None,
         },
         sender_id,
         media,
+        quote: info.message.as_option().and_then(quote_of),
+        album: info.message.as_option().and_then(album_of),
     })
 }
 
@@ -1262,9 +1360,13 @@ async fn run_account(
                     edited_at: None,
                     edits: Vec::new(),
                     channel_reactions: Vec::new(),
+                    reply_to: None,
+                    album_id: None,
                 },
                 sender_id: if from_me { String::new() } else { sender },
                 media,
+                quote: quote_of(&ctx.message),
+                album: album_of(&ctx.message),
             };
             let channel_ref = (message.view.chat_id.ends_with("@newsletter")
                 && ctx.info.server_id > 0)
@@ -1618,9 +1720,13 @@ pub async fn wa_native_send_text(
             edited_at: None,
             edits: Vec::new(),
             channel_reactions: Vec::new(),
+            reply_to: None,
+            album_id: None,
         },
         sender_id: String::new(),
         media: None,
+        quote: quote_id.as_deref().map(QuoteRef::by_id),
+        album: None,
     };
     record_message(&app, &account, generation, message);
     Ok(())
@@ -1856,6 +1962,8 @@ pub async fn wa_native_forward(
         edited_at: None,
         edits: Vec::new(),
         channel_reactions: Vec::new(),
+        reply_to: None,
+        album_id: None,
     };
     record_message(
         &app,
@@ -1865,6 +1973,8 @@ pub async fn wa_native_forward(
             view,
             sender_id: String::new(),
             media,
+            quote: None,
+            album: None,
         },
     );
     Ok(())
@@ -2053,9 +2163,13 @@ pub async fn wa_native_channel_sync(
                         edited_at: None,
                         edits: Vec::new(),
                         channel_reactions: Vec::new(),
+                        reply_to: None,
+                        album_id: None,
                     },
                     sender_id: String::new(),
                     media,
+                    quote: None,
+                    album: None,
                 };
                 db.insert_message(&message, false)?;
             }
@@ -2701,9 +2815,13 @@ pub async fn wa_native_send_media(
             edited_at: None,
             edits: Vec::new(),
             channel_reactions: Vec::new(),
+            reply_to: None,
+            album_id: None,
         },
         sender_id: String::new(),
         media,
+        quote: quote_id.as_deref().map(QuoteRef::by_id),
+        album: None,
     };
     let mut view = message.view.clone();
     view.media = message.media.as_ref().map(StoredMedia::info);

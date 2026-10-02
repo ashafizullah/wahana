@@ -70,6 +70,18 @@ export interface NativeMessage {
   edits: NativeEdit[];
   /** Reaction totals on a channel message (the server reports counts, not who reacted). */
   channelReactions: { emoji: string; count: number }[];
+  /** The message this one replies to. */
+  replyTo: NativeReply | null;
+  /** Shared by the photos and videos that were sent together as one album. */
+  albumId: string | null;
+}
+
+/** A quoted message as shown above a reply. */
+export interface NativeReply {
+  id: string;
+  fromMe: boolean;
+  senderName: string;
+  text: string;
 }
 
 /** When one recipient got, read and played a message of mine (unix ms; null = not seen). */

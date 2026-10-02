@@ -42,7 +42,18 @@ export async function saveNativeMedia(accountId: string, m: NativeMessage) {
 
 const duration = (s: number | null) => (s ? `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}` : "");
 
-export function NativeMediaView({ accountId, message: m, connected }: { accountId: string; message: NativeMessage; connected: boolean }) {
+export function NativeMediaView({
+  accountId,
+  message: m,
+  connected,
+  tile,
+}: {
+  accountId: string;
+  message: NativeMessage;
+  connected: boolean;
+  /** Fill a square cell of an album grid instead of sizing by the photo's own ratio. */
+  tile?: boolean;
+}) {
   const media = m.media!;
   const autoLoadImages = useSettings((s) => s.autoLoadImages);
   const autoLoadStickers = useSettings((s) => s.autoLoadStickers);
@@ -164,8 +175,8 @@ export function NativeMediaView({ accountId, message: m, connected }: { accountI
   return (
     <div>
       <div
-        style={{ width, aspectRatio: String(ratio) }}
-        className="relative overflow-hidden rounded-lg bg-neutral-200 dark:bg-neutral-700 max-h-[360px]"
+        style={tile ? { aspectRatio: "1" } : { width, aspectRatio: String(ratio) }}
+        className={cn("relative overflow-hidden bg-neutral-200 dark:bg-neutral-700", tile ? "w-full rounded" : "rounded-lg max-h-[360px]")}
       >
         {url && isVideo ? (
           <video src={url} controls className="w-full h-full object-contain bg-black" />
