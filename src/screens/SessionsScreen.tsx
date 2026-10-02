@@ -27,7 +27,8 @@ export function SessionsScreen() {
   const { data: sessions, isLoading, error, refetch, isFetching } = useSessions();
   const { data: version } = useServerVersion();
   const act = useSessionAction();
-  const { session: active, save, client } = useSettings();
+  const { session: active, save, client, profiles, activeProfile, setProfileDisabled } = useSettings();
+  const disabledProfile = profiles.find((p) => p.id === activeProfile && p.disabled);
   // A picked native account takes over the chat screen, so a WAHA session is only "active" without one.
   const nativeActive = useWhatsApp((s) => s.active);
   const setNativeActive = useWhatsApp((s) => s.setActive);
@@ -56,12 +57,12 @@ export function SessionsScreen() {
               </p>
             )}
           </div>
-          <Button variant="ghost" className="ml-auto" onClick={() => refetch()} title="Refresh">
+          <Button variant="ghost" className="ml-auto" disabled={!client} onClick={() => refetch()} title="Refresh">
             <RefreshCw size={16} className={cn(isFetching && "animate-spin")} />
           </Button>
         </div>
 
-        {error && (
+        {client && error && (
           <div className="rounded-lg bg-red-50 text-red-800 dark:bg-red-900/30 dark:text-red-300 px-3 py-2 text-sm selectable">
             {errMsg(error)}
           </div>
@@ -89,7 +90,25 @@ export function SessionsScreen() {
             />
           ))}
           {client && sessions?.length === 0 && <p className="text-sm text-neutral-500">No sessions yet. Create one below.</p>}
-          {!client && <p className="text-sm text-neutral-500">No WAHA server configured. Add one in Settings to use WAHA sessions.</p>}
+          {disabledProfile && (
+            <div className="flex items-center gap-3 rounded-lg bg-neutral-100 dark:bg-neutral-800/60 px-3 py-2 text-sm">
+              <span className="w-2 h-2 rounded-full bg-neutral-400" />
+              <span className="min-w-0 flex-1">
+                <span className="font-medium">{disabledProfile.name}</span>
+                <span className="ml-2 text-xs text-neutral-500">Disabled · sessions hidden, no connection</span>
+              </span>
+              <Button size="sm" variant="secondary" onClick={() => void setProfileDisabled(disabledProfile.id, false)}>
+                Enable
+              </Button>
+            </div>
+          )}
+          {!client && !disabledProfile && (
+            <p className="text-sm text-neutral-500">
+              {profiles.length > 0
+                ? "The selected WAHA server has no URL or API key. Check Settings → Connection."
+                : "No WAHA server yet. Add one in Settings → Servers."}
+            </p>
+          )}
         </div>
 
         <div className="space-y-3">

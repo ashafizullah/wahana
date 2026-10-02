@@ -320,9 +320,12 @@ export const useSettings = create<SettingsState>((set, get) => ({
 
 /** Convenience: throws if settings are incomplete. Use inside query fns. */
 export function requireClient() {
-  const c = useSettings.getState().client;
-  if (!c) throw new Error("WAHA is not configured");
-  return c;
+  const st = useSettings.getState();
+  if (st.client) return st.client;
+  const prof = st.profiles.find((p) => p.id === st.activeProfile);
+  if (prof?.disabled) throw new Error(`WAHA server "${prof.name}" is disabled. Enable it in Settings → Servers.`);
+  if (prof) throw new Error(`WAHA server "${prof.name}" is missing its URL or API key. Check Settings → Connection.`);
+  throw new Error("No WAHA server yet. Add one in Settings → Servers.");
 }
 
 /** Clients of non-active profiles, so background jobs don't re-read the keychain on every send. */
