@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Bell,
+  CheckCheck,
   BellOff,
   Languages,
   Loader2,
@@ -34,12 +35,13 @@ import { WaMarkdown, stripWaMarkdown } from "@/lib/waMarkdown";
 import { nativeWa, type NativeAccount, type NativeChat, type NativeLabel, type NativeMessage, type NativeWaStatus } from "@/lib/nativeWa";
 import { TranslateDraftButton, WriteAssistButton } from "@/screens/chats/Composer";
 import { QuickReplyPicker } from "@/components/QuickReplyPicker";
+import { LinkPreviewCard } from "@/components/LinkPreview";
 import { AckIcon, ImageNoteView, TranslationView } from "@/screens/chats/MessageBubble";
 import { NativeMessageMenu, NativeSmartReplies, NativeSummaryModal, useNativeAutoTranslate } from "@/screens/whatsapp/NativeAi";
 import { NativeInfoPanel } from "@/screens/whatsapp/NativeInfoPanel";
 import { usePicture } from "@/screens/whatsapp/usePicture";
 import { NativeMediaView, cacheSentMedia, saveNativeMedia } from "@/screens/whatsapp/NativeMediaView";
-import { readReceiptsFor, sendTypingFor } from "@/store/settings";
+import { readReceiptsFor, sendTypingFor, useReadReceipts } from "@/store/settings";
 import { nativeAccountKey, nativeChatKey } from "@/lib/account";
 import { Pairing } from "@/screens/whatsapp/Pairing";
 import { NativeLabelsDialog, labelColorHex } from "@/screens/whatsapp/NativeLabelsDialog";
@@ -651,6 +653,7 @@ function Conversation({
   onError: (e: string) => void;
 }) {
   const [info, setInfo] = useState(false);
+  const readMode = useReadReceipts(nativeAccountKey(account.id));
   const { title, pushName } = chatLabel(chat, chatId);
   const name = pushName ?? title;
   const prefsKey = convKey(account.id, chatId);
@@ -820,6 +823,7 @@ function Conversation({
               </div>
             </div>
           </button>
+          {readMode === "manual" && !channel && <NativeReadReceiptButton accountId={account.id} chatId={chatId} messages={messages} />}
           <AutoTranslateButton prefsKey={prefsKey} />
           {aiConfigured() && (
             <Button variant="ghost" size="sm" onClick={() => setSummary(true)} title="Summarize with AI">
@@ -1013,6 +1017,31 @@ function Conversation({
   );
 }
 
+/** "Manually" read-receipt mode: sends the blue ticks for this chat when clicked. */
+function NativeReadReceiptButton({ accountId, chatId, messages }: { accountId: string; chatId: string; messages: NativeMessage[] }) {
+  const [sentFor, setSentFor] = useState<string | null>(null); // id of the last incoming message we've acknowledged
+  const lastIn = [...messages].reverse().find((m) => !m.fromMe);
+  const pending = !!lastIn && sentFor !== lastIn.id;
+  return (
+    <Button
+      variant={pending ? "primary" : "ghost"}
+      size="sm"
+      title={pending ? "Send read receipt (blue ticks) for this chat" : "Read receipt already sent"}
+      disabled={!pending}
+      onClick={async () => {
+        try {
+          await nativeWa.sendReceipt(accountId, chatId);
+          setSentFor(lastIn!.id);
+        } catch (e) {
+          await confirm({ title: "Couldn't send read receipt", message: errMsg(e), confirmLabel: "OK" });
+        }
+      }}
+    >
+      <CheckCheck size={16} className={pending ? "" : "text-sky-500"} />
+    </Button>
+  );
+}
+
 /** Per-chat auto-translate: incoming shown in one language, your messages sent in another. */
 function AutoTranslateButton({ prefsKey }: { prefsKey: string }) {
   const value = useChatPrefs((s) => s.autoTranslate[prefsKey]);
@@ -1143,6 +1172,7 @@ const Bubble = memo(function Bubble({
                 <WaMarkdown text={m.body} />
               </div>
             )}
+            {m.body && !m.media && !revoked && <LinkPreviewCard message={m} />}
           </div>
           {showEdits && m.edits.length > 0 && (
             <div className="mt-1 space-y-1 border-l-2 border-neutral-300 dark:border-neutral-600 pl-2">

@@ -20,6 +20,7 @@ import { usePins } from "@/store/pins";
 import { useReactions } from "@/store/reactions";
 import { useRevoked } from "@/store/revoked";
 import { notifyText } from "@/realtime/notify";
+import { useSettings } from "@/store/settings";
 
 /**
  * Native WhatsApp accounts (no server needed), driven by the Rust client. They sit next to
@@ -121,6 +122,7 @@ export const useWhatsApp = create<State>((set, get) => ({
             },
           }),
         );
+        if (!useSettings.getState().notifications) continue;
         if (document.hasFocus() && openChat?.account === id && openChat.chat === m.chatId) continue;
         if (useChatPrefs.getState().muted[nativeChatKey(id, m.chatId)]) continue;
         const sender = m.senderName || `+${m.chatId.split("@")[0]}`;

@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Globe } from "lucide-react";
-import type { WAMessage } from "@/api/types";
 import { useSettings } from "@/store/settings";
 
 export interface Preview {
@@ -22,8 +21,11 @@ interface ExtText {
   JPEGThumbnail?: string;
 }
 
+/** What a preview needs from a message: WAHA messages carry the raw proto in `_data`, native ones only the text. */
+type PreviewSource = { body?: string | null; _data?: unknown };
+
 /** Preview data WhatsApp embedded in the message (sender generated it). */
-export function embeddedPreview(m: WAMessage): Preview | null {
+export function embeddedPreview(m: PreviewSource): Preview | null {
   const ext = (m._data as { Message?: { extendedTextMessage?: ExtText } } | undefined)?.Message?.extendedTextMessage;
   if (!ext) return null;
   const url = ext.canonicalURL || ext.matchedText;
@@ -142,10 +144,10 @@ export function fetchPreview(url: string): Promise<Preview | null> {
   return p;
 }
 
-export function LinkPreviewCard({ message: m }: { message: WAMessage }) {
+export function LinkPreviewCard({ message: m }: { message: PreviewSource }) {
   const fetchEnabled = useSettings((s) => s.linkPreviews);
   const embedded = embeddedPreview(m);
-  const url = embedded?.url ?? firstUrl(m.body);
+  const url = embedded?.url ?? firstUrl(m.body ?? undefined);
   const [preview, setPreview] = useState<Preview | null>(embedded);
 
   useEffect(() => {
