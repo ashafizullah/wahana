@@ -54,6 +54,7 @@ export function MessageMenu({
   onInfo,
   onChat,
   onReplyPrivately,
+  adminDelete,
 }: {
   message: WAMessage;
   session: string;
@@ -67,6 +68,8 @@ export function MessageMenu({
   onChat?: () => void;
   /** Group: reply to the sender in a direct chat. */
   onReplyPrivately?: () => void;
+  /** I am an admin of this group, so I may delete other people's messages for everyone. */
+  adminDelete?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const qc = useQueryClient();
@@ -153,12 +156,14 @@ export function MessageMenu({
 
   const remove = async () => {
     const choices = [
-      ...(m.fromMe
+      ...(m.fromMe || adminDelete
         ? [
             {
               id: "everyone",
               label: "Delete for everyone",
-              hint: "Removes it from the chat for all participants (own messages, recent only).",
+              hint: m.fromMe
+                ? "Removes it from the chat for all participants (own messages, recent only)."
+                : "Removes it from the chat for all participants, as a group admin. Depends on the WAHA engine supporting it.",
               danger: true,
             },
           ]
@@ -174,7 +179,7 @@ export function MessageMenu({
           id: m.id,
           chat: convKey(session, chatId),
           timestamp: m.timestamp,
-          fromMe: true,
+          fromMe: m.fromMe,
           participant: m.participant,
           from: m.from,
         });

@@ -23,6 +23,8 @@ import { useNameResolver } from "@/realtime/useNames";
 import { presenceLabel, usePresence } from "@/realtime/usePresence";
 import { TypingBubble } from "@/screens/chats/TypingBubble";
 import { useChatPrefs } from "@/store/chatPrefs";
+import { useQuery } from "@tanstack/react-query";
+import { useAmAdmin } from "@/components/GroupManage";
 import { readReceiptsFor, requireClient, useSettings } from "@/store/settings";
 import { wahaAccountKey } from "@/lib/account";
 import { chatKey, useUnread } from "@/store/unread";
@@ -104,6 +106,12 @@ function Conversation({ session, chatId, onOpenChat }: { session: string; chatId
   const { data: messages, isLoading, error } = useMessages(session, chatId);
   const ordered = useOrderedMessages(session, chatId, messages);
   const group = isGroup(chatId);
+  const groupQ = useQuery({
+    queryKey: ["group", session, chatId],
+    queryFn: () => requireClient().groupInfo(session, chatId),
+    enabled: group,
+    staleTime: 60_000,
+  });
 
   const [replyTo, setReplyTo] = useState<WAMessage | null>(null);
   const [editing, setEditing] = useState<WAMessage | null>(null);
@@ -128,6 +136,7 @@ function Conversation({ session, chatId, onOpenChat }: { session: string; chatId
     meLid = me?.lid,
     meJid = me?.jid;
   const myIds = useMemo(() => [meId, meLid, meJid].filter((x): x is string => !!x), [meId, meLid, meJid]);
+  const { amAdmin } = useAmAdmin(groupQ.data, myIds);
 
   const {
     listRef,
@@ -376,6 +385,7 @@ function Conversation({ session, chatId, onOpenChat }: { session: string; chatId
             onReply={() => setReplyTo(menu.m)}
             onEdit={() => setEditing(menu.m)}
             onInfo={() => setMsgInfo(menu.m)}
+            adminDelete={group && amAdmin && !menu.m.fromMe}
             onChat={group && !menu.m.fromMe ? () => onOpenChat(menu.m.participant || menu.m.from) : undefined}
             onReplyPrivately={
               group && !menu.m.fromMe
