@@ -7,7 +7,8 @@ import { Avatar, Button } from "@/components/ui";
 import { NewChatDialog } from "@/components/NewChatDialog";
 import { useNameResolver } from "@/realtime/useNames";
 import { confirm } from "@/components/Confirm";
-import { useChatPrefs } from "@/store/chatPrefs";
+import { isMutedUntil, useChatPrefs } from "@/store/chatPrefs";
+import { MuteControl } from "@/components/MuteControl";
 import { LabelsDialog, useLabelMap, useLabels } from "@/components/LabelsDialog";
 import type { MentionResolver } from "@/lib/waMarkdown";
 import { stripWaMarkdown, replaceMentions } from "@/lib/waMarkdown";
@@ -43,6 +44,7 @@ export function ChatList({
   const muted = useChatPrefs((s) => s.muted);
   const archived = useChatPrefs((s) => s.archived);
   const togglePref = useChatPrefs((s) => s.toggle);
+  const setMuted = useChatPrefs((s) => s.setMuted);
   const { data: labels } = useLabels(session);
   const { data: labelMap } = useLabelMap(session);
   const [labelFilter, setLabelFilter] = useState<string>("");
@@ -172,11 +174,11 @@ export function ChatList({
             }
           }}
           pinned={!!pinned[`${session}:${rowMenu.chat.id}`]}
-          muted={!!muted[`${session}:${rowMenu.chat.id}`]}
+          muted={muted[`${session}:${rowMenu.chat.id}`]}
           archived={!!archived[`${session}:${rowMenu.chat.id}`]}
           onPin={() => togglePref("pinned", `${session}:${rowMenu.chat.id}`)}
           onLabels={() => setLabelsFor(rowMenu.chat)}
-          onMute={() => togglePref("muted", `${session}:${rowMenu.chat.id}`)}
+          onMute={(until) => setMuted(`${session}:${rowMenu.chat.id}`, until)}
           onArchive={async () => {
             const key = `${session}:${rowMenu.chat.id}`;
             const wasArchived = !!archived[key];
@@ -401,10 +403,10 @@ function ChatRowMenu({
   onArchive: () => void;
   onUnread: () => void;
   onPin: () => void;
-  onMute: () => void;
+  onMute: (until: number | null) => void;
   onLabels: () => void;
   pinned: boolean;
-  muted: boolean;
+  muted: number | undefined;
   archived: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -437,7 +439,14 @@ function ChatRowMenu({
     >
       <div className="px-3 py-1 text-[11px] text-neutral-500 truncate">{chat.name || displayId(chat.id)}</div>
       {item(pinned ? "Unpin" : "Pin to top", onPin)}
-      {item(muted ? "Unmute notifications" : "Mute notifications", onMute)}
+      <MuteControl
+        until={muted}
+        className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-neutral-100 dark:hover:bg-neutral-800"
+        onSet={(until) => {
+          onClose();
+          onMute(until);
+        }}
+      />
       {item("Labels…", onLabels)}
       {item("Mark as unread", onUnread)}
       {item(archived ? "Unarchive chat" : "Archive chat", onArchive)}
@@ -469,7 +478,7 @@ function ChatRow({
   const seen = useUnread((s) => s.lastSeen[rowKey]);
   const unread = unreadFor({ counts: { [rowKey]: count }, lastSeen: seen === undefined ? {} : { [rowKey]: seen } }, session, chat.id, lm);
   const isPinned = useChatPrefs((s) => !!s.pinned[`${session}:${chat.id}`]);
-  const isMuted = useChatPrefs((s) => !!s.muted[`${session}:${chat.id}`]);
+  const isMuted = useChatPrefs((s) => isMutedUntil(s.muted[`${session}:${chat.id}`]));
   const { data: allLabels } = useLabels(session);
   const { data: lmap } = useLabelMap(session);
   const chatLabels = (lmap?.[chat.id] ?? [])

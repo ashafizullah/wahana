@@ -36,6 +36,9 @@ import {
 } from "@/lib/nativeWa";
 import { cn, errMsg, formatTime } from "@/lib/utils";
 import { WaMarkdown } from "@/lib/waMarkdown";
+import { MuteControl } from "@/components/MuteControl";
+import { nativeChatKey } from "@/lib/account";
+import { useChatPrefs } from "@/store/chatPrefs";
 import { NativeChannelRows } from "@/screens/whatsapp/NativeChannel";
 import { MemberMenu, NativeGroupTools } from "@/screens/whatsapp/NativeGroupManage";
 import { nativeMediaBlob, saveNativeMedia } from "@/screens/whatsapp/NativeMediaView";
@@ -94,6 +97,9 @@ export function NativeInfoPanel({
     };
   }, [accountId, chatId, connected, reload]);
 
+  const muteKey = nativeChatKey(accountId, chatId);
+  const muted = useChatPrefs((s) => s.muted[muteKey]);
+  const setMuted = useChatPrefs((s) => s.setMuted);
   const amAdmin = details?.type === "group" && details.members.some((m) => m.isMe && m.admin);
 
   return (
@@ -119,6 +125,16 @@ export function NativeInfoPanel({
             <span className="flex-1 text-left">Media, links and docs</span>
             <ChevronRight size={16} className="text-neutral-400" />
           </button>
+          {!channel && (
+            <MuteControl
+              until={muted}
+              onSet={(until) => {
+                setMuted(muteKey, until);
+                void nativeWa.muteChat(accountId, chatId, until).catch(() => {});
+              }}
+              className="w-full flex items-center gap-3 px-5 py-3 text-sm border-b border-neutral-100 dark:border-neutral-800 hover:bg-neutral-50 dark:hover:bg-neutral-800/60"
+            />
+          )}
           {!details && !error && <Loader2 className="animate-spin text-neutral-400 m-4" />}
           {error && <div className="p-4 text-xs text-red-600 selectable">{error}</div>}
           {details?.type === "contact" && <ContactRows details={details} />}

@@ -6,6 +6,7 @@ import {
   onNativeChats,
   onNativeLabels,
   onNativeMessages,
+  onNativeMute,
   onNativePin,
   onNativeQr,
   onNativeReaction,
@@ -15,7 +16,7 @@ import {
 } from "@/lib/nativeWa";
 import { nativeAccountKey, nativeChatKey } from "@/lib/account";
 import { convKey } from "@/lib/utils";
-import { useChatPrefs } from "@/store/chatPrefs";
+import { isMutedUntil, useChatPrefs } from "@/store/chatPrefs";
 import { usePins } from "@/store/pins";
 import { useReactions } from "@/store/reactions";
 import { useRevoked } from "@/store/revoked";
@@ -87,6 +88,7 @@ export const useWhatsApp = create<State>((set, get) => ({
         reaction: { text: r.text, messageId: r.messageId },
       }),
     );
+    await onNativeMute((m) => useChatPrefs.getState().setMuted(nativeChatKey(m.id, m.chatId), m.until === 0 ? null : m.until));
     await onNativePin((p) => usePins.getState().set(convKey(p.id, p.chatId), p.messageId, p.on ? p.expires : 0));
     await onNativeRevoked((r) =>
       useRevoked.getState().add({
@@ -124,7 +126,7 @@ export const useWhatsApp = create<State>((set, get) => ({
         );
         if (!useSettings.getState().notifications) continue;
         if (document.hasFocus() && openChat?.account === id && openChat.chat === m.chatId) continue;
-        if (useChatPrefs.getState().muted[nativeChatKey(id, m.chatId)]) continue;
+        if (isMutedUntil(useChatPrefs.getState().muted[nativeChatKey(id, m.chatId)])) continue;
         const sender = m.senderName || `+${m.chatId.split("@")[0]}`;
         const title = accounts.length > 1 && account ? `${sender} · ${account.name}` : sender;
         void notifyText(title, m.body || (m.kind === "media" ? "📎 Media" : "New message"));

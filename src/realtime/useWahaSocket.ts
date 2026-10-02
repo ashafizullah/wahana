@@ -12,7 +12,7 @@ import { useReactions, type ReactionEvent } from "@/store/reactions";
 import { useReceipts, type AckEvent } from "@/store/receipts";
 import { useRevoked } from "@/store/revoked";
 import { usePolls, type PollVoteEvent } from "@/store/polls";
-import { useChatPrefs } from "@/store/chatPrefs";
+import { isMutedUntil, useChatPrefs } from "@/store/chatPrefs";
 import { useCalls, type CallEvent } from "@/store/calls";
 import { useLiveMessages } from "@/store/liveMessages";
 import { convKey, messageChatId } from "@/lib/utils";
@@ -186,7 +186,7 @@ export function useWahaSocket() {
             });
           }
           qc.invalidateQueries({ queryKey: qk.chats(e.session) });
-          if (!m.fromMe && !seenBefore && notifRef.current && !useChatPrefs.getState().muted[convKey(e.session, chatId)]) {
+          if (!m.fromMe && !seenBefore && notifRef.current && !isMutedUntil(useChatPrefs.getState().muted[convKey(e.session, chatId)])) {
             const multi = (qc.getQueryData<{ name: string }[]>(qk.sessions)?.length ?? 0) > 1;
             void notifyIncoming(m, multi ? e.session : undefined);
           }

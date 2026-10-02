@@ -1,6 +1,5 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
-  Bell,
   CheckCheck,
   BellOff,
   Languages,
@@ -48,7 +47,8 @@ import { readReceiptsFor, sendTypingFor, useReadReceipts } from "@/store/setting
 import { nativeAccountKey, nativeChatKey } from "@/lib/account";
 import { Pairing } from "@/screens/whatsapp/Pairing";
 import { NativeLabelsDialog, labelColorHex } from "@/screens/whatsapp/NativeLabelsDialog";
-import { useChatPrefs } from "@/store/chatPrefs";
+import { isMutedUntil, useChatPrefs } from "@/store/chatPrefs";
+import { MuteControl } from "@/components/MuteControl";
 import { bareId, summarize, useReactions } from "@/store/reactions";
 import { PIN_MS, isPinned, useChatPins, usePins } from "@/store/pins";
 import { PinBanner } from "@/components/PinBanner";
@@ -430,6 +430,7 @@ function ChatList({
                 connected={account.status === "working"}
                 active={!selecting && c.id === selected}
                 pinned={!!pinned[key]}
+                muted={isMutedUntil(muted[key])}
                 chips={chips}
                 selecting={selecting}
                 checked={picked.has(c.id)}
@@ -450,7 +451,7 @@ function ChatList({
           accountId={account.id}
           chat={menu.chat}
           pinned={!!pinned[nativeChatKey(account.id, menu.chat.id)]}
-          muted={!!muted[nativeChatKey(account.id, menu.chat.id)]}
+          muted={muted[nativeChatKey(account.id, menu.chat.id)]}
           x={menu.x}
           y={menu.y}
           onClose={() => setMenu(null)}
@@ -487,13 +488,14 @@ function RowMenu({
   accountId: string;
   chat: NativeChat;
   pinned: boolean;
-  muted: boolean;
+  muted: number | undefined;
   x: number;
   y: number;
   onClose: () => void;
   onLabels: () => void;
 }) {
   const togglePref = useChatPrefs((s) => s.toggle);
+  const setMuted = useChatPrefs((s) => s.setMuted);
   const key = nativeChatKey(accountId, chat.id);
   const item = "w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-neutral-100 dark:hover:bg-neutral-800";
   return (
@@ -507,8 +509,9 @@ function RowMenu({
     >
       <div
         className="absolute w-48 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-xl py-1 text-xs"
-        style={{ left: Math.min(x, window.innerWidth - 200), top: Math.min(y, window.innerHeight - 160) }}
+        style={{ left: Math.min(x, window.innerWidth - 200), top: Math.min(y, window.innerHeight - 220) }}
         onMouseDown={(e) => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
       >
         <button
           className={item}
@@ -520,15 +523,15 @@ function RowMenu({
         >
           <Pin size={13} /> {pinned ? "Unpin" : "Pin to top"}
         </button>
-        <button
+        <MuteControl
           className={item}
-          onClick={() => {
-            togglePref("muted", key);
+          until={muted}
+          onSet={(until) => {
+            setMuted(key, until);
+            void nativeWa.muteChat(accountId, chat.id, until).catch(() => {});
             onClose();
           }}
-        >
-          {muted ? <Bell size={13} /> : <BellOff size={13} />} {muted ? "Unmute notifications" : "Mute notifications"}
-        </button>
+        />
         <button className={item} onClick={onLabels}>
           <Tag size={13} /> Labels…
         </button>
@@ -543,6 +546,7 @@ const ChatRow = memo(function ChatRow({
   connected,
   active,
   pinned,
+  muted,
   chips,
   selecting,
   checked,
@@ -554,6 +558,7 @@ const ChatRow = memo(function ChatRow({
   connected: boolean;
   active: boolean;
   pinned: boolean;
+  muted: boolean;
   chips: { name: string; color: string }[];
   selecting: boolean;
   checked: boolean;
@@ -596,6 +601,7 @@ const ChatRow = memo(function ChatRow({
           ) : null}
           <span className="font-medium truncate shrink-0 max-w-[70%]">{title}</span>
           {pushName && <span className="text-[11px] text-neutral-400 truncate">~{pushName}</span>}
+          {muted && <BellOff size={12} className="shrink-0 text-neutral-400" />}
           {pinned && <Pin size={12} className="shrink-0 text-neutral-400" />}
           {chat.lastTimestamp > 0 && (
             <span className="ml-auto shrink-0 text-[11px] text-neutral-400">{formatTime(secs(chat.lastTimestamp))}</span>

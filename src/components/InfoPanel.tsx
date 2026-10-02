@@ -8,6 +8,8 @@ import type { ChatOverview } from "@/api/types";
 import { WaMarkdown, type MentionResolver } from "@/lib/waMarkdown";
 import { useNameResolver } from "@/realtime/useNames";
 import { ChatMedia } from "@/components/ChatMedia";
+import { MuteControl } from "@/components/MuteControl";
+import { useChatPrefs } from "@/store/chatPrefs";
 import { GroupTools, ParticipantsRow } from "@/components/GroupManage";
 
 /** Right-hand details panel for the open chat (group participants or contact info). */
@@ -28,6 +30,9 @@ export function InfoPanel({
   const name = chat?.name || displayId(chatId);
   const resolveName: MentionResolver = useNameResolver(session, chatId);
   const [view, setView] = useState<"info" | "media">("info");
+  const muteKey = `${session}:${chatId}`;
+  const muted = useChatPrefs((s) => s.muted[muteKey]);
+  const setMuted = useChatPrefs((s) => s.setMuted);
 
   const groupQ = useQuery({
     queryKey: ["group", session, chatId],
@@ -65,6 +70,11 @@ export function InfoPanel({
               <div className="text-xs text-neutral-500">~{contactQ.data.pushname}</div>
             )}
           </div>
+          <MuteControl
+            until={muted}
+            onSet={(until) => setMuted(muteKey, until)}
+            className="w-full flex items-center gap-3 px-5 py-3 text-sm border-b border-neutral-100 dark:border-neutral-800 hover:bg-neutral-50 dark:hover:bg-neutral-800/60"
+          />
           <button
             onClick={() => setView("media")}
             className="w-full flex items-center gap-3 px-5 py-3 text-sm border-b border-neutral-100 dark:border-neutral-800 hover:bg-neutral-50 dark:hover:bg-neutral-800/60"

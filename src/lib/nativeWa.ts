@@ -350,6 +350,8 @@ export const nativeWa = {
     invoke<void>("wa_native_label_link", { id, labelId, chatId, on }),
   /** Pin or unpin a chat (syncs to the phone). */
   pinChat: (id: string, chatId: string, on: boolean) => invoke<void>("wa_native_pin_chat", { id, chatId, on }),
+  /** Mute a chat until `until` (epoch ms, -1 = for good) or unmute it with null (syncs to the phone). */
+  muteChat: (id: string, chatId: string, until: number | null) => invoke<void>("wa_native_mute_chat", { id, chatId, until }),
   /** The newest messages with an attachment, oldest first. */
   chatMedia: (id: string, chatId: string) => invoke<NativeMessage[]>("wa_native_chat_media", { id, chatId }),
   /** Download and decrypt a message's attachment. */
@@ -388,6 +390,10 @@ export const onNativeMessages = (cb: (batch: NativeMessageBatch) => void): Promi
 /** An account's labels changed (create/rename/delete/assign). */
 export const onNativeLabels = (cb: (id: string) => void): Promise<UnlistenFn> =>
   listen<{ id: string }>("wa_native:labels", (event) => cb(event.payload.id));
+
+/** A chat was muted or unmuted on the phone or another linked device. */
+export const onNativeMute = (cb: (m: { id: string; chatId: string; until: number }) => void): Promise<UnlistenFn> =>
+  listen<{ id: string; chatId: string; until: number }>("wa_native:mute", (event) => cb(event.payload));
 
 /** A status (story) arrived for an account. */
 export const onNativeStatus = (cb: (id: string) => void): Promise<UnlistenFn> =>

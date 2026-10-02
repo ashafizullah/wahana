@@ -221,6 +221,16 @@ struct IdPayload {
     id: String,
 }
 
+/// A chat was muted or unmuted (from the phone or another linked device).
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MutePayload {
+    id: String,
+    chat_id: String,
+    /// 0 = not muted, -1 = muted until unmuted, otherwise the end time in epoch ms.
+    until: i64,
+}
+
 /// An incoming reaction, so the bubble can show who reacted with what.
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -1141,6 +1151,29 @@ async fn handle_event(app: AppHandle, account: Arc<WaAccount>, generation: u64, 
                 NameSource::PushName,
             );
             emit_chats(&app, &account);
+        }
+        Event::MuteUpdate(update) => {
+            // `mute_end_timestamp` is in ms; -1 (or unset) means muted indefinitely.
+            let action = &update.action;
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| d.as_millis() as i64);
+            let until = match action.mute_end_timestamp {
+                _ if !action.muted.unwrap_or(false) => 0,
+                None => -1,
+                Some(end) if end <= 0 => -1,
+                Some(end) if end > now => end,
+                Some(_) => 0,
+            };
+            let _ = app.emit_to(
+                "main",
+                "wa_native:mute",
+                MutePayload {
+                    id: account.id.clone(),
+                    chat_id: bare_jid(&update.jid.to_string()),
+                    until,
+                },
+            );
         }
         Event::LabelEditUpdate(update) => {
             let action = &update.action;
@@ -3948,6 +3981,35 @@ pub async fn wa_native_pin_chat(
         actions.pin_chat(&jid).await
     } else {
         actions.unpin_chat(&jid).await
+    };
+    result.map_err(|e| e.to_string())
+}
+
+/// Mutes a chat until `until` (epoch ms, or -1 for good), or unmutes it when `until` is `None`
+/// (WhatsApp app state, so it syncs to the phone).
+#[tauri::command]
+pub async fn wa_native_mute_chat(
+    state: State<'_, WaState>,
+    id: String,
+    chat_id: String,
+    until: Option<i64>,
+) -> Result<(), String> {
+    let account = state.get(&id)?;
+    let client = account
+        .inner
+        .lock()
+        .unwrap()
+        .client
+        .clone()
+        .ok_or("WhatsApp account is not running")?;
+    let jid: Jid = chat_id
+        .parse()
+        .map_err(|_| format!("invalid chat id: {chat_id}"))?;
+    let actions = client.chat_actions();
+    let result = match until {
+        None => actions.unmute_chat(&jid).await,
+        Some(end) if end <= 0 => actions.mute_chat(&jid).await,
+        Some(end) => actions.mute_chat_until(&jid, end).await,
     };
     result.map_err(|e| e.to_string())
 }

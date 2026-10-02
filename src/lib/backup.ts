@@ -20,7 +20,7 @@ export interface Backup {
   secrets?: Record<string, string>;
   chatPrefs: {
     pinned: Record<string, number>;
-    muted: Record<string, 1>;
+    muted: Record<string, number>;
     archived: Record<string, 1>;
     autoTranslate?: Record<string, { in?: string; out?: string }>;
   };
