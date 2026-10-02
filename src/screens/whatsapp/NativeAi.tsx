@@ -355,13 +355,15 @@ export function NativeSmartReplies({
   const [items, setItems] = useState<string[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [hidden, setHidden] = useState(false);
   const last = messages[messages.length - 1];
   const lastId = last?.id;
   useEffect(() => {
     setItems(null);
     setErr(null);
+    setHidden(false);
   }, [chatId, lastId]);
-  if (!aiConfigured() || !last || last.fromMe) return null;
+  if (hidden || !aiConfigured() || !last || last.fromMe) return null;
 
   const run = async () => {
     setBusy(true);
@@ -385,13 +387,22 @@ export function NativeSmartReplies({
   return (
     <div className="flex flex-wrap items-center gap-1.5 text-xs">
       {items === null ? (
-        <button
-          onClick={run}
-          disabled={busy}
-          className="inline-flex items-center gap-1 rounded-full border border-dashed border-neutral-300 dark:border-neutral-700 px-2.5 py-1 text-neutral-500 hover:text-wa-dark hover:border-wa-dark disabled:opacity-50"
-        >
-          {busy ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />} Suggest replies
-        </button>
+        <>
+          <button
+            onClick={run}
+            disabled={busy}
+            className="inline-flex items-center gap-1 rounded-full border border-dashed border-neutral-300 dark:border-neutral-700 px-2.5 py-1 text-neutral-500 hover:text-wa-dark hover:border-wa-dark disabled:opacity-50"
+          >
+            {busy ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />} Suggest replies
+          </button>
+          <button
+            onClick={() => setHidden(true)}
+            title="Hide until the next message"
+            className="p-1 text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"
+          >
+            <X size={12} />
+          </button>
+        </>
       ) : (
         <>
           {items.map((t, i) => (

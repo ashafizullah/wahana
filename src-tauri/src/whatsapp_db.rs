@@ -17,7 +17,7 @@ use crate::whatsapp::{
 };
 
 /// Bumped with every schema change; `open` migrates older files up to it.
-const SCHEMA_VERSION: i64 = 11;
+const SCHEMA_VERSION: i64 = 12;
 
 /// How much a name source is trusted. A name only replaces one from an equal or lower
 /// source, so a push name never overwrites a contact's saved name.
@@ -267,6 +267,12 @@ impl ChatDb {
                  ALTER TABLE messages ADD COLUMN preview_image TEXT;",
             )?;
         }
+        if version < 12 {
+            // Chat mutes mirrored from the phone: `until` is epoch ms, -1 for good, 0 unmuted.
+            conn.execute_batch(
+                "CREATE TABLE IF NOT EXISTS mutes (id TEXT PRIMARY KEY, until INTEGER NOT NULL);",
+            )?;
+        }
         conn.execute_batch(&format!("PRAGMA user_version = {SCHEMA_VERSION}"))?;
         // Statuses are stored as messages under `status@broadcast`, not as a chat; drop any
         // row an earlier build created for it.
@@ -277,8 +283,40 @@ impl ChatDb {
     /// Forgets everything, for a device that was logged out and will pair afresh.
     pub fn clear(&self) -> rusqlite::Result<()> {
         self.conn.execute_batch(
-            "DELETE FROM chats; DELETE FROM messages; DELETE FROM message_edits; DELETE FROM names; DELETE FROM lid_pn;",
+            "DELETE FROM chats; DELETE FROM messages; DELETE FROM message_edits; DELETE FROM names; DELETE FROM lid_pn; DELETE FROM mutes;",
         )
+    }
+
+    /// Records a chat's mute state (see the `mutes` table).
+    pub fn set_mute(&self, id: &str, until: i64) -> rusqlite::Result<()> {
+        self.conn.execute(
+            "INSERT INTO mutes (id, until) VALUES (?1, ?2) ON CONFLICT (id) DO UPDATE SET until = excluded.until",
+            params![id, until],
+        )?;
+        Ok(())
+    }
+
+    /// The recorded mute of a chat, found under its phone-number or privacy id alike.
+    fn mute_for(&self, id: &str) -> rusqlite::Result<Option<i64>> {
+        let pn = self.pn_for(id)?;
+        let lid = self.lid_for(id)?;
+        for candidate in [Some(id), pn.as_deref(), lid.as_deref()]
+            .into_iter()
+            .flatten()
+        {
+            let found = self
+                .conn
+                .query_row(
+                    "SELECT until FROM mutes WHERE id = ?1",
+                    params![candidate],
+                    |r| r.get::<_, i64>(0),
+                )
+                .optional()?;
+            if found.is_some() {
+                return Ok(found);
+            }
+        }
+        Ok(None)
     }
 
     pub fn set_name(&self, id: &str, name: &str, source: NameSource) -> rusqlite::Result<()> {
@@ -686,7 +724,9 @@ impl ChatDb {
                     .unwrap_or(sender)
             };
             let group = id.ends_with("@g.us");
+            let muted_until = self.mute_for(&id)?;
             chats.push(ChatInfo {
+                muted_until,
                 saved: group
                     || who
                         .name

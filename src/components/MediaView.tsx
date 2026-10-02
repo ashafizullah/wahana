@@ -1,3 +1,4 @@
+import { noteSticker } from "@/lib/stickers";
 import { useEffect, useState } from "react";
 import { FileText, Download, Loader2, Play, Image as ImageIcon, Music, Sticker } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -108,6 +109,7 @@ export function MediaView({ message: m, session, chatId }: { message: WAMessage;
         obj = URL.createObjectURL(blob);
         setBlobUrl(obj);
         void cachePut(cacheKey, blob);
+        if (kind === "sticker") noteSticker(blob);
       } catch (e) {
         if (!cancelled) setErr(errMsg(e));
       } finally {

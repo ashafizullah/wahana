@@ -6,7 +6,6 @@ import {
   onNativeChats,
   onNativeLabels,
   onNativeMessages,
-  onNativeMute,
   onNativePin,
   onNativeQr,
   onNativeReaction,
@@ -88,7 +87,6 @@ export const useWhatsApp = create<State>((set, get) => ({
         reaction: { text: r.text, messageId: r.messageId },
       }),
     );
-    await onNativeMute((m) => useChatPrefs.getState().setMuted(nativeChatKey(m.id, m.chatId), m.until === 0 ? null : m.until));
     await onNativePin((p) => usePins.getState().set(convKey(p.id, p.chatId), p.messageId, p.on ? p.expires : 0));
     await onNativeRevoked((r) =>
       useRevoked.getState().add({

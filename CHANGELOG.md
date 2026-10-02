@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.7.0 — 2026-10-03
+
+### Added
+
+- Stickers: a tray next to the emoji button with **Recent** (collected from stickers you send or receive) and **Saved** (add any PNG/JPG/GIF/WebP; it is converted to a 512×512 WebP). Click to send, in native and WAHA chats.
+- Paste a screenshot or copied image anywhere in the chat, not only inside the text box; it becomes an attachment (native) or is sent straight away (WAHA).
+- Native chat: mute for 8 hours, 1 week or always, with a bell icon in the list and a control in the info panel; mutes sync both ways with the phone, including those set before linking.
+- Native chat: story mentions, group member profiles, admin delete for everyone, reply privately.
+- WAHA chats: copy number button, Chat and Reply privately in the group menu, group admins can delete others' messages.
+- Channels: react to posts, load history, reaction totals.
+
+### Changed
+
+- The composer's icon buttons are smaller so the text box is wider.
+- The "Suggest replies" strip can be hidden with an X until the next message.
+
 ## 0.6.0 — 2026-10-02
 
 ### Added

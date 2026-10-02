@@ -89,6 +89,7 @@ pub fn run() {
             media_cache::media_cache_has,
             media_cache::media_cache_get,
             media_cache::media_cache_put,
+            media_cache::sticker_from_image,
             media_cache::media_cache_stats,
             media_cache::media_cache_clear,
             whatsapp::wa_native_accounts,

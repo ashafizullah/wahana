@@ -286,6 +286,9 @@ export class WahaClient {
   sendVideo(session: string, chatId: string, file: { mimetype: string; filename: string; data: string }, caption?: string, convert = true) {
     return this.post<WAMessage>("/api/sendVideo", { session, chatId, file, caption, convert, asNote: false });
   }
+  sendSticker(session: string, chatId: string, file: { mimetype: string; filename: string; data: string }) {
+    return this.post<WAMessage>("/api/sendSticker", { session, chatId, file });
+  }
   sendLocation(session: string, chatId: string, latitude: number, longitude: number, title: string) {
     return this.post<WAMessage>("/api/sendLocation", { session, chatId, latitude, longitude, title });
   }

@@ -56,7 +56,7 @@ Features below are for WAHA sessions unless noted; see [Native WhatsApp](#native
 - Session list with QR / pairing-code login, multiple sessions and multiple servers (per-server keys in the OS keychain)
 - Realtime via WAHA WebSocket: messages, acks, presence (online / typing), reactions, edits, deletions
 - WhatsApp formatting, @mentions with autocomplete, link previews, quoted replies with media thumbnails
-- Send text, photos, videos, documents, voice notes, location, contacts, polls; drag-and-drop and paste
+- Send text, photos, videos, documents, voice notes, location, contacts, polls; drag-and-drop, and paste of screenshots or copied images anywhere in the chat; stickers from a tray of saved and recent ones
 - Message menu: reactions, reply, forward, pin, edit, delete (for everyone / for me), info (delivery & read times), translate
 - Media auto-load per kind with blurred click-to-load previews, on-disk cache, lightbox with zoom and save
 - Unread badges (list, tab, dock/tray), pin / mute / archive, labels, drafts, quick replies (`/shortcut` with variables, optionally per session)
@@ -95,9 +95,9 @@ Features below are for WAHA sessions unless noted; see [Native WhatsApp](#native
 - Link WhatsApp accounts directly by scanning a QR code: the app talks to WhatsApp itself through [whatsapp-rust](https://github.com/oxidezap/whatsapp-rust), with no server and no embedded browser
 - Several accounts next to your WAHA sessions in the same picker; each keeps its own session on disk, reconnects on launch, and can be renamed, disconnected, logged out or removed
 - Chat history: your phone sends it when the account is linked, it is kept in SQLite, and older messages of a chat are fetched from the phone as you scroll up; group, contact and channel names and profile pictures are filled in
-- Text with WhatsApp formatting, emoji, quick replies; send and receive photos, videos, audio, voice notes, documents and stickers, with media viewer and save
+- Text with WhatsApp formatting, emoji, quick replies; send and receive photos, videos, audio, voice notes, documents and stickers (sticker tray with saved and recent ones, any image converted to a 512×512 WebP), with media viewer and save; paste a screenshot to send it
 - Read receipts and typing indicator (following the privacy settings), unread badges, OS notifications, filters (unread / groups / channels)
-- Pin chats and manage labels (create, rename, delete, assign), synced with your phone
+- Pin chats, mute them for 8 hours / 1 week / always, and manage labels (create, rename, delete, assign), all synced with your phone
 - Info panel: contact profile, or group details with members and shared media
 - Group management: rename, description, photo, admin-only messages / edit info, join approval, add / remove / promote / demote, join requests, invite link, leave
 - Status: view contacts' updates (marked as viewed), post text / photo / video, delete your own

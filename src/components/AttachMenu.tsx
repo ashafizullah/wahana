@@ -25,7 +25,7 @@ export function AttachMenu({ disabled, onPick }: { disabled?: boolean; onPick: (
       side="top"
       className="w-48 py-1"
       trigger={
-        <Button variant="ghost" onClick={() => setOpen((o) => !o)} disabled={disabled} title="Attach">
+        <Button variant="ghost" size="icon" onClick={() => setOpen((o) => !o)} disabled={disabled} title="Attach">
           {disabled ? <Loader2 size={18} className="animate-spin" /> : <Paperclip size={18} />}
         </Button>
       }

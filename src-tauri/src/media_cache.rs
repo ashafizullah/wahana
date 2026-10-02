@@ -172,3 +172,33 @@ pub async fn media_cache_clear(app: AppHandle) -> Result<(), String> {
     fs::remove_dir_all(&dir).map_err(|e| e.to_string())?;
     fs::create_dir_all(&dir).map_err(|e| e.to_string())
 }
+
+/// Turns any PNG/JPEG/GIF/WebP body into a 512×512 transparent-padded WebP, the shape
+/// WhatsApp expects for a sticker. A WebP already at that size passes through untouched,
+/// which keeps animated stickers intact.
+#[tauri::command]
+pub fn sticker_from_image(request: Request<'_>) -> Result<tauri::ipc::Response, String> {
+    let bytes = match request.body() {
+        InvokeBody::Raw(b) => b.clone(),
+        InvokeBody::Json(_) => return Err("expected raw body".into()),
+    };
+    if bytes.len() > 12 && &bytes[..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
+        let img = image::load_from_memory(&bytes).map_err(|e| e.to_string())?;
+        if img.width() == 512 && img.height() == 512 {
+            return Ok(tauri::ipc::Response::new(bytes));
+        }
+    }
+    let img = image::load_from_memory(&bytes).map_err(|e| format!("unreadable image: {e}"))?;
+    let fitted = img
+        .resize(512, 512, image::imageops::FilterType::Lanczos3)
+        .to_rgba8();
+    let mut canvas = image::RgbaImage::new(512, 512);
+    let x = (512 - fitted.width()) / 2;
+    let y = (512 - fitted.height()) / 2;
+    image::imageops::overlay(&mut canvas, &fitted, x as i64, y as i64);
+    let mut out = std::io::Cursor::new(Vec::new());
+    canvas
+        .write_to(&mut out, image::ImageFormat::WebP)
+        .map_err(|e| e.to_string())?;
+    Ok(tauri::ipc::Response::new(out.into_inner()))
+}

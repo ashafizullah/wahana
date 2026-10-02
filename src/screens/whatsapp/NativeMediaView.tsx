@@ -1,3 +1,4 @@
+import { noteSticker } from "@/lib/stickers";
 import { useEffect, useState } from "react";
 import { Download, FileText, Loader2, Mic, Music, Play } from "lucide-react";
 import { save } from "@tauri-apps/plugin-dialog";
@@ -84,6 +85,7 @@ export function NativeMediaView({
         if (cancelled) return;
         obj = URL.createObjectURL(blob);
         setUrl(obj);
+        if (media.kind === "sticker") noteSticker(blob);
       } catch (e) {
         if (!cancelled) setErr(errMsg(e));
       } finally {

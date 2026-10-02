@@ -1,6 +1,6 @@
 [package]
 name = "wahana"
-version = "0.6.0"
+version = "0.7.0"
 description = "Wahana — cross-platform WhatsApp desktop client: native accounts or a WAHA server"
 authors = ["Adam Suchi Hafizullah"]
 edition = "2021"
@@ -57,6 +57,7 @@ whatsapp-rust-sqlite-storage = { version = "0.7", default-features = false }
 # copy `tauri-plugin-sql` already links (see the note above).
 rusqlite = "0.32"
 base64 = "0.22"
+image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "webp", "gif"] }
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration

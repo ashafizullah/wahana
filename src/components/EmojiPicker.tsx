@@ -32,7 +32,7 @@ export function EmojiButton({ onPick }: { onPick: (emoji: string) => void }) {
 
   return (
     <div ref={ref} className="relative">
-      <Button variant="ghost" onClick={() => setOpen((o) => !o)} title="Emoji">
+      <Button variant="ghost" size="icon" onClick={() => setOpen((o) => !o)} title="Emoji">
         <Smile size={18} />
       </Button>
       {open && <div ref={host} className="absolute bottom-full left-0 mb-2 z-30 shadow-2xl rounded-xl overflow-hidden" />}

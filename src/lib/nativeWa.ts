@@ -35,6 +35,8 @@ export interface NativeChat {
   phone: string | null;
   /** Named from your contacts (or a group); otherwise `name` is the other side's own push name. */
   saved: boolean;
+  /** Mute state mirrored from the phone: 0 = not muted, -1 = for good, else end time (epoch ms). Absent = unknown. */
+  mutedUntil?: number | null;
 }
 
 export interface NativeMedia {
@@ -357,7 +359,7 @@ export const nativeWa = {
   /** Download and decrypt a message's attachment. */
   media: (id: string, chatId: string, messageId: string) => invoke<ArrayBuffer>("wa_native_media", { id, chatId, messageId }),
   /** Send a file (with an optional caption) as photo, video, audio or document by its type, optionally quoting a message. */
-  sendMedia: (id: string, chatId: string, file: Blob, name: string, caption: string, quoteId?: string | null) =>
+  sendMedia: (id: string, chatId: string, file: Blob, name: string, caption: string, quoteId?: string | null, asSticker = false) =>
     file.arrayBuffer().then((buf) =>
       invoke<NativeMessage>("wa_native_send_media", new Uint8Array(buf), {
         headers: {
@@ -367,6 +369,7 @@ export const nativeWa = {
           "x-name": encodeURIComponent(name),
           "x-caption": encodeURIComponent(caption),
           "x-quote": encodeURIComponent(quoteId ?? ""),
+          "x-kind": asSticker ? "sticker" : "",
         },
       }),
     ),
@@ -390,10 +393,6 @@ export const onNativeMessages = (cb: (batch: NativeMessageBatch) => void): Promi
 /** An account's labels changed (create/rename/delete/assign). */
 export const onNativeLabels = (cb: (id: string) => void): Promise<UnlistenFn> =>
   listen<{ id: string }>("wa_native:labels", (event) => cb(event.payload.id));
-
-/** A chat was muted or unmuted on the phone or another linked device. */
-export const onNativeMute = (cb: (m: { id: string; chatId: string; until: number }) => void): Promise<UnlistenFn> =>
-  listen<{ id: string; chatId: string; until: number }>("wa_native:mute", (event) => cb(event.payload));
 
 /** A status (story) arrived for an account. */
 export const onNativeStatus = (cb: (id: string) => void): Promise<UnlistenFn> =>

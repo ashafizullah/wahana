@@ -6,6 +6,8 @@ import { Button, MenuItem, Popover } from "@/components/ui";
 import { AttachMenu, VoiceRecorder, LocationDialog, ContactDialog, PollDialog, type AttachKind } from "@/components/AttachMenu";
 import { QuoteView } from "@/components/QuoteView";
 import { EmojiButton } from "@/components/EmojiPicker";
+import { StickerButton } from "@/components/StickerPicker";
+import { clipboardImage, nameClipboardFile, noteSticker } from "@/lib/stickers";
 import { useDrafts } from "@/store/drafts";
 import { MentionPicker, type MentionCandidate } from "@/components/MentionPicker";
 import { QuickReplyPicker } from "@/components/QuickReplyPicker";
@@ -28,6 +30,7 @@ export function TranslateDraftButton({ text, onResult }: { text: string; onResul
     <div className="relative">
       <Button
         variant="ghost"
+        size="icon"
         disabled={!text.trim() || busy || !ready}
         title={ready ? `Translate draft to ${langName(target)} (⌘⇧T)` : "Set up AI in Settings to translate"}
         onClick={async () => {
@@ -92,6 +95,7 @@ export function WriteAssistButton({ text, onResult }: { text: string; onResult: 
         trigger={
           <Button
             variant="ghost"
+            size="icon"
             disabled={(!text.trim() && !undo) || !!busy || !ready}
             title={ready ? "Writing assistant" : "Set up AI in Settings to use the writing assistant"}
             onClick={() => setOpen((v) => !v)}
@@ -146,13 +150,15 @@ export function SmartReplies({
   const [items, setItems] = useState<string[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [hidden, setHidden] = useState(false);
   const last = recent[recent.length - 1];
   const lastId = last?.id;
   useEffect(() => {
     setItems(null);
     setErr(null);
+    setHidden(false);
   }, [chatId, lastId]);
-  if (!aiConfigured() || !last || last.fromMe) return null;
+  if (hidden || !aiConfigured() || !last || last.fromMe) return null;
   const run = async () => {
     setBusy(true);
     setErr(null);
@@ -168,13 +174,22 @@ export function SmartReplies({
   return (
     <div className="flex flex-wrap items-center gap-1.5 text-xs">
       {items === null ? (
-        <button
-          onClick={run}
-          disabled={busy}
-          className="inline-flex items-center gap-1 rounded-full border border-dashed border-neutral-300 dark:border-neutral-700 px-2.5 py-1 text-neutral-500 hover:text-wa-dark hover:border-wa-dark disabled:opacity-50"
-        >
-          {busy ? <Spinner size={12} className="animate-spin" /> : <Sparkles size={12} />} Suggest replies
-        </button>
+        <>
+          <button
+            onClick={run}
+            disabled={busy}
+            className="inline-flex items-center gap-1 rounded-full border border-dashed border-neutral-300 dark:border-neutral-700 px-2.5 py-1 text-neutral-500 hover:text-wa-dark hover:border-wa-dark disabled:opacity-50"
+          >
+            {busy ? <Spinner size={12} className="animate-spin" /> : <Sparkles size={12} />} Suggest replies
+          </button>
+          <button
+            onClick={() => setHidden(true)}
+            title="Hide until the next message"
+            className="p-1 text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"
+          >
+            <X size={12} />
+          </button>
+        </>
       ) : (
         <>
           {items.map((t, i) => (
@@ -386,6 +401,42 @@ export function Composer({
     }
   };
 
+  const sendSticker = async (webp: Blob) => {
+    setUploading(true);
+    setErr(null);
+    try {
+      receiptBeforeSend();
+      const data = await blobToBase64(webp);
+      const msg = await requireClient().sendSticker(session, chatId, {
+        mimetype: "image/webp",
+        filename: "sticker.webp",
+        data,
+      });
+      noteSticker(webp);
+      appendSent(msg);
+    } catch (e) {
+      setErr(errMsg(e));
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  // Pasting a screenshot works wherever focus is, not only inside the text box.
+  const attachRef = useRef(attach);
+  attachRef.current = attach;
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t && t !== taRef.current && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      const img = clipboardImage(e.clipboardData);
+      if (!img) return;
+      e.preventDefault();
+      void attachRef.current(nameClipboardFile(img));
+    };
+    document.addEventListener("paste", onPaste);
+    return () => document.removeEventListener("paste", onPaste);
+  }, []);
+
   const pick = (k: AttachKind) => {
     if (k === "image" || k === "file") {
       setFileAccept(k === "image" ? "image/*,video/*" : undefined);
@@ -546,7 +597,7 @@ export function Composer({
           onSend={async (name, options, multiple) => appendSent(await requireClient().sendPoll(session, chatId, name, options, multiple))}
         />
       )}
-      <div className="flex items-end gap-2">
+      <div className="flex items-end gap-1">
         <input
           ref={fileRef}
           type="file"
@@ -560,6 +611,7 @@ export function Composer({
         <AttachMenu disabled={uploading} onPick={pick} />
         <TranslateDraftButton text={text} onResult={(t) => setText(t)} />
         <WriteAssistButton text={text} onResult={(t) => setText(t)} />
+        <StickerButton onPick={sendSticker} disabled={uploading} />
         <EmojiButton
           onPick={(emoji) => {
             const ta = taRef.current;
@@ -588,13 +640,6 @@ export function Composer({
             setMention(m && mentionCandidates.length ? { start: caret - m[1]!.length - 1, query: m[1]! } : null);
             const sl = v.match(/^\/(\S*)$/);
             setSlash(sl ? sl[1]! : null);
-          }}
-          onPaste={(e) => {
-            const f = [...e.clipboardData.files][0];
-            if (f) {
-              e.preventDefault();
-              void attach(f);
-            }
           }}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {

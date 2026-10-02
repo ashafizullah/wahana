@@ -92,6 +92,9 @@ pub struct ChatInfo {
     /// Named from your contacts (or a group); otherwise `name` is only what the other side
     /// calls themselves, and the number is what identifies them.
     pub saved: bool,
+    /// What the phone says about muting: 0 = not muted, -1 = muted for good, otherwise the
+    /// end time in epoch ms. `None` when nothing was ever recorded.
+    pub muted_until: Option<i64>,
 }
 
 #[derive(Clone, Serialize)]
@@ -219,16 +222,6 @@ struct MessagesPayload {
 #[derive(Clone, Serialize)]
 struct IdPayload {
     id: String,
-}
-
-/// A chat was muted or unmuted (from the phone or another linked device).
-#[derive(Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct MutePayload {
-    id: String,
-    chat_id: String,
-    /// 0 = not muted, -1 = muted until unmuted, otherwise the end time in epoch ms.
-    until: i64,
 }
 
 /// An incoming reaction, so the bubble can show who reacted with what.
@@ -1013,6 +1006,15 @@ fn store_history(db: &ChatDb, sync: &wa::HistorySync) -> rusqlite::Result<()> {
             .unwrap_or_default() as i64
             * 1000;
         db.ensure_chat(chat_id, timestamp, conversation.unread_count.unwrap_or(0))?;
+        // `mute_end_time` is in seconds; the phone uses a far-future value for "always".
+        if let Some(end) = conversation.mute_end_time.filter(|e| *e > 0) {
+            let until = if end > 4_000_000_000 {
+                -1
+            } else {
+                (end as i64) * 1000
+            };
+            db.set_mute(&bare_jid(chat_id), until)?;
+        }
         for entry in &conversation.messages {
             let Some(info) = entry.message.as_option() else {
                 continue;
@@ -1165,15 +1167,12 @@ async fn handle_event(app: AppHandle, account: Arc<WaAccount>, generation: u64, 
                 Some(end) if end > now => end,
                 Some(_) => 0,
             };
-            let _ = app.emit_to(
-                "main",
-                "wa_native:mute",
-                MutePayload {
-                    id: account.id.clone(),
-                    chat_id: bare_jid(&update.jid.to_string()),
-                    until,
-                },
-            );
+            let _ = account
+                .db
+                .lock()
+                .unwrap()
+                .set_mute(&bare_jid(&update.jid.to_string()), until);
+            emit_chats(&app, &account);
         }
         Event::LabelEditUpdate(update) => {
             let action = &update.action;
@@ -2847,6 +2846,7 @@ pub async fn wa_native_send_media(
     let file_name = header("x-name").filter(|n| !n.is_empty());
     let caption = header("x-caption").filter(|c| !c.trim().is_empty());
     let quote_id = header("x-quote").filter(|q| !q.is_empty());
+    let as_sticker = header("x-kind").as_deref() == Some("sticker");
     let data = match request.body() {
         InvokeBody::Raw(bytes) => bytes.clone(),
         InvokeBody::Json(_) => return Err("expected raw body".into()),
@@ -2870,7 +2870,9 @@ pub async fn wa_native_send_media(
         .parse()
         .map_err(|_| format!("invalid chat id: {chat_id}"))?;
 
-    let media_type = if mimetype.starts_with("image/") && mimetype != "image/gif" {
+    let media_type = if as_sticker {
+        MediaType::Sticker
+    } else if mimetype.starts_with("image/") && mimetype != "image/gif" {
         MediaType::Image
     } else if mimetype.starts_with("video/") {
         MediaType::Video
@@ -2888,6 +2890,26 @@ pub async fn wa_native_send_media(
         .await
         .map_err(|e| format!("upload failed: {e}"))?;
     let message = match media_type {
+        MediaType::Sticker => wa::Message {
+            sticker_message: buffa::MessageField::some(wa::message::StickerMessage {
+                url: Some(upload.url),
+                direct_path: Some(upload.direct_path),
+                media_key: Some(upload.media_key.to_vec()),
+                file_sha256: Some(upload.file_sha256.to_vec()),
+                file_enc_sha256: Some(upload.file_enc_sha256.to_vec()),
+                file_length: Some(upload.file_length),
+                media_key_timestamp: Some(upload.media_key_timestamp),
+                mimetype: Some("image/webp".into()),
+                width: Some(512),
+                height: Some(512),
+                context_info: context_info
+                    .clone()
+                    .map(|ci| buffa::MessageField::some(*ci))
+                    .unwrap_or_default(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        },
         MediaType::Image => whatsapp_rust::media::image_message(
             upload,
             whatsapp_rust::media::ImageOptions {
@@ -4011,5 +4033,11 @@ pub async fn wa_native_mute_chat(
         Some(end) if end <= 0 => actions.mute_chat(&jid).await,
         Some(end) => actions.mute_chat_until(&jid, end).await,
     };
-    result.map_err(|e| e.to_string())
+    result.map_err(|e| e.to_string())?;
+    let _ = account
+        .db
+        .lock()
+        .unwrap()
+        .set_mute(&bare_jid(&chat_id), until.map_or(0, |e| e.max(-1)));
+    Ok(())
 }

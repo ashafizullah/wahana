@@ -24,6 +24,8 @@ import {
 import { Avatar, Button, Input, Popover } from "@/components/ui";
 import { confirm } from "@/components/Confirm";
 import { EmojiButton } from "@/components/EmojiPicker";
+import { StickerButton } from "@/components/StickerPicker";
+import { clipboardImage, nameClipboardFile, noteSticker } from "@/lib/stickers";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { ResizeHandle, usePaneWidth } from "@/components/ResizeHandle";
 import { LANGUAGES, aiConfigured, langName, translate } from "@/lib/ai";
@@ -47,7 +49,7 @@ import { readReceiptsFor, sendTypingFor, useReadReceipts } from "@/store/setting
 import { nativeAccountKey, nativeChatKey } from "@/lib/account";
 import { Pairing } from "@/screens/whatsapp/Pairing";
 import { NativeLabelsDialog, labelColorHex } from "@/screens/whatsapp/NativeLabelsDialog";
-import { isMutedUntil, useChatPrefs } from "@/store/chatPrefs";
+import { MUTE_FOREVER, isMutedUntil, useChatPrefs } from "@/store/chatPrefs";
 import { MuteControl } from "@/components/MuteControl";
 import { bareId, summarize, useReactions } from "@/store/reactions";
 import { PIN_MS, isPinned, useChatPins, usePins } from "@/store/pins";
@@ -119,6 +121,21 @@ export function WhatsAppScreen({ account, header }: { account: NativeAccount; he
       cancelled = true;
     };
   }, [account.id, tick, account.unread]);
+
+  // Mute state set on the phone (or another linked device) wins over the local copy.
+  useEffect(() => {
+    const prefs = useChatPrefs.getState();
+    for (const c of chats) {
+      if (c.mutedUntil == null) continue;
+      const key = nativeChatKey(account.id, c.id);
+      const local = prefs.muted[key];
+      if (c.mutedUntil === 0) {
+        if (isMutedUntil(local)) prefs.setMuted(key, null);
+      } else if (local !== c.mutedUntil && !(c.mutedUntil === MUTE_FOREVER && isMutedUntil(local) && local <= 1)) {
+        prefs.setMuted(key, c.mutedUntil);
+      }
+    }
+  }, [account.id, chats]);
 
   // Whatever arrives in the chat on screen is read as it lands.
   const openUnread = chats.find((c) => c.id === chatId)?.unread ?? 0;
@@ -1651,6 +1668,38 @@ function Composer({
 
   const attach = (file: File) => setAttachment({ file, preview: file.type.startsWith("image/") ? URL.createObjectURL(file) : null });
 
+  const sendSticker = async (webp: Blob) => {
+    if (sending || !connected) return;
+    setSending(true);
+    try {
+      const sent = await nativeWa.sendMedia(account.id, chatId, webp, "sticker.webp", "", replyTo?.id ?? null, true);
+      void cacheSentMedia(account.id, sent, webp);
+      noteSticker(webp);
+      onCancelReply();
+    } catch (e) {
+      onError(errMsg(e));
+    } finally {
+      setSending(false);
+    }
+  };
+
+  // Pasting a screenshot works wherever focus is, not only inside the text box.
+  const attachRef = useRef(attach);
+  attachRef.current = attach;
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t && t !== taRef.current && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      const img = clipboardImage(e.clipboardData);
+      if (!img) return;
+      e.preventDefault();
+      attachRef.current(nameClipboardFile(img));
+      taRef.current?.focus();
+    };
+    document.addEventListener("paste", onPaste);
+    return () => document.removeEventListener("paste", onPaste);
+  }, []);
+
   const submit = async () => {
     const draft = text.trim();
     if ((!draft && !attachment) || sending || !connected) return;
@@ -1757,7 +1806,7 @@ function Composer({
           <Languages size={12} /> Your messages are translated to {langName(autoOut)} before sending
         </div>
       )}
-      <div className="flex items-end gap-2">
+      <div className="flex items-end gap-1">
         <input
           ref={fileRef}
           type="file"
@@ -1768,11 +1817,18 @@ function Composer({
             e.target.value = "";
           }}
         />
-        <Button variant="ghost" onClick={() => fileRef.current?.click()} disabled={!connected || !!editing} title="Attach a file">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => fileRef.current?.click()}
+          disabled={!connected || !!editing}
+          title="Attach a file"
+        >
           <Paperclip size={18} />
         </Button>
         <TranslateDraftButton text={text} onResult={setText} />
         <WriteAssistButton text={text} onResult={setText} />
+        <StickerButton onPick={sendSticker} disabled={!connected || !!editing || sending} />
         <EmojiButton
           onPick={(emoji) => {
             const ta = taRef.current;
@@ -1795,13 +1851,6 @@ function Composer({
             noteTyping();
             const sl = v.match(/^\/(\S*)$/);
             setSlash(sl ? sl[1]! : null);
-          }}
-          onPaste={(e) => {
-            const f = [...e.clipboardData.files][0];
-            if (f) {
-              e.preventDefault();
-              attach(f);
-            }
           }}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
