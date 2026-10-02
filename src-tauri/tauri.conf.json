@@ -77,7 +77,7 @@
       }
     },
     "category": "SocialNetworking",
-    "shortDescription": "Desktop client for WAHA (WhatsApp HTTP API)"
+    "shortDescription": "WhatsApp desktop client: native accounts or a WAHA server"
   },
   "plugins": {
     "updater": {
