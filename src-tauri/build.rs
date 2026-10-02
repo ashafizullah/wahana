@@ -38,6 +38,13 @@ const COMMANDS: &[&str] = &[
     "wa_native_post_status_text",
     "wa_native_post_status_media",
     "wa_native_delete_status",
+    "wa_native_labels",
+    "wa_native_chat_labels",
+    "wa_native_label_map",
+    "wa_native_label_create",
+    "wa_native_label_delete",
+    "wa_native_label_link",
+    "wa_native_pin_chat",
 ];
 
 fn main() {

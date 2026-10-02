@@ -15,6 +15,9 @@ export interface AccountRef {
 export const wahaAccountKey = (profile: string, session: string) => `waha:${profile}:${session}`;
 export const nativeAccountKey = (id: string) => `native:${id}`;
 
+/** Key for a native chat, used by the shared per-chat prefs (pin, mute). */
+export const nativeChatKey = (accountId: string, chatId: string) => `native:${accountId}:${chatId}`;
+
 export interface AccountParts {
   kind: "waha" | "native";
   profile?: string;

@@ -71,6 +71,26 @@ export interface NativeMessageBatch {
   messages: NativeMessage[];
 }
 
+/** An incoming reaction to a message. */
+export interface NativeReaction {
+  id: string;
+  messageId: string;
+  from: string;
+  fromMe: boolean;
+  participant: string | null;
+  text: string;
+}
+
+/** A message deleted for everyone. */
+export interface NativeRevoked {
+  id: string;
+  chatId: string;
+  messageId: string;
+  fromMe: boolean;
+  participant: string | null;
+  timestamp: number;
+}
+
 export interface NativeContactDetails {
   type: "contact";
   id: string;
@@ -87,6 +107,22 @@ export interface NativeContactDetails {
 
 /** A status (story): the message plus the poster's bare id (empty for your own). */
 export type NativeStatus = NativeMessage & { sender: string };
+
+/** A message pinned or unpinned for everyone. `expires` is unix ms (0 when unpinned). */
+export interface NativePin {
+  id: string;
+  chatId: string;
+  messageId: string;
+  on: boolean;
+  expires: number;
+}
+
+/** A chat label (WhatsApp "etiqueta"). `color` is a WhatsApp color index. */
+export interface NativeLabel {
+  id: string;
+  name: string;
+  color: number;
+}
 
 export interface NativeGroupMember {
   id: string;
@@ -162,7 +198,21 @@ export const nativeWa = {
   rename: (id: string, name: string) => invoke<void>("wa_native_rename", { id, name }),
   picture: (id: string, chatId: string) => invoke<string | null>("wa_native_picture", { id, chatId }),
   remove: (id: string) => invoke<void>("wa_native_remove", { id }),
-  sendText: (id: string, chatId: string, text: string) => invoke<void>("wa_native_send_text", { id, chatId, text }),
+  sendText: (id: string, chatId: string, text: string, quoteId?: string | null) =>
+    invoke<void>("wa_native_send_text", { id, chatId, text, quoteId: quoteId ?? null }),
+  /** React to a message; an empty `emoji` removes your reaction. */
+  react: (id: string, chatId: string, messageId: string, emoji: string) =>
+    invoke<void>("wa_native_react", { id, chatId, messageId, emoji }),
+  /** Edit one of your own messages. */
+  edit: (id: string, chatId: string, messageId: string, text: string) => invoke<void>("wa_native_edit", { id, chatId, messageId, text }),
+  /** Delete one of your own messages for everyone. */
+  deleteMessage: (id: string, chatId: string, messageId: string) => invoke<void>("wa_native_delete", { id, chatId, messageId }),
+  /** Pin a message for everyone (7 days) or unpin it. */
+  pinMessage: (id: string, chatId: string, messageId: string, on: boolean) =>
+    invoke<void>("wa_native_pin_message", { id, chatId, messageId, on }),
+  /** Forward a stored message to another chat. */
+  forward: (id: string, fromChatId: string, messageId: string, toChatId: string) =>
+    invoke<void>("wa_native_forward", { id, fromChatId, messageId, toChatId }),
   chats: (id: string) => invoke<NativeChat[]>("wa_native_chats", { id }),
   /** The newest `limit` stored messages of a chat, oldest first. */
   messages: (id: string, chatId: string, limit: number) => invoke<NativeMessage[]>("wa_native_messages", { id, chatId, limit }),
@@ -198,12 +248,26 @@ export const nativeWa = {
       }),
     ),
   deleteStatus: (id: string, messageId: string) => invoke<void>("wa_native_delete_status", { id, messageId }),
+  /** Chat labels cached from app-state sync. */
+  labels: (id: string) => invoke<NativeLabel[]>("wa_native_labels", { id }),
+  /** Ids of the labels on one chat. */
+  chatLabels: (id: string, chatId: string) => invoke<string[]>("wa_native_chat_labels", { id, chatId }),
+  /** Every chat's label ids, for the chips in the chat list. */
+  labelMap: (id: string) => invoke<Record<string, string[]>>("wa_native_label_map", { id }),
+  /** Create (or rename) a label; returns its id. */
+  labelCreate: (id: string, name: string, color: number, labelId?: string) =>
+    invoke<string>("wa_native_label_create", { id, labelId, name, color }),
+  labelDelete: (id: string, labelId: string) => invoke<void>("wa_native_label_delete", { id, labelId }),
+  labelLink: (id: string, labelId: string, chatId: string, on: boolean) =>
+    invoke<void>("wa_native_label_link", { id, labelId, chatId, on }),
+  /** Pin or unpin a chat (syncs to the phone). */
+  pinChat: (id: string, chatId: string, on: boolean) => invoke<void>("wa_native_pin_chat", { id, chatId, on }),
   /** The newest messages with an attachment, oldest first. */
   chatMedia: (id: string, chatId: string) => invoke<NativeMessage[]>("wa_native_chat_media", { id, chatId }),
   /** Download and decrypt a message's attachment. */
   media: (id: string, chatId: string, messageId: string) => invoke<ArrayBuffer>("wa_native_media", { id, chatId, messageId }),
-  /** Send a file (with an optional caption) as photo, video, audio or document by its type. */
-  sendMedia: (id: string, chatId: string, file: Blob, name: string, caption: string) =>
+  /** Send a file (with an optional caption) as photo, video, audio or document by its type, optionally quoting a message. */
+  sendMedia: (id: string, chatId: string, file: Blob, name: string, caption: string, quoteId?: string | null) =>
     file.arrayBuffer().then((buf) =>
       invoke<NativeMessage>("wa_native_send_media", new Uint8Array(buf), {
         headers: {
@@ -212,6 +276,7 @@ export const nativeWa = {
           "x-mime": file.type || "application/octet-stream",
           "x-name": encodeURIComponent(name),
           "x-caption": encodeURIComponent(caption),
+          "x-quote": encodeURIComponent(quoteId ?? ""),
         },
       }),
     ),
@@ -232,6 +297,22 @@ export const onNativeChats = (cb: (id: string) => void): Promise<UnlistenFn> =>
 export const onNativeMessages = (cb: (batch: NativeMessageBatch) => void): Promise<UnlistenFn> =>
   listen<NativeMessageBatch>("wa_native:messages", (event) => cb(event.payload));
 
+/** An account's labels changed (create/rename/delete/assign). */
+export const onNativeLabels = (cb: (id: string) => void): Promise<UnlistenFn> =>
+  listen<{ id: string }>("wa_native:labels", (event) => cb(event.payload.id));
+
 /** A status (story) arrived for an account. */
 export const onNativeStatus = (cb: (id: string) => void): Promise<UnlistenFn> =>
   listen<{ id: string }>("wa_native:status", (event) => cb(event.payload.id));
+
+/** Someone reacted to (or un-reacted from) a message. */
+export const onNativeReaction = (cb: (reaction: NativeReaction) => void): Promise<UnlistenFn> =>
+  listen<NativeReaction>("wa_native:reaction", (event) => cb(event.payload));
+
+/** A message was deleted for everyone. */
+export const onNativeRevoked = (cb: (revoked: NativeRevoked) => void): Promise<UnlistenFn> =>
+  listen<NativeRevoked>("wa_native:revoked", (event) => cb(event.payload));
+
+/** A message was pinned or unpinned for everyone (from any device). */
+export const onNativePin = (cb: (pin: NativePin) => void): Promise<UnlistenFn> =>
+  listen<NativePin>("wa_native:pin", (event) => cb(event.payload));

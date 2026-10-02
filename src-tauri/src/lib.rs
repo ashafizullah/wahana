@@ -97,6 +97,11 @@ pub fn run() {
             whatsapp::wa_native_logout,
             whatsapp::wa_native_remove,
             whatsapp::wa_native_send_text,
+            whatsapp::wa_native_react,
+            whatsapp::wa_native_edit,
+            whatsapp::wa_native_delete,
+            whatsapp::wa_native_pin_message,
+            whatsapp::wa_native_forward,
             whatsapp::wa_native_chats,
             whatsapp::wa_native_messages,
             whatsapp::wa_native_mark_read,
@@ -115,7 +120,14 @@ pub fn run() {
             whatsapp::wa_native_status_viewed,
             whatsapp::wa_native_post_status_text,
             whatsapp::wa_native_post_status_media,
-            whatsapp::wa_native_delete_status
+            whatsapp::wa_native_delete_status,
+            whatsapp::wa_native_labels,
+            whatsapp::wa_native_chat_labels,
+            whatsapp::wa_native_label_map,
+            whatsapp::wa_native_label_create,
+            whatsapp::wa_native_label_delete,
+            whatsapp::wa_native_label_link,
+            whatsapp::wa_native_pin_chat
         ])
         .setup(|app| {
             whatsapp::restore(app.handle());

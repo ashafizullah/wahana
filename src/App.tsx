@@ -33,6 +33,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { ConfirmHost } from "@/components/Confirm";
 import { useHidden } from "@/store/hidden";
 import { useRevoked } from "@/store/revoked";
+import { usePins } from "@/store/pins";
 import { useDrafts } from "@/store/drafts";
 import { useChatPrefs } from "@/store/chatPrefs";
 import { usePolls } from "@/store/polls";
@@ -66,6 +67,7 @@ export default function App() {
   const hydrateReceipts = useReceipts((s) => s.hydrate);
   const hydrateHidden = useHidden((s) => s.hydrate);
   const hydrateRevoked = useRevoked((s) => s.hydrate);
+  const hydratePins = usePins((s) => s.hydrate);
   const hydrateDrafts = useDrafts((s) => s.hydrate);
   const hydrateChatPrefs = useChatPrefs((s) => s.hydrate);
   const hydratePolls = usePolls((s) => s.hydrate);
@@ -91,6 +93,7 @@ export default function App() {
     void hydrateReceipts();
     void hydrateHidden();
     void hydrateRevoked();
+    void hydratePins();
     void hydrateDrafts();
     void hydrateChatPrefs();
     hydrateWa().catch(console.error);
@@ -105,6 +108,7 @@ export default function App() {
     hydrateReceipts,
     hydrateHidden,
     hydrateRevoked,
+    hydratePins,
     hydrateDrafts,
     hydrateChatPrefs,
     hydratePolls,

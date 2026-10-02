@@ -21,7 +21,7 @@ import { nativeAccountKey } from "@/lib/account";
 import { cn, errMsg, formatTime } from "@/lib/utils";
 import { WaMarkdown } from "@/lib/waMarkdown";
 import { nativeWa, onNativeStatus, type NativeAccount, type NativeStatus } from "@/lib/nativeWa";
-import { readReceiptsFor } from "@/store/settings";
+import { useReadReceipts } from "@/store/settings";
 import { useStatusSeen } from "@/store/statusSeen";
 import { nativeMediaBlob } from "@/screens/whatsapp/NativeMediaView";
 import { usePicture } from "@/screens/whatsapp/usePicture";
@@ -264,7 +264,7 @@ function NativeStoryViewer({
 }) {
   const seen = useStatusSeen((s) => s.seen);
   const mark = useStatusSeen((s) => s.mark);
-  const readMode = readReceiptsFor(nativeAccountKey(accountId));
+  const readMode = useReadReceipts(nativeAccountKey(accountId));
   const [reported, setReported] = useState<Record<string, boolean>>({});
   const [i, setI] = useState(() => {
     const idx = stories.findIndex((st) => !seen[st.m.id]);

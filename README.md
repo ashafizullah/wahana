@@ -5,8 +5,8 @@
 <h1 align="center">Wahana</h1>
 
 <p align="center">
-  A cross-platform desktop client for <a href="https://waha.devlike.pro">WAHA</a> (WhatsApp HTTP API).<br>
-  Point it at your WAHA server, pick a session, and chat — with scheduling, broadcasts, stories, and built-in AI.
+  A cross-platform WhatsApp desktop client: link your phone directly (native, no server) or connect to a <a href="https://waha.devlike.pro">WAHA</a> server.<br>
+  Chat across several accounts — with scheduling, broadcasts, auto-reply, stories, and built-in AI.
 </p>
 
 <p align="center">
@@ -29,15 +29,27 @@ Grab the latest `.dmg` (macOS, Apple Silicon or Intel) or `.msi` (Windows x64) f
 
 ## How it works
 
-Wahana is **only a client**. There is no Wahana backend, account, or cloud — the app talks directly to **your own WAHA server**, the one you deploy and run yourself (Docker, VPS, home server, anything). Your WhatsApp session, messages and media stay between your machine and your server; the project never sees them.
+Wahana is **only a client**. There is no Wahana backend, account, or cloud. Accounts come in two kinds, and both live side by side in the same account picker:
 
-You need:
+|             | **Native WhatsApp**                                                                                      | **WAHA session**                                              |
+| ----------- | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| Connects to | WhatsApp directly, via [whatsapp-rust](https://github.com/oxidezap/whatsapp-rust) running inside the app | **Your own WAHA server** (Docker, VPS, home server, anything) |
+| Setup       | Scan a QR code with your phone                                                                           | Server URL + API key, then QR / pairing code per session      |
+| Runs while  | The app is open                                                                                          | The server is up (24/7 bots, webhooks)                        |
+| Data        | Session and chat history in SQLite on your machine                                                       | On your server                                                |
+
+Either way, your WhatsApp session, messages and media stay between your machine, WhatsApp and (if used) your server; the project never sees them.
+
+For a native account you need nothing but your phone. For WAHA you need:
 
 - A running [WAHA](https://waha.devlike.pro) server (the free **CORE** build works; WAHA 2026.8+ recommended). Several servers can be configured and switched at any time.
 - Its **plain-text API key** — if your server config says `WAHA_API_KEY=sha512:…`, that is the hash; clients still send the original key.
-- Optionally, for the AI features, your own API key for Anthropic or any OpenAI-compatible endpoint. Requests go straight from the app to that provider.
+
+Optionally, for the AI features, your own API key for Anthropic or any OpenAI-compatible endpoint. Requests go straight from the app to that provider.
 
 ## Features
+
+Features below are for WAHA sessions unless noted; see [Native WhatsApp](#native-whatsapp-no-server-needed) for what native accounts support.
 
 **Chats**
 
@@ -63,9 +75,9 @@ You need:
 
 **Automation**
 
-- **Scheduler** — one-off or daily / weekly / monthly messages to chats, groups, channels or your status, from any session (SQLite-backed, with history)
-- **Broadcast** — one message to many recipients from any session, with random pauses, progress, retry and per-recipient log
-- **Auto-reply** — per-session rules (direct messages / groups / specific chats, hours & weekdays, keyword or regex match) answering with a fixed text or an AI reply that follows your instructions; per-chat cooldown, reply log, one-click pause
+- **Scheduler** — one-off or daily / weekly / monthly messages to chats, groups, channels or your status, from any WAHA session or native account (SQLite-backed, with history)
+- **Broadcast** — one message to many recipients from any WAHA session or native account, with random pauses, progress, retry and per-recipient log
+- **Auto-reply** — per-account rules (WAHA or native) (direct messages / groups / specific chats, hours & weekdays, keyword or regex match) answering with a fixed text or an AI reply that follows your instructions; per-chat cooldown, reply log, one-click pause
 - Webhook manager per session, live event log for debugging integrations
 
 **AI (bring your own key)**
@@ -78,17 +90,25 @@ You need:
 - Draft a broadcast or status from a short brief ("Draft with AI" in the composer)
 - Optionally label new direct chats automatically with your existing labels (Settings → AI)
 
-**WhatsApp (no server needed)**
+<a id="native-whatsapp-no-server-needed"></a>**Native WhatsApp (no server needed)**
 
 - Link WhatsApp accounts directly by scanning a QR code: the app talks to WhatsApp itself through [whatsapp-rust](https://github.com/oxidezap/whatsapp-rust), with no server and no embedded browser
-- Several accounts next to your WAHA sessions in the same picker; each keeps its own session on disk and reconnects on launch, and can be renamed, disconnected, logged out or removed
-- Send and receive text messages; notifications reach the OS notification center and unread chats show in the picker and the app badge
-- Chat history: your phone sends it when the account is linked, it is kept on disk, and older messages of a chat can be fetched from the phone on request; group names, contact names and profile pictures are filled in
-- Not yet: media, read receipts, typing indicators
+- Several accounts next to your WAHA sessions in the same picker; each keeps its own session on disk, reconnects on launch, and can be renamed, disconnected, logged out or removed
+- Chat history: your phone sends it when the account is linked, it is kept in SQLite, and older messages of a chat are fetched from the phone as you scroll up; group, contact and channel names and profile pictures are filled in
+- Text with WhatsApp formatting, emoji, quick replies; send and receive photos, videos, audio, voice notes, documents and stickers, with media viewer and save
+- Read receipts and typing indicator (following the privacy settings), unread badges, OS notifications, filters (unread / groups / channels)
+- Pin chats and manage labels (create, rename, delete, assign), synced with your phone
+- Info panel: contact profile, or group details with members and shared media
+- Group management: rename, description, photo, admin-only messages / edit info, join approval, add / remove / promote / demote, join requests, invite link, leave
+- Status: view contacts' updates (marked as viewed), post text / photo / video, delete your own
+- AI: translate (including per-chat auto-translate), summarize, reply suggestions, writing assistant, describe image / OCR
+- Scheduler, broadcast and auto-reply can send from native accounts
+- Message actions: reactions, quoted replies, forward, edit, delete for everyone, pin / unpin
+- Not yet: locations, contacts and polls (shown as "unsupported message"), calls
 
 **App**
 
-- First-run welcome screen: link WhatsApp or connect a WAHA server, no manual required
+- First-run welcome screen: link WhatsApp natively or connect a WAHA server, no manual required
 - System tray, desktop notifications, incoming-call banner, keyboard shortcuts, light / dark theme
 - Privacy tweaks: typing indicator on/off, read receipts always / on reply / manual / never
 - Settings backup & restore, auto-updater
@@ -147,9 +167,12 @@ src/api/         typed WAHA client, query hooks, generated OpenAPI types
 src/realtime/    WebSocket, presence, scheduler & broadcast runners, updater
 src/store/       zustand stores (settings, unread, reactions, receipts, …) and SQLite data layers
 src/screens/     Chats (chats/ = list, header, search, bubbles, composer, paging/scroll hooks), Status, Scheduler, Broadcast, Sessions, Events, Settings (settings/ = one file per section)
+                 WhatsAppScreen + whatsapp/ = native accounts: pairing, info panel, group tools, media, labels, status, AI
 src/components/  dialogs, menus, media, group tools
-src/lib/         WhatsApp markdown, AI client, media cache, secrets, backup, export
+src/lib/         WhatsApp markdown, AI client, media cache, secrets, backup, export; nativeWa.ts (native commands & events), send.ts (one send API for WAHA and native)
 src-tauri/       Rust shell: keychain, media cache, tray, SQLite migrations
+  whatsapp.rs    native client on whatsapp-rust: accounts, pairing, events, send, media, groups, status, labels
+  whatsapp_db.rs per-account SQLite chat store: chats, messages, media keys, LID ↔ phone map, labels
 ```
 
 ## Known WAHA quirks handled by the app

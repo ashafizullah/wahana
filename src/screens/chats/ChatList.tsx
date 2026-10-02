@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { BellOff, Loader2, Megaphone, Pin, Search, SquarePen, Users } from "lucide-react";
+import { BellOff, Loader2, Megaphone, Pencil, Pin, Search, SquarePen, Users } from "lucide-react";
 import { useChats, useSessions, qk } from "@/api/queries";
 import { requireClient, useSettings } from "@/store/settings";
 import { Avatar, Button } from "@/components/ui";
@@ -267,9 +267,40 @@ export function SessionPicker({ sessions }: { sessions: { name: string; status: 
   const active = useWhatsApp((s) => s.active);
   const setActive = useWhatsApp((s) => s.setActive);
   const add = useWhatsApp((s) => s.add);
+  const rename = useWhatsApp((s) => s.rename);
+  const [renaming, setRenaming] = useState(false);
+  const [name, setName] = useState("");
   const dot = (status: string) => (status === "WORKING" ? "bg-emerald-500" : status === "STOPPED" ? "bg-neutral-400" : "bg-amber-400");
   const current = sessions.find((s) => s.name === value);
   const selected = active ? `${WA_PREFIX}${active}` : value;
+  const currentAccount = active ? accounts.find((a) => a.id === active) : undefined;
+
+  const commit = () => {
+    setRenaming(false);
+    const next = name.trim();
+    if (!currentAccount || !next || next === currentAccount.name) return;
+    void rename(currentAccount.id, next).catch(console.error);
+  };
+
+  if (renaming && currentAccount) {
+    return (
+      <label className="flex items-center gap-2 rounded-lg bg-neutral-100 dark:bg-neutral-800 px-2.5 py-1.5 text-sm">
+        <span className="w-2 h-2 rounded-full shrink-0 bg-wa" />
+        <input
+          autoFocus
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") commit();
+            if (e.key === "Escape") setRenaming(false);
+          }}
+          placeholder="Account name"
+          className="flex-1 min-w-0 bg-transparent outline-none"
+        />
+      </label>
+    );
+  }
   return (
     <label className="flex items-center gap-2 rounded-lg bg-neutral-100 dark:bg-neutral-800 px-2.5 py-1.5 text-sm">
       <span className={cn("w-2 h-2 rounded-full shrink-0", active ? "bg-wa" : dot(current?.status ?? ""))} />
@@ -307,6 +338,20 @@ export function SessionPicker({ sessions }: { sessions: { name: string; status: 
           <option value={WA_NEW}>＋ Link a WhatsApp account…</option>
         </optgroup>
       </select>
+      {currentAccount && (
+        <button
+          type="button"
+          title="Rename this account"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => {
+            setName(currentAccount.name);
+            setRenaming(true);
+          }}
+          className="shrink-0 text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"
+        >
+          <Pencil size={13} />
+        </button>
+      )}
     </label>
   );
 }

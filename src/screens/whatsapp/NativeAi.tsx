@@ -1,5 +1,23 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, Copy, Download, Eye, Languages, ListChecks, Loader2, RefreshCw, ScanText, Sparkles, X } from "lucide-react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  Check,
+  Copy,
+  Download,
+  Eye,
+  Forward,
+  Languages,
+  ListChecks,
+  Loader2,
+  Pencil,
+  Pin,
+  RefreshCw,
+  Reply,
+  ScanText,
+  SmilePlus,
+  Sparkles,
+  Trash2,
+  X,
+} from "lucide-react";
 import { Button } from "@/components/ui";
 import {
   LANGUAGES,
@@ -12,14 +30,17 @@ import {
   translate,
   type ExtractedTask,
 } from "@/lib/ai";
-import type { NativeMessage } from "@/lib/nativeWa";
+import { nativeWa, type NativeMessage } from "@/lib/nativeWa";
 import { cn, errMsg } from "@/lib/utils";
 import { WaMarkdown } from "@/lib/waMarkdown";
 import { useImageNotes, type ImageNoteKind } from "@/store/imageNotes";
+import { bareId, useReactions } from "@/store/reactions";
 import { nativeAccountKey } from "@/lib/account";
 import { useSettings } from "@/store/settings";
 import { useTranslations } from "@/store/translations";
 import { nativeMediaBlob } from "@/screens/whatsapp/NativeMediaView";
+
+const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
 
 /**
  * The WAHA chat screen's AI features, for native WhatsApp accounts: summary and task
@@ -100,25 +121,69 @@ export function analyzeMessageImage(accountId: string, m: NativeMessage, kind: I
 
 // ── Message menu ───────────────────────────────────────────────────────
 
-/** Right-click menu on a bubble: copy, translate, and the image tools. */
+/** Right-click menu on a bubble: react, reply, pin, forward, copy, translate, image tools, edit, delete. */
 export function NativeMessageMenu({
   accountId,
   message: m,
   pos,
+  pinned,
+  readOnly,
   onSave,
+  onReply,
+  onEdit,
+  onDelete,
+  onPin,
+  onForward,
   onClose,
 }: {
   accountId: string;
   message: NativeMessage;
   pos: { x: number; y: number };
+  pinned?: boolean;
+  /** A channel message: no reactions (newsletters use their own protocol). */
+  readOnly?: boolean;
   onSave?: () => void;
+  onReply?: () => void;
+  onEdit?: () => void;
+  onDelete?: () => void;
+  onPin?: () => void;
+  onForward: () => void;
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [langs, setLangs] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
   const target = useSettings((s) => s.aiTranslateTo);
   const ready = aiConfigured();
   const isImage = m.media?.kind === "image" || m.media?.kind === "sticker";
+  const myReaction = useReactions((s) => s.byMsg[bareId(m.id)]?.me);
+  const [at, setAt] = useState({ left: pos.x, top: pos.y });
+
+  // Keep the whole menu on screen: measure it and flip/shift it inside the window.
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const { width, height } = el.getBoundingClientRect();
+    const margin = 8;
+    const left = pos.x + width + margin > window.innerWidth ? Math.max(margin, pos.x - width) : pos.x;
+    const top = pos.y + height + margin > window.innerHeight ? Math.max(margin, window.innerHeight - height - margin) : pos.y;
+    setAt({ left, top });
+  }, [pos.x, pos.y, langs]);
+
+  // Stays open while the reaction is sent, so a failure is shown here.
+  const react = async (emoji: string) => {
+    setBusy(emoji || "unreact");
+    setErr(null);
+    try {
+      await nativeWa.react(accountId, m.chatId, m.id, emoji);
+      useReactions.getState().set(m.id, "me", emoji);
+      onClose();
+    } catch (e) {
+      setErr(errMsg(e));
+      setBusy(null);
+    }
+  };
 
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
@@ -133,14 +198,17 @@ export function NativeMessageMenu({
     };
   }, [onClose]);
 
-  const item = (icon: React.ReactNode, label: string, fn: () => void, disabled = false) => (
+  const item = (icon: React.ReactNode, label: string, fn: () => void, disabled = false, danger = false) => (
     <button
       disabled={disabled}
       onClick={() => {
         onClose();
         fn();
       }}
-      className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-neutral-100 dark:hover:bg-neutral-800 disabled:opacity-40 disabled:hover:bg-transparent"
+      className={cn(
+        "w-full flex items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-neutral-100 dark:hover:bg-neutral-800 disabled:opacity-40 disabled:hover:bg-transparent",
+        danger && "text-red-600",
+      )}
     >
       {icon} {label}
     </button>
@@ -149,9 +217,32 @@ export function NativeMessageMenu({
   return (
     <div
       ref={ref}
-      style={{ left: Math.min(pos.x, window.innerWidth - 230), top: Math.min(pos.y, window.innerHeight - 260) }}
-      className="fixed z-50 w-56 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-xl py-1"
+      style={{ ...at, maxHeight: "calc(100vh - 16px)" }}
+      className="fixed z-50 w-56 overflow-y-auto rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-xl py-1"
+      onContextMenu={(e) => e.preventDefault()}
     >
+      {!readOnly && (
+        <div className="flex justify-between px-2 py-1.5 border-b border-neutral-100 dark:border-neutral-800">
+          {QUICK_REACTIONS.map((r) => (
+            <button
+              key={r}
+              disabled={busy !== null}
+              // Picking your current reaction again takes it back, as in WhatsApp.
+              onClick={() => void react(r === myReaction ? "" : r)}
+              title={r === myReaction ? "Remove reaction" : undefined}
+              className={cn(
+                "text-lg rounded-full px-0.5 hover:scale-125 transition disabled:opacity-40",
+                r === myReaction && "bg-neutral-200 dark:bg-neutral-700",
+              )}
+            >
+              {r}
+            </button>
+          ))}
+        </div>
+      )}
+      {onReply && item(<Reply size={14} />, "Reply", onReply)}
+      {onPin && item(<Pin size={14} />, pinned ? "Unpin" : "Pin (7 days)", onPin)}
+      {item(<Forward size={14} />, "Forward…", onForward)}
       {m.body && item(<Copy size={14} />, "Copy text", () => void navigator.clipboard.writeText(m.body))}
       {m.body && (
         <>
@@ -201,6 +292,22 @@ export function NativeMessageMenu({
       {isImage && item(<Eye size={14} />, "Describe image", () => analyzeMessageImage(accountId, m, "describe"), !ready)}
       {isImage && item(<ScanText size={14} />, "Extract text", () => analyzeMessageImage(accountId, m, "ocr"), !ready)}
       {m.media && onSave && item(<Download size={14} />, "Save file…", onSave)}
+      {onEdit && item(<Pencil size={14} />, "Edit", onEdit)}
+      {!readOnly && myReaction && (
+        <button
+          disabled={busy !== null}
+          onClick={() => void react("")}
+          className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-neutral-100 dark:hover:bg-neutral-800 disabled:opacity-40 disabled:hover:bg-transparent"
+        >
+          <SmilePlus size={14} /> Remove reaction {myReaction}
+        </button>
+      )}
+      {onDelete && item(<Trash2 size={14} />, "Delete", onDelete, false, true)}
+      {(busy || err) && (
+        <div className="px-3 py-1.5 text-xs text-neutral-500 flex items-center gap-1 selectable">
+          {busy ? <Loader2 size={12} className="animate-spin" /> : <span className="text-red-600">{err}</span>}
+        </div>
+      )}
     </div>
   );
 }

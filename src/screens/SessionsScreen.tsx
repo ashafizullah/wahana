@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { confirm } from "@/components/Confirm";
-import { Loader2, Play, Square, RotateCw, LogOut, Trash2, Plus, RefreshCw, UserPen, Webhook } from "lucide-react";
+import { Loader2, Play, Square, RotateCw, LogOut, Trash2, Plus, RefreshCw, Pencil, UserPen, Webhook } from "lucide-react";
 import { ProfileModal } from "@/components/ProfileModal";
 import { WebhooksModal } from "@/components/WebhooksModal";
 import { useSessions, useSessionAction, useServerVersion } from "@/api/queries";
@@ -277,7 +277,18 @@ function NativeAccountCard({
                   void run(() => rename(a.id, name.trim() || a.name)).then(() => setEditing(false));
                 }}
               >
-                <Input value={name} onChange={(e) => setName(e.target.value)} className="h-7 py-0.5" autoFocus />
+                <Input
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") {
+                      setName(a.name);
+                      setEditing(false);
+                    }
+                  }}
+                  className="h-7 py-0.5"
+                  autoFocus
+                />
                 <Button size="sm" type="submit">
                   Save
                 </Button>
@@ -295,6 +306,14 @@ function NativeAccountCard({
             ) : (
               <>
                 <span className="font-semibold">{a.name}</span>
+                <button
+                  type="button"
+                  title="Rename"
+                  onClick={() => setEditing(true)}
+                  className="text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"
+                >
+                  <Pencil size={13} />
+                </button>
                 <Badge tone={nativeTone[a.status]}>{a.status}</Badge>
                 {active && <Badge tone="green">active</Badge>}
               </>

@@ -9,7 +9,7 @@
 //! asked for on demand. Media is downloaded on request and decrypted here; read receipts
 //! and presence are not wired up yet.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -19,12 +19,15 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use whatsapp_rust::download::{Downloadable, MediaType};
 use whatsapp_rust::features::ParticipantChangeResponse;
 use whatsapp_rust::prelude::*;
+use whatsapp_rust::send::{PinDuration, RevokeType};
+use whatsapp_rust::sync_task::MajorSyncTask;
 use whatsapp_rust::types::events::{Event, EventKind};
+use whatsapp_rust::wacore::appstate::patch_decode::WAPatchName;
 use whatsapp_rust::waproto::buffa::{self, Message as _};
 use whatsapp_rust::waproto::whatsapp as wa;
 use whatsapp_rust_sqlite_storage::SqliteStore;
 
-use crate::whatsapp_db::{ChatDb, IncomingMessage, NameSource, StoredMedia};
+use crate::whatsapp_db::{ChatDb, IncomingMessage, MessageTarget, NameSource, StoredMedia};
 
 /// The account list, next to the per-account session databases. The databases alone
 /// cannot rebuild it: they hold no display name, and a half-written one is
@@ -145,10 +148,46 @@ struct MessagesPayload {
     messages: Vec<MessageView>,
 }
 
-/// Emitted when a status (story) arrives, so the status screen can refetch without a chat event.
+/// Emitted with just an account id when that account's non-chat data changed (statuses, labels).
 #[derive(Clone, Serialize)]
-struct StatusPayload {
+struct IdPayload {
     id: String,
+}
+
+/// An incoming reaction, so the bubble can show who reacted with what.
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ReactionPayload {
+    id: String,
+    message_id: String,
+    from: String,
+    from_me: bool,
+    participant: Option<String>,
+    text: String,
+}
+
+/// A message deleted for everyone, so the chat can draw the "deleted" tombstone in place.
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RevokedPayload {
+    id: String,
+    chat_id: String,
+    message_id: String,
+    from_me: bool,
+    participant: Option<String>,
+    timestamp: i64,
+}
+
+/// A message pinned or unpinned for everyone (from any device), so the chat can mark it.
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PinPayload {
+    id: String,
+    chat_id: String,
+    message_id: String,
+    on: bool,
+    /// When the pin lapses (unix ms); 0 when unpinned.
+    expires: i64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -178,6 +217,10 @@ struct AccountInner {
     syncing: Option<u32>,
     /// Profile picture URLs by chat id; `None` once looked up and found to have none.
     pictures: HashMap<String, Option<String>>,
+    /// Channel ids whose metadata was already asked for this run, so a failed lookup is not
+    /// retried on every chat poll. Reset when `channels_gen` falls behind `generation`.
+    channels_probed: HashSet<String>,
+    channels_gen: u64,
 }
 
 pub struct WaAccount {
@@ -369,6 +412,59 @@ fn bare_jid(id: &str) -> String {
     }
 }
 
+/// The bare JID that authored a stored message: our own id for our messages, otherwise
+/// the recorded sender (or the chat itself for a direct message).
+fn message_author(account: &WaAccount, chat_id: &str, target: &MessageTarget) -> String {
+    if target.from_me {
+        let me = account
+            .inner
+            .lock()
+            .unwrap()
+            .me
+            .as_ref()
+            .map(|me| me.id.clone())
+            .unwrap_or_default();
+        return bare_jid(&me);
+    }
+    if target.sender_id.is_empty() {
+        return chat_id.to_string();
+    }
+    bare_jid(&target.sender_id)
+}
+
+/// The referential key of a stored message, for reactions and pins. Groups and status need
+/// `participant` to attribute the action to the original sender.
+fn target_key(
+    account: &WaAccount,
+    chat_id: &str,
+    message_id: &str,
+    target: &MessageTarget,
+) -> wa::MessageKey {
+    let participant = if chat_id.ends_with("@g.us") || chat_id == "status@broadcast" {
+        Some(message_author(account, chat_id, target))
+    } else {
+        None
+    };
+    wa::MessageKey {
+        remote_jid: Some(chat_id.to_string()),
+        from_me: Some(target.from_me),
+        id: Some(message_id.to_string()),
+        participant,
+    }
+}
+
+/// The message body (or, for media, the encoded media message) of a stored message, for
+/// quoting and forwarding.
+fn stored_message(target: &MessageTarget) -> Result<wa::Message, String> {
+    match &target.media_proto {
+        Some(bytes) => {
+            let mut slice = bytes.as_slice();
+            wa::Message::decode(&mut slice).map_err(|e| e.to_string())
+        }
+        None => Ok(wa::Message::text(target.body.clone())),
+    }
+}
+
 /// The attachment of a message, if it has one: display details plus a message holding
 /// only the media part, encoded, which keeps the keys needed to download it.
 fn extract_media(message: &wa::Message) -> Option<StoredMedia> {
@@ -503,7 +599,7 @@ fn record_message(
         let _ = app.emit_to(
             "main",
             "wa_native:status",
-            StatusPayload {
+            IdPayload {
                 id: account.id.clone(),
             },
         );
@@ -544,6 +640,40 @@ async fn load_group_names(app: &AppHandle, account: &WaAccount, generation: u64,
     });
     if let Err(e) = result {
         eprintln!("failed to store WhatsApp group names: {e}");
+    }
+    emit_chats(app, account);
+}
+
+/// Names channel (newsletter) chats from the list of channels this account follows; the
+/// server only sends their names on request, so this runs on every connect.
+async fn load_channel_names(
+    app: &AppHandle,
+    account: &WaAccount,
+    generation: u64,
+    client: &Client,
+) {
+    let channels = match client.newsletter().list_subscribed().await {
+        Ok(channels) => channels,
+        Err(e) => {
+            eprintln!("failed to list WhatsApp channels: {e}");
+            return;
+        }
+    };
+    if !account.is_current(generation) {
+        return;
+    }
+    let result = account.db.lock().unwrap().batch(|db| {
+        for meta in &channels {
+            db.set_name(
+                &bare_jid(&meta.jid.to_string()),
+                &meta.name,
+                NameSource::GroupSubject,
+            )?;
+        }
+        Ok(())
+    });
+    if let Err(e) = result {
+        eprintln!("failed to store WhatsApp channel names: {e}");
     }
     emit_chats(app, account);
 }
@@ -717,8 +847,43 @@ async fn handle_event(app: AppHandle, account: Arc<WaAccount>, generation: u64, 
             );
             emit_chats(&app, &account);
         }
+        Event::LabelEditUpdate(update) => {
+            let action = &update.action;
+            if action.deleted.unwrap_or(false) {
+                let _ = account.db.lock().unwrap().delete_label(&update.label_id);
+            } else if let Some(name) = action.name.as_deref().filter(|n| !n.is_empty()) {
+                let color = action.color.unwrap_or(0) as i64;
+                let _ =
+                    account
+                        .db
+                        .lock()
+                        .unwrap()
+                        .upsert_label(&update.label_id, name, color, false);
+            }
+            emit_labels(&app, &account);
+        }
+        Event::LabelAssociationUpdate(update) => {
+            let labeled = update.action.labeled.unwrap_or(false);
+            let _ = account.db.lock().unwrap().set_chat_label(
+                &update.label_id,
+                &bare_jid(&update.chat_jid.to_string()),
+                labeled,
+            );
+            emit_labels(&app, &account);
+        }
         _ => {}
     }
+}
+
+/// Tells the frontend an account's labels changed, so the screens refetch them.
+fn emit_labels(app: &AppHandle, account: &WaAccount) {
+    let _ = app.emit_to(
+        "main",
+        "wa_native:labels",
+        IdPayload {
+            id: account.id.clone(),
+        },
+    );
 }
 
 /// Builds and starts the client for one account. Runs on the async runtime so the Tauri
@@ -797,6 +962,16 @@ async fn run_account(
             // Off the event handler: it waits on a server round trip.
             tauri::async_runtime::spawn(async move {
                 load_group_names(&app, &account, generation, &client).await;
+                load_channel_names(&app, &account, generation, &client).await;
+                // Labels live in the "regular" app-state collection; a full sync populates
+                // them for accounts whose state predates the local label cache.
+                let _ = client
+                    .clone()
+                    .process_sync_task(MajorSyncTask::AppStateSync {
+                        name: WAPatchName::Regular,
+                        full_sync: true,
+                    })
+                    .await;
                 map_lids(&app, &account, generation, &client).await;
             });
         }
@@ -808,10 +983,107 @@ async fn run_account(
         let app = message_app.clone();
         let account = message_account.clone();
         async move {
+            let source = &ctx.info.source;
+            let chat_id = source.chat.to_string();
+            let is_group = source.is_group || chat_id.ends_with("@g.us");
+            let base = ctx.message.get_base_message();
+
+            // A reaction rides the message channel but is not a message of its own.
+            if let Some(rm) = base.reaction_message.as_option() {
+                if let Some(target_id) = rm.key.as_option().and_then(|k| k.id.clone()) {
+                    let from_me = source.is_from_me;
+                    let participant = (is_group || chat_id == "status@broadcast")
+                        .then(|| source.sender.to_string());
+                    let _ = app.emit_to(
+                        "main",
+                        "wa_native:reaction",
+                        ReactionPayload {
+                            id: account.id.clone(),
+                            message_id: target_id,
+                            from: if from_me {
+                                String::new()
+                            } else {
+                                bare_jid(&source.sender.to_string())
+                            },
+                            from_me,
+                            participant,
+                            text: rm.text.clone().unwrap_or_default(),
+                        },
+                    );
+                }
+                return;
+            }
+
+            // A pin or unpin for everyone, from another member or our own phone.
+            if let Some(pin) = base.pin_in_chat_message.as_option() {
+                if let Some(target_id) = pin.key.as_option().and_then(|k| k.id.clone()) {
+                    let on = pin.r#type == Some(wa::message::pin_in_chat_message::Type::PinForAll);
+                    let secs = base
+                        .message_context_info
+                        .as_option()
+                        .and_then(|c| c.message_add_on_duration_in_secs)
+                        .filter(|s| *s > 0)
+                        .unwrap_or(7 * 24 * 3600);
+                    let at = pin
+                        .sender_timestamp_ms
+                        .unwrap_or_else(|| ctx.info.timestamp.timestamp_millis());
+                    let _ = app.emit_to(
+                        "main",
+                        "wa_native:pin",
+                        PinPayload {
+                            id: account.id.clone(),
+                            chat_id: chat_id.clone(),
+                            message_id: target_id,
+                            on,
+                            expires: if on { at + i64::from(secs) * 1000 } else { 0 },
+                        },
+                    );
+                }
+                return;
+            }
+
+            // Revokes and edits arrive as protocol messages.
+            if let Some(pm) = base.protocol_message.as_option() {
+                if pm.r#type == Some(wa::message::protocol_message::Type::Revoke) {
+                    if let Some(target_id) = pm.key.as_option().and_then(|k| k.id.clone()) {
+                        let from_me = source.is_from_me;
+                        let participant = (is_group || chat_id == "status@broadcast")
+                            .then(|| source.sender.to_string());
+                        let _ = app.emit_to(
+                            "main",
+                            "wa_native:revoked",
+                            RevokedPayload {
+                                id: account.id.clone(),
+                                chat_id: chat_id.clone(),
+                                message_id: target_id,
+                                from_me,
+                                participant,
+                                timestamp: ctx.info.timestamp.timestamp_millis(),
+                            },
+                        );
+                    }
+                    return;
+                }
+                if let Some(edited) = pm.edited_message.as_option() {
+                    if let Some(target_id) = pm.key.as_option().and_then(|k| k.id.clone()) {
+                        let body = edited.text_content().unwrap_or_default().to_string();
+                        let updated = account
+                            .db
+                            .lock()
+                            .unwrap()
+                            .update_message_body(&chat_id, &target_id, &body)
+                            .unwrap_or(false);
+                        if updated {
+                            emit_chats(&app, &account);
+                        }
+                    }
+                    return;
+                }
+            }
+
             let Some((kind, body, media)) = message_content(&ctx.message) else {
                 return;
             };
-            let source = &ctx.info.source;
             let from_me = source.is_from_me;
             let sender = bare_jid(&source.sender.to_string());
             // A message from a privacy id usually carries the sender's phone number too.
@@ -889,6 +1161,8 @@ async fn run_account(
                 EventKind::HistorySync,
                 EventKind::ContactUpdate,
                 EventKind::PushNameUpdate,
+                EventKind::LabelEditUpdate,
+                EventKind::LabelAssociationUpdate,
             ],
             on_event,
         )
@@ -1091,8 +1365,34 @@ pub async fn wa_native_remove(
     Ok(())
 }
 
+/// The reply context quoting stored message `quote_id` of `chat_id`.
+fn quote_context(
+    account: &WaAccount,
+    chat_id: &str,
+    to: &Jid,
+    quote_id: &str,
+) -> Result<wa::ContextInfo, String> {
+    let target = account
+        .db
+        .lock()
+        .unwrap()
+        .message_target(chat_id, quote_id)
+        .map_err(|e| e.to_string())?
+        .ok_or("quoted message not found")?;
+    let sender = message_author(account, chat_id, &target)
+        .parse::<Jid>()
+        .map_err(|_| "invalid quoted sender".to_string())?;
+    let quoted = stored_message(&target)?;
+    Ok(
+        whatsapp_rust::wacore::proto_helpers::build_quote_context_with_info(
+            quote_id, &sender, to, to, &quoted,
+        ),
+    )
+}
+
 /// Sends a text message and records it in the chat, since the server does not echo a
-/// device's own sends back to it.
+/// device's own sends back to it. When `quote_id` is set, the text quotes that stored
+/// message (Reply).
 #[tauri::command]
 pub async fn wa_native_send_text(
     app: AppHandle,
@@ -1100,6 +1400,7 @@ pub async fn wa_native_send_text(
     id: String,
     chat_id: String,
     text: String,
+    quote_id: Option<String>,
 ) -> Result<(), String> {
     let account = state.get(&id)?;
     let (client, generation, sender_name) = {
@@ -1118,8 +1419,15 @@ pub async fn wa_native_send_text(
     let to: Jid = chat_id
         .parse()
         .map_err(|_| format!("invalid chat id: {chat_id}"))?;
+    let outgoing = match &quote_id {
+        Some(qid) => wa::Message::text_with_context(
+            text.clone(),
+            quote_context(&account, &chat_id, &to, qid)?,
+        ),
+        None => wa::Message::text(text.clone()),
+    };
     let sent = client
-        .send_text(to, text.clone())
+        .send_message(to, outgoing)
         .await
         .map_err(|e| e.to_string())?;
     let message = IncomingMessage {
@@ -1141,6 +1449,209 @@ pub async fn wa_native_send_text(
     Ok(())
 }
 
+/// Reacts to (or, with an empty `emoji`, un-reacts from) a stored message.
+#[tauri::command]
+pub async fn wa_native_react(
+    state: State<'_, WaState>,
+    id: String,
+    chat_id: String,
+    message_id: String,
+    emoji: String,
+) -> Result<(), String> {
+    let account = state.get(&id)?;
+    let client = {
+        let inner = account.inner.lock().unwrap();
+        inner
+            .client
+            .clone()
+            .ok_or("WhatsApp account is not running")?
+    };
+    let target = account
+        .db
+        .lock()
+        .unwrap()
+        .message_target(&chat_id, &message_id)
+        .map_err(|e| e.to_string())?
+        .ok_or("message not found")?;
+    let key = target_key(&account, &chat_id, &message_id, &target);
+    let to: Jid = chat_id
+        .parse()
+        .map_err(|_| format!("invalid chat id: {chat_id}"))?;
+    client
+        .send_reaction(to, key, &emoji)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Edits one of our own messages and updates the stored copy.
+#[tauri::command]
+pub async fn wa_native_edit(
+    app: AppHandle,
+    state: State<'_, WaState>,
+    id: String,
+    chat_id: String,
+    message_id: String,
+    text: String,
+) -> Result<(), String> {
+    let account = state.get(&id)?;
+    let client = {
+        let inner = account.inner.lock().unwrap();
+        inner
+            .client
+            .clone()
+            .ok_or("WhatsApp account is not running")?
+    };
+    let to: Jid = chat_id
+        .parse()
+        .map_err(|_| format!("invalid chat id: {chat_id}"))?;
+    client
+        .edit_message(to, message_id.clone(), wa::Message::text(text.clone()))
+        .await
+        .map_err(|e| e.to_string())?;
+    let updated = account
+        .db
+        .lock()
+        .unwrap()
+        .update_message_body(&chat_id, &message_id, &text)
+        .map_err(|e| e.to_string())?;
+    if updated {
+        emit_chats(&app, &account);
+    }
+    Ok(())
+}
+
+/// Deletes one of our own messages for everyone (revoke).
+#[tauri::command]
+pub async fn wa_native_delete(
+    state: State<'_, WaState>,
+    id: String,
+    chat_id: String,
+    message_id: String,
+) -> Result<(), String> {
+    let account = state.get(&id)?;
+    let client = {
+        let inner = account.inner.lock().unwrap();
+        inner
+            .client
+            .clone()
+            .ok_or("WhatsApp account is not running")?
+    };
+    let to: Jid = chat_id
+        .parse()
+        .map_err(|_| format!("invalid chat id: {chat_id}"))?;
+    client
+        .revoke_message(to, message_id, RevokeType::Sender)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Pins a message for everyone (7 days) or unpins it.
+#[tauri::command]
+pub async fn wa_native_pin_message(
+    state: State<'_, WaState>,
+    id: String,
+    chat_id: String,
+    message_id: String,
+    on: bool,
+) -> Result<(), String> {
+    let account = state.get(&id)?;
+    let client = {
+        let inner = account.inner.lock().unwrap();
+        inner
+            .client
+            .clone()
+            .ok_or("WhatsApp account is not running")?
+    };
+    let target = account
+        .db
+        .lock()
+        .unwrap()
+        .message_target(&chat_id, &message_id)
+        .map_err(|e| e.to_string())?
+        .ok_or("message not found")?;
+    let key = target_key(&account, &chat_id, &message_id, &target);
+    let to: Jid = chat_id
+        .parse()
+        .map_err(|_| format!("invalid chat id: {chat_id}"))?;
+    let result = if on {
+        client.pin_message(to, key, PinDuration::Days7).await
+    } else {
+        client.unpin_message(to, key).await
+    };
+    result.map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Forwards a stored message to another chat and records the copy in the target chat.
+#[tauri::command]
+pub async fn wa_native_forward(
+    app: AppHandle,
+    state: State<'_, WaState>,
+    id: String,
+    from_chat_id: String,
+    message_id: String,
+    to_chat_id: String,
+) -> Result<(), String> {
+    let account = state.get(&id)?;
+    let (client, generation, sender_name) = {
+        let inner = account.inner.lock().unwrap();
+        let client = inner
+            .client
+            .clone()
+            .ok_or("WhatsApp account is not running")?;
+        let sender_name = inner
+            .me
+            .as_ref()
+            .map(|me| me.push_name.clone())
+            .unwrap_or_default();
+        (client, inner.generation, sender_name)
+    };
+    let target = account
+        .db
+        .lock()
+        .unwrap()
+        .message_target(&from_chat_id, &message_id)
+        .map_err(|e| e.to_string())?
+        .ok_or("message not found")?;
+    let message = stored_message(&target)?;
+    let media = extract_media(&message);
+    let to: Jid = to_chat_id
+        .parse()
+        .map_err(|_| format!("invalid chat id: {to_chat_id}"))?;
+    let sent = client
+        .forward_message(to, &message)
+        .await
+        .map_err(|e| e.to_string())?;
+    let view = MessageView {
+        id: sent.message_id,
+        chat_id: to_chat_id,
+        from_me: true,
+        sender_name,
+        sender_phone: None,
+        kind: if media.is_some() {
+            MessageKind::Media
+        } else {
+            MessageKind::Text
+        },
+        body: target.body,
+        timestamp: now_millis(),
+        media: None,
+    };
+    record_message(
+        &app,
+        &account,
+        generation,
+        IncomingMessage {
+            view,
+            sender_id: String::new(),
+            media,
+        },
+    );
+    Ok(())
+}
+
 fn now_millis() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -1149,8 +1660,62 @@ fn now_millis() -> i64 {
 }
 
 #[tauri::command]
-pub fn wa_native_chats(state: State<'_, WaState>, id: String) -> Result<Vec<ChatInfo>, String> {
+pub async fn wa_native_chats(
+    state: State<'_, WaState>,
+    id: String,
+) -> Result<Vec<ChatInfo>, String> {
     let account = state.get(&id)?;
+    // Channels only carry their name in their metadata, so fetch it once per channel we
+    // don't have a name for yet (list_subscribed on connect covers most of them already).
+    let (client, generation) = {
+        let inner = account.inner.lock().unwrap();
+        (inner.client.clone(), inner.generation)
+    };
+    if let Some(client) = client {
+        let ids = account
+            .db
+            .lock()
+            .unwrap()
+            .newsletter_ids()
+            .unwrap_or_default();
+        for chat_id in ids {
+            // Ask for each channel's metadata once per run, however it turns out.
+            {
+                let mut inner = account.inner.lock().unwrap();
+                if inner.channels_gen != generation {
+                    inner.channels_gen = generation;
+                    inner.channels_probed.clear();
+                }
+                if inner.channels_probed.contains(&chat_id) {
+                    continue;
+                }
+                inner.channels_probed.insert(chat_id.clone());
+            }
+            let missing = account
+                .db
+                .lock()
+                .unwrap()
+                .who(&chat_id)
+                .map(|w| w.name.is_none())
+                .unwrap_or(false);
+            if !missing {
+                continue;
+            }
+            let Ok(jid) = chat_id.parse::<Jid>() else {
+                continue;
+            };
+            if let Ok(meta) = client.newsletter().get_metadata(&jid).await {
+                if !account.is_current(generation) {
+                    break;
+                }
+                let _ = account.db.lock().unwrap().set_name(
+                    &chat_id,
+                    &meta.name,
+                    NameSource::GroupSubject,
+                );
+            }
+        }
+    }
     let chats = account.db.lock().unwrap().chats();
     chats.map_err(|e| e.to_string())
 }
@@ -1314,12 +1879,22 @@ pub async fn wa_native_picture(
     let jid: Jid = chat_id
         .parse()
         .map_err(|_| format!("invalid chat id: {chat_id}"))?;
-    let url = client
-        .contacts()
-        .get_profile_picture(&jid, true)
-        .await
-        .map_err(|e| e.to_string())?
-        .map(|picture| picture.url);
+    // Channels carry their picture in their metadata; profile pictures are for contacts.
+    let url = if chat_id.ends_with("@newsletter") {
+        client
+            .newsletter()
+            .get_metadata(&jid)
+            .await
+            .ok()
+            .and_then(|meta| meta.picture_url)
+    } else {
+        client
+            .contacts()
+            .get_profile_picture(&jid, true)
+            .await
+            .map_err(|e| e.to_string())?
+            .map(|picture| picture.url)
+    };
     account
         .inner
         .lock()
@@ -1414,6 +1989,7 @@ pub async fn wa_native_send_media(
     let mimetype = header("x-mime").unwrap_or_else(|| "application/octet-stream".into());
     let file_name = header("x-name").filter(|n| !n.is_empty());
     let caption = header("x-caption").filter(|c| !c.trim().is_empty());
+    let quote_id = header("x-quote").filter(|q| !q.is_empty());
     let data = match request.body() {
         InvokeBody::Raw(bytes) => bytes.clone(),
         InvokeBody::Json(_) => return Err("expected raw body".into()),
@@ -1446,6 +2022,10 @@ pub async fn wa_native_send_media(
     } else {
         MediaType::Document
     };
+    let context_info = match &quote_id {
+        Some(qid) => Some(Box::new(quote_context(&account, &chat_id, &to, qid)?)),
+        None => None,
+    };
     let upload = client
         .upload(data, media_type, whatsapp_rust::UploadOptions::new())
         .await
@@ -1456,6 +2036,7 @@ pub async fn wa_native_send_media(
             whatsapp_rust::media::ImageOptions {
                 caption: caption.clone(),
                 mimetype: Some(mimetype.clone()),
+                context_info: context_info.clone(),
                 ..Default::default()
             },
         ),
@@ -1464,6 +2045,7 @@ pub async fn wa_native_send_media(
             whatsapp_rust::media::VideoOptions {
                 caption: caption.clone(),
                 mimetype: Some(mimetype.clone()),
+                context_info: context_info.clone(),
                 ..Default::default()
             },
         ),
@@ -1471,6 +2053,7 @@ pub async fn wa_native_send_media(
             upload,
             whatsapp_rust::media::AudioOptions {
                 mimetype: Some(mimetype.clone()),
+                context_info: context_info.clone(),
                 ..Default::default()
             },
         ),
@@ -1481,6 +2064,7 @@ pub async fn wa_native_send_media(
                 file_name: file_name.clone(),
                 title: file_name.clone(),
                 caption: caption.clone(),
+                context_info: context_info.clone(),
                 ..Default::default()
             },
         ),
@@ -1993,7 +2577,8 @@ pub async fn wa_native_group_requests(
             let db = account.db.lock().unwrap();
             for r in &found {
                 if let Some(pn) = &r.pn_jid {
-                    let _ = db.set_lid_pn(&bare_jid(&r.jid.to_string()), &bare_jid(&pn.to_string()));
+                    let _ =
+                        db.set_lid_pn(&bare_jid(&r.jid.to_string()), &bare_jid(&pn.to_string()));
                 }
             }
         }
@@ -2029,7 +2614,10 @@ pub struct StatusView {
 
 /// The newest statuses, newest first; the screen keeps the last 24 hours.
 #[tauri::command]
-pub fn wa_native_statuses(state: State<'_, WaState>, id: String) -> Result<Vec<StatusView>, String> {
+pub fn wa_native_statuses(
+    state: State<'_, WaState>,
+    id: String,
+) -> Result<Vec<StatusView>, String> {
     let account = state.get(&id)?;
     let list = account
         .db
@@ -2230,4 +2818,205 @@ pub async fn wa_native_delete_status(
         .unwrap()
         .delete_message("status@broadcast", &message_id);
     Ok(())
+}
+
+// ── Chat labels and pinning ──────────────────────────────────────────────
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Label {
+    pub id: String,
+    pub name: String,
+    /// WhatsApp color index, not a hex value.
+    pub color: i64,
+}
+
+/// Labels cached from app-state sync, by name.
+#[tauri::command]
+pub fn wa_native_labels(state: State<'_, WaState>, id: String) -> Result<Vec<Label>, String> {
+    let account = state.get(&id)?;
+    let labels = account
+        .db
+        .lock()
+        .unwrap()
+        .labels()
+        .map_err(|e| e.to_string())?;
+    Ok(labels
+        .into_iter()
+        .map(|l| Label {
+            id: l.id,
+            name: l.name,
+            color: l.color,
+        })
+        .collect())
+}
+
+/// Ids of the labels on one chat.
+#[tauri::command]
+pub fn wa_native_chat_labels(
+    state: State<'_, WaState>,
+    id: String,
+    chat_id: String,
+) -> Result<Vec<String>, String> {
+    let account = state.get(&id)?;
+    let labels = account
+        .db
+        .lock()
+        .unwrap()
+        .chat_labels(&chat_id)
+        .map_err(|e| e.to_string())?;
+    Ok(labels)
+}
+
+/// Every chat's label ids, for the label chips in the chat list.
+#[tauri::command]
+pub fn wa_native_label_map(
+    state: State<'_, WaState>,
+    id: String,
+) -> Result<HashMap<String, Vec<String>>, String> {
+    let account = state.get(&id)?;
+    let pairs = account
+        .db
+        .lock()
+        .unwrap()
+        .all_chat_labels()
+        .map_err(|e| e.to_string())?;
+    let mut map: HashMap<String, Vec<String>> = HashMap::new();
+    for (chat_id, label_id) in pairs {
+        map.entry(chat_id).or_default().push(label_id);
+    }
+    Ok(map)
+}
+
+/// A fresh label id (WhatsApp uses numeric strings).
+fn new_label_id() -> String {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    format!("{}", nanos)
+}
+
+/// Creates a label (or renames/recovers an existing one) and caches it.
+#[tauri::command]
+pub async fn wa_native_label_create(
+    state: State<'_, WaState>,
+    id: String,
+    label_id: Option<String>,
+    name: String,
+    color: i64,
+) -> Result<String, String> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err("label name is empty".into());
+    }
+    let account = state.get(&id)?;
+    let client = account
+        .inner
+        .lock()
+        .unwrap()
+        .client
+        .clone()
+        .ok_or("WhatsApp account is not running")?;
+    let label_id = label_id
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(new_label_id);
+    client
+        .labels()
+        .create_label(&label_id, name, color as i32)
+        .await
+        .map_err(|e| e.to_string())?;
+    let _ = account
+        .db
+        .lock()
+        .unwrap()
+        .upsert_label(&label_id, name, color, false);
+    Ok(label_id)
+}
+
+/// Deletes a label and its associations.
+#[tauri::command]
+pub async fn wa_native_label_delete(
+    state: State<'_, WaState>,
+    id: String,
+    label_id: String,
+) -> Result<(), String> {
+    let account = state.get(&id)?;
+    let client = account
+        .inner
+        .lock()
+        .unwrap()
+        .client
+        .clone()
+        .ok_or("WhatsApp account is not running")?;
+    client
+        .labels()
+        .delete_label(&label_id)
+        .await
+        .map_err(|e| e.to_string())?;
+    let _ = account.db.lock().unwrap().delete_label(&label_id);
+    Ok(())
+}
+
+/// Adds or removes a label on a chat.
+#[tauri::command]
+pub async fn wa_native_label_link(
+    state: State<'_, WaState>,
+    id: String,
+    label_id: String,
+    chat_id: String,
+    on: bool,
+) -> Result<(), String> {
+    let account = state.get(&id)?;
+    let client = account
+        .inner
+        .lock()
+        .unwrap()
+        .client
+        .clone()
+        .ok_or("WhatsApp account is not running")?;
+    let jid: Jid = chat_id
+        .parse()
+        .map_err(|_| format!("invalid chat id: {chat_id}"))?;
+    let labels = client.labels();
+    let result = if on {
+        labels.add_chat_label(&label_id, &jid).await
+    } else {
+        labels.remove_chat_label(&label_id, &jid).await
+    };
+    result.map_err(|e| e.to_string())?;
+    let _ = account
+        .db
+        .lock()
+        .unwrap()
+        .set_chat_label(&label_id, &bare_jid(&chat_id), on);
+    Ok(())
+}
+
+/// Pins or unpins a chat (WhatsApp app state, so it syncs to the phone).
+#[tauri::command]
+pub async fn wa_native_pin_chat(
+    state: State<'_, WaState>,
+    id: String,
+    chat_id: String,
+    on: bool,
+) -> Result<(), String> {
+    let account = state.get(&id)?;
+    let client = account
+        .inner
+        .lock()
+        .unwrap()
+        .client
+        .clone()
+        .ok_or("WhatsApp account is not running")?;
+    let jid: Jid = chat_id
+        .parse()
+        .map_err(|_| format!("invalid chat id: {chat_id}"))?;
+    let actions = client.chat_actions();
+    let result = if on {
+        actions.pin_chat(&jid).await
+    } else {
+        actions.unpin_chat(&jid).await
+    };
+    result.map_err(|e| e.to_string())
 }

@@ -1,7 +1,24 @@
 import { create } from "zustand";
 import { load, type Store } from "@tauri-apps/plugin-store";
-import { nativeWa, onNativeAccount, onNativeChats, onNativeMessages, onNativeQr, type NativeAccount, type NativeQr } from "@/lib/nativeWa";
-import { nativeAccountKey } from "@/lib/account";
+import {
+  nativeWa,
+  onNativeAccount,
+  onNativeChats,
+  onNativeLabels,
+  onNativeMessages,
+  onNativePin,
+  onNativeQr,
+  onNativeReaction,
+  onNativeRevoked,
+  type NativeAccount,
+  type NativeQr,
+} from "@/lib/nativeWa";
+import { nativeAccountKey, nativeChatKey } from "@/lib/account";
+import { convKey } from "@/lib/utils";
+import { useChatPrefs } from "@/store/chatPrefs";
+import { usePins } from "@/store/pins";
+import { useReactions } from "@/store/reactions";
+import { useRevoked } from "@/store/revoked";
 import { notifyText } from "@/realtime/notify";
 
 /**
@@ -25,6 +42,8 @@ interface State {
   openChat: { account: string; chat: string } | null;
   /** Bumped whenever chats or messages change, so screens know to re-read them. */
   messageTick: number;
+  /** Bumped whenever an account's labels change (created, renamed, assigned). */
+  labelsTick: number;
   hydrate: () => Promise<void>;
   add: (name?: string) => Promise<NativeAccount>;
   rename: (id: string, name: string) => Promise<void>;
@@ -46,6 +65,7 @@ export const useWhatsApp = create<State>((set, get) => ({
   qr: {},
   openChat: null,
   messageTick: 0,
+  labelsTick: 0,
   async hydrate() {
     if (get().hydrated) return;
     await onNativeAccount((account) =>
@@ -56,6 +76,27 @@ export const useWhatsApp = create<State>((set, get) => ({
     );
     await onNativeQr((qr) => set((st) => ({ qr: { ...st.qr, [qr.id]: qr } })));
     await onNativeChats(() => set((st) => ({ messageTick: st.messageTick + 1 })));
+    await onNativeLabels(() => set((st) => ({ labelsTick: st.labelsTick + 1 })));
+    await onNativeReaction((r) =>
+      useReactions.getState().apply({
+        id: r.messageId,
+        from: r.from,
+        fromMe: r.fromMe,
+        participant: r.participant,
+        reaction: { text: r.text, messageId: r.messageId },
+      }),
+    );
+    await onNativePin((p) => usePins.getState().set(convKey(p.id, p.chatId), p.messageId, p.on ? p.expires : 0));
+    await onNativeRevoked((r) =>
+      useRevoked.getState().add({
+        id: r.messageId,
+        chat: convKey(r.id, r.chatId),
+        timestamp: Math.floor(r.timestamp / 1000),
+        fromMe: r.fromMe,
+        participant: r.participant,
+        from: r.fromMe ? null : r.chatId,
+      }),
+    );
     await onNativeMessages(({ id, messages }) => {
       set((st) => ({ messageTick: st.messageTick + 1 }));
       const { accounts, openChat } = get();
@@ -81,6 +122,7 @@ export const useWhatsApp = create<State>((set, get) => ({
           }),
         );
         if (document.hasFocus() && openChat?.account === id && openChat.chat === m.chatId) continue;
+        if (useChatPrefs.getState().muted[nativeChatKey(id, m.chatId)]) continue;
         const sender = m.senderName || `+${m.chatId.split("@")[0]}`;
         const title = accounts.length > 1 && account ? `${sender} · ${account.name}` : sender;
         void notifyText(title, m.body || (m.kind === "media" ? "📎 Media" : "New message"));
@@ -100,6 +142,8 @@ export const useWhatsApp = create<State>((set, get) => ({
   },
   async rename(id, name) {
     await nativeWa.rename(id, name);
+    // Reflect it immediately; the account event that follows is idempotent.
+    set((st) => ({ accounts: st.accounts.map((a) => (a.id === id ? { ...a, name } : a)) }));
   },
   async remove(id) {
     await nativeWa.remove(id);

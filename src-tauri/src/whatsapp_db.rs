@@ -14,7 +14,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use crate::whatsapp::{ChatInfo, MediaInfo, MessageKind, MessageView};
 
 /// Bumped with every schema change; `open` migrates older files up to it.
-const SCHEMA_VERSION: i64 = 2;
+const SCHEMA_VERSION: i64 = 3;
 
 /// How much a name source is trusted. A name only replaces one from an equal or lower
 /// source, so a push name never overwrites a contact's saved name.
@@ -65,6 +65,23 @@ pub struct IncomingMessage {
     pub view: MessageView,
     pub sender_id: String,
     pub media: Option<StoredMedia>,
+}
+
+/// What a message action (react, pin, quote, forward) needs about its target.
+pub struct MessageTarget {
+    pub from_me: bool,
+    pub sender_id: String,
+    pub body: String,
+    /// The encoded media message, when the target has an attachment.
+    pub media_proto: Option<Vec<u8>>,
+}
+
+/// A chat label (WhatsApp "etiqueta"), as cached from app-state sync.
+pub struct LabelRow {
+    pub id: String,
+    pub name: String,
+    /// WhatsApp color index, not a hex value.
+    pub color: i64,
 }
 
 /// Who someone is, for the contact and group info panels.
@@ -134,6 +151,23 @@ impl ChatDb {
                      pn TEXT NOT NULL
                  );
                  CREATE INDEX IF NOT EXISTS lid_pn_by_pn ON lid_pn (pn);",
+            )?;
+        }
+        if version < 3 {
+            conn.execute_batch(
+                "CREATE TABLE IF NOT EXISTS labels (
+                     id TEXT PRIMARY KEY,
+                     name TEXT NOT NULL,
+                     color INTEGER NOT NULL DEFAULT 0,
+                     deleted INTEGER NOT NULL DEFAULT 0
+                 );
+                 CREATE TABLE IF NOT EXISTS chat_labels (
+                     label_id TEXT NOT NULL,
+                     chat_id TEXT NOT NULL,
+                     labeled INTEGER NOT NULL,
+                     PRIMARY KEY (label_id, chat_id)
+                 );
+                 CREATE INDEX IF NOT EXISTS chat_labels_by_chat ON chat_labels (chat_id);",
             )?;
         }
         conn.execute_batch(&format!("PRAGMA user_version = {SCHEMA_VERSION}"))?;
@@ -467,8 +501,94 @@ impl ChatDb {
         self.query_messages(chat_id, limit, true)
     }
 
+    /// Labels that are not deleted, by name.
+    pub fn labels(&self) -> rusqlite::Result<Vec<LabelRow>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, name, color FROM labels WHERE deleted = 0 ORDER BY name")?;
+        let rows = stmt.query_map([], |r| {
+            Ok(LabelRow {
+                id: r.get(0)?,
+                name: r.get(1)?,
+                color: r.get(2)?,
+            })
+        })?;
+        rows.collect()
+    }
+
+    /// Every (chat id, label id) association that is active.
+    pub fn all_chat_labels(&self) -> rusqlite::Result<Vec<(String, String)>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT chat_id, label_id FROM chat_labels WHERE labeled = 1")?;
+        let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
+        rows.collect()
+    }
+
+    /// Ids of the labels currently on a chat.
+    pub fn chat_labels(&self, chat_id: &str) -> rusqlite::Result<Vec<String>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT label_id FROM chat_labels WHERE chat_id = ?1 AND labeled = 1")?;
+        let rows = stmt.query_map(params![chat_id], |r| r.get::<_, String>(0))?;
+        rows.collect()
+    }
+
+    /// Records a label from app-state sync (create, rename, recolor, or delete).
+    pub fn upsert_label(
+        &self,
+        id: &str,
+        name: &str,
+        color: i64,
+        deleted: bool,
+    ) -> rusqlite::Result<()> {
+        self.conn.execute(
+            "INSERT INTO labels (id, name, color, deleted) VALUES (?1,?2,?3,?4)
+             ON CONFLICT(id) DO UPDATE SET name=excluded.name, color=excluded.color, deleted=excluded.deleted",
+            params![id, name, color, deleted],
+        )?;
+        Ok(())
+    }
+
+    /// Drops a label and its chat associations.
+    pub fn delete_label(&self, id: &str) -> rusqlite::Result<()> {
+        self.conn
+            .execute("DELETE FROM chat_labels WHERE label_id = ?1", params![id])?;
+        self.conn
+            .execute("DELETE FROM labels WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    /// Associates or dissociates a label and a chat.
+    pub fn set_chat_label(
+        &self,
+        label_id: &str,
+        chat_id: &str,
+        labeled: bool,
+    ) -> rusqlite::Result<()> {
+        self.conn.execute(
+            "INSERT INTO chat_labels (label_id, chat_id, labeled) VALUES (?1,?2,?3)
+             ON CONFLICT(label_id, chat_id) DO UPDATE SET labeled=excluded.labeled",
+            params![label_id, chat_id, labeled],
+        )?;
+        Ok(())
+    }
+
+    /// Ids of channel (newsletter) chats, newest first — so their names can be fetched.
+    pub fn newsletter_ids(&self) -> rusqlite::Result<Vec<String>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id FROM chats WHERE id LIKE '%@newsletter' ORDER BY last_timestamp DESC",
+        )?;
+        let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
+        rows.collect()
+    }
+
     /// Sender and id of the newest incoming messages, newest first: what a read receipt covers.
-    pub fn incoming_ids(&self, chat_id: &str, limit: u32) -> rusqlite::Result<Vec<(String, String)>> {
+    pub fn incoming_ids(
+        &self,
+        chat_id: &str,
+        limit: u32,
+    ) -> rusqlite::Result<Vec<(String, String)>> {
         let mut stmt = self.conn.prepare(
             "SELECT sender_id, id FROM messages WHERE chat_id = ?1 AND from_me = 0 ORDER BY timestamp DESC LIMIT ?2",
         )?;
@@ -632,6 +752,42 @@ impl ChatDb {
             )
             .optional()?
             .flatten())
+    }
+
+    /// What a message action needs about one stored message.
+    pub fn message_target(
+        &self,
+        chat_id: &str,
+        id: &str,
+    ) -> rusqlite::Result<Option<MessageTarget>> {
+        self.conn
+            .query_row(
+                "SELECT from_me, sender_id, body, media_proto FROM messages WHERE chat_id = ?1 AND id = ?2",
+                params![chat_id, id],
+                |r| {
+                    Ok(MessageTarget {
+                        from_me: r.get(0)?,
+                        sender_id: r.get(1)?,
+                        body: r.get(2)?,
+                        media_proto: r.get(3)?,
+                    })
+                },
+            )
+            .optional()
+    }
+
+    /// Replaces a stored message's text (after an edit). Returns whether a row changed.
+    pub fn update_message_body(
+        &self,
+        chat_id: &str,
+        id: &str,
+        body: &str,
+    ) -> rusqlite::Result<bool> {
+        let n = self.conn.execute(
+            "UPDATE messages SET body = ?3 WHERE chat_id = ?1 AND id = ?2",
+            params![chat_id, id, body],
+        )?;
+        Ok(n > 0)
     }
 
     /// The oldest stored message of a chat: the anchor for asking the phone for more.

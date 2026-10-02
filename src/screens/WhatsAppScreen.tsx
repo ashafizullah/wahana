@@ -1,5 +1,7 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
+  Bell,
+  BellOff,
   Check,
   Languages,
   Loader2,
@@ -14,19 +16,23 @@ import {
   Square,
   Trash2,
   Users,
+  Megaphone,
+  Pin,
+  Tag,
   Info,
   X,
+  Reply,
 } from "lucide-react";
-import { Avatar, Button, Popover } from "@/components/ui";
+import { Avatar, Button, Input, Popover } from "@/components/ui";
 import { confirm } from "@/components/Confirm";
 import { EmojiButton } from "@/components/EmojiPicker";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { ResizeHandle, usePaneWidth } from "@/components/ResizeHandle";
 import { LANGUAGES, aiConfigured, langName, translate } from "@/lib/ai";
 import { formatBytes } from "@/lib/mediaCache";
-import { cn, convKey, errMsg, formatDateDivider, formatTime, isGroup } from "@/lib/utils";
+import { cn, convKey, displayId, errMsg, formatDateDivider, formatTime, isChannel, isGroup } from "@/lib/utils";
 import { WaMarkdown, stripWaMarkdown } from "@/lib/waMarkdown";
-import { nativeWa, type NativeAccount, type NativeChat, type NativeMessage, type NativeWaStatus } from "@/lib/nativeWa";
+import { nativeWa, type NativeAccount, type NativeChat, type NativeLabel, type NativeMessage, type NativeWaStatus } from "@/lib/nativeWa";
 import { TranslateDraftButton, WriteAssistButton } from "@/screens/chats/Composer";
 import { QuickReplyPicker } from "@/components/QuickReplyPicker";
 import { ImageNoteView, TranslationView } from "@/screens/chats/MessageBubble";
@@ -35,9 +41,13 @@ import { NativeInfoPanel } from "@/screens/whatsapp/NativeInfoPanel";
 import { usePicture } from "@/screens/whatsapp/usePicture";
 import { NativeMediaView, cacheSentMedia, saveNativeMedia } from "@/screens/whatsapp/NativeMediaView";
 import { readReceiptsFor, sendTypingFor } from "@/store/settings";
-import { nativeAccountKey } from "@/lib/account";
+import { nativeAccountKey, nativeChatKey } from "@/lib/account";
 import { Pairing } from "@/screens/whatsapp/Pairing";
+import { NativeLabelsDialog, labelColorHex } from "@/screens/whatsapp/NativeLabelsDialog";
 import { useChatPrefs } from "@/store/chatPrefs";
+import { bareId, summarize, useReactions } from "@/store/reactions";
+import { PIN_MS, isPinned, usePins } from "@/store/pins";
+import { useRevoked } from "@/store/revoked";
 import { useWhatsApp } from "@/store/whatsapp";
 
 /**
@@ -75,12 +85,19 @@ const secs = (ms: number) => Math.floor(ms / 1000);
  * number, with the name they gave themselves as "~name".
  */
 function chatLabel(chat: NativeChat | undefined, chatId: string) {
-  if (!chat) return { title: chatId.split("@")[0]!, pushName: null };
-  if (chat.saved || !chat.phone) return { title: chat.name, pushName: null };
+  if (!chat) return { title: isChannel(chatId) ? displayId(chatId) : chatId.split("@")[0]!, pushName: null };
+  if (chat.saved || !chat.phone) {
+    // A channel with no name yet falls back to "Channel 123456", not its raw id.
+    const unnamed = isChannel(chatId) && chat.name === chatId.split("@")[0];
+    return { title: unnamed ? displayId(chatId) : chat.name, pushName: null };
+  }
   return { title: chat.phone, pushName: chat.name !== chat.phone ? chat.name : null };
 }
 
-type Filter = "all" | "unread" | "groups";
+type Filter = "all" | "unread" | "groups" | "channels";
+
+/** WhatsApp only accepts edits within this long after sending. */
+const EDIT_WINDOW_MS = 15 * 60 * 1000;
 
 /** Messages read from the local history per page. */
 const PAGE = 100;
@@ -189,7 +206,15 @@ function ChatList({
 }) {
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
+  const [labels, setLabels] = useState<NativeLabel[]>([]);
+  const [labelMap, setLabelMap] = useState<Record<string, string[]>>({});
+  const [menu, setMenu] = useState<{ chat: NativeChat; x: number; y: number } | null>(null);
+  const [labelsFor, setLabelsFor] = useState<NativeChat | null>(null);
+  const [relabel, setRelabel] = useState(0);
   const searchRef = useRef<HTMLInputElement>(null);
+  const pinned = useChatPrefs((s) => s.pinned);
+  const muted = useChatPrefs((s) => s.muted);
+  const labelsTick = useWhatsApp((s) => s.labelsTick);
 
   useEffect(() => {
     const focus = () => searchRef.current?.focus();
@@ -197,11 +222,26 @@ function ChatList({
     return () => window.removeEventListener("wahana:focus-search", focus);
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([nativeWa.labels(account.id), nativeWa.labelMap(account.id)])
+      .then(([all, map]) => {
+        if (cancelled) return;
+        setLabels(all);
+        setLabelMap(map);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [account.id, labelsTick, relabel]);
+
   const shown = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    return chats.filter((c) => {
+    const list = chats.filter((c) => {
       if (filter === "unread" && c.unread === 0) return false;
       if (filter === "groups" && !isGroup(c.id)) return false;
+      if (filter === "channels" && !isChannel(c.id)) return false;
       if (!needle) return true;
       return (
         c.name.toLowerCase().includes(needle) ||
@@ -210,7 +250,9 @@ function ChatList({
         c.lastText.toLowerCase().includes(needle)
       );
     });
-  }, [chats, q, filter]);
+    // Pinned chats float to the top (most recently pinned first), like the WAHA list.
+    return [...list].sort((a, b) => (pinned[nativeChatKey(account.id, b.id)] ?? 0) - (pinned[nativeChatKey(account.id, a.id)] ?? 0));
+  }, [chats, q, filter, pinned, account.id]);
 
   return (
     <div
@@ -235,7 +277,7 @@ function ChatList({
           />
         </div>
         <div className="flex gap-1 items-center flex-wrap">
-          {(["all", "unread", "groups"] as const).map((f) => (
+          {(["all", "unread", "groups", "channels"] as const).map((f) => (
             <button
               key={f}
               onClick={() => setFilter(f)}
@@ -264,17 +306,118 @@ function ChatList({
                 : "No chats yet."}
           </div>
         ) : (
-          shown.map((c) => (
-            <ChatRow
-              key={c.id}
-              chat={c}
-              accountId={account.id}
-              connected={account.status === "working"}
-              active={c.id === selected}
-              onClick={() => onSelect(c.id)}
-            />
-          ))
+          shown.map((c) => {
+            const key = nativeChatKey(account.id, c.id);
+            const chips = (labelMap[c.id] ?? [])
+              .map((lid) => labels.find((l) => l.id === lid))
+              .filter((l): l is NativeLabel => !!l)
+              .map((l) => ({ name: l.name, color: labelColorHex(l.color) }));
+            return (
+              <ChatRow
+                key={c.id}
+                chat={c}
+                accountId={account.id}
+                connected={account.status === "working"}
+                active={c.id === selected}
+                pinned={!!pinned[key]}
+                chips={chips}
+                onClick={() => onSelect(c.id)}
+                onMenu={(e) => {
+                  e.preventDefault();
+                  setMenu({ chat: c, x: e.clientX, y: e.clientY });
+                }}
+              />
+            );
+          })
         )}
+      </div>
+      {menu && (
+        <RowMenu
+          accountId={account.id}
+          chat={menu.chat}
+          pinned={!!pinned[nativeChatKey(account.id, menu.chat.id)]}
+          muted={!!muted[nativeChatKey(account.id, menu.chat.id)]}
+          x={menu.x}
+          y={menu.y}
+          onClose={() => setMenu(null)}
+          onLabels={() => {
+            setLabelsFor(menu.chat);
+            setMenu(null);
+          }}
+        />
+      )}
+      {labelsFor && (
+        <NativeLabelsDialog
+          accountId={account.id}
+          chatId={labelsFor.id}
+          chatName={labelsFor.name}
+          onChanged={() => setRelabel((t) => t + 1)}
+          onClose={() => setLabelsFor(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+/** Right-click menu on a native chat: pin, mute, labels. */
+function RowMenu({
+  accountId,
+  chat,
+  pinned,
+  muted,
+  x,
+  y,
+  onClose,
+  onLabels,
+}: {
+  accountId: string;
+  chat: NativeChat;
+  pinned: boolean;
+  muted: boolean;
+  x: number;
+  y: number;
+  onClose: () => void;
+  onLabels: () => void;
+}) {
+  const togglePref = useChatPrefs((s) => s.toggle);
+  const key = nativeChatKey(accountId, chat.id);
+  const item = "w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-neutral-100 dark:hover:bg-neutral-800";
+  return (
+    <div
+      className="fixed inset-0 z-40"
+      onClick={onClose}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        onClose();
+      }}
+    >
+      <div
+        className="absolute w-48 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-xl py-1 text-xs"
+        style={{ left: Math.min(x, window.innerWidth - 200), top: Math.min(y, window.innerHeight - 160) }}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <button
+          className={item}
+          onClick={() => {
+            togglePref("pinned", key);
+            void nativeWa.pinChat(accountId, chat.id, !pinned).catch(() => {});
+            onClose();
+          }}
+        >
+          <Pin size={13} /> {pinned ? "Unpin" : "Pin to top"}
+        </button>
+        <button
+          className={item}
+          onClick={() => {
+            togglePref("muted", key);
+            onClose();
+          }}
+        >
+          {muted ? <Bell size={13} /> : <BellOff size={13} />} {muted ? "Unmute notifications" : "Mute notifications"}
+        </button>
+        <button className={item} onClick={onLabels}>
+          <Tag size={13} /> Labels…
+        </button>
       </div>
     </div>
   );
@@ -410,16 +553,23 @@ const ChatRow = memo(function ChatRow({
   accountId,
   connected,
   active,
+  pinned,
+  chips,
   onClick,
+  onMenu,
 }: {
   chat: NativeChat;
   accountId: string;
   connected: boolean;
   active: boolean;
+  pinned: boolean;
+  chips: { name: string; color: string }[];
   onClick: () => void;
+  onMenu: (e: React.MouseEvent) => void;
 }) {
   const picture = usePicture(accountId, chat.id, connected);
   const group = isGroup(chat.id);
+  const channel = isChannel(chat.id);
   const { title, pushName } = chatLabel(chat, chat.id);
   const body = stripWaMarkdown(chat.lastText);
   const sender = group ? (chat.lastFromMe ? "You" : chat.lastSender.split(/\s+/)[0]) : "";
@@ -427,6 +577,7 @@ const ChatRow = memo(function ChatRow({
   return (
     <button
       onClick={onClick}
+      onContextMenu={onMenu}
       className={cn(
         "w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-neutral-100 dark:hover:bg-neutral-800",
         active && "bg-neutral-100 dark:bg-neutral-800",
@@ -435,9 +586,14 @@ const ChatRow = memo(function ChatRow({
       <Avatar src={picture} name={pushName ?? title} size={44} />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1">
-          {group && <Users size={12} className="text-neutral-400 shrink-0" />}
+          {group ? (
+            <Users size={12} className="text-neutral-400 shrink-0" />
+          ) : channel ? (
+            <Megaphone size={12} className="text-neutral-400 shrink-0" />
+          ) : null}
           <span className="font-medium truncate shrink-0 max-w-[70%]">{title}</span>
           {pushName && <span className="text-[11px] text-neutral-400 truncate">~{pushName}</span>}
+          {pinned && <Pin size={12} className="shrink-0 text-neutral-400" />}
           {chat.lastTimestamp > 0 && (
             <span className="ml-auto shrink-0 text-[11px] text-neutral-400">{formatTime(secs(chat.lastTimestamp))}</span>
           )}
@@ -458,6 +614,19 @@ const ChatRow = memo(function ChatRow({
             </span>
           )}
         </div>
+        {chips.length > 0 && (
+          <div className="flex flex-wrap gap-1 mt-0.5">
+            {chips.slice(0, 3).map((c, i) => (
+              <span
+                key={i}
+                className="inline-flex items-center gap-1 rounded-full bg-neutral-100 dark:bg-neutral-800 px-1.5 py-0.5 text-[10px] text-neutral-600 dark:text-neutral-300"
+              >
+                <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: c.color }} />
+                <span className="truncate max-w-[80px]">{c.name}</span>
+              </span>
+            ))}
+          </div>
+        )}
       </div>
     </button>
   );
@@ -489,6 +658,10 @@ function Conversation({
   const [menu, setMenu] = useState<{ m: NativeMessage; pos: { x: number; y: number } } | null>(null);
   const [summary, setSummary] = useState(false);
   const [draftPick, setDraftPick] = useState<string | null>(null);
+  const [replyTo, setReplyTo] = useState<NativeMessage | null>(null);
+  const [editing, setEditing] = useState<NativeMessage | null>(null);
+  const [forward, setForward] = useState<NativeMessage | null>(null);
+  const pins = usePins((s) => s.items);
   const [messages, setMessages] = useState<NativeMessage[]>([]);
   const [limit, setLimit] = useState(PAGE);
   /** Waiting for the phone to answer a request for older messages. */
@@ -498,6 +671,7 @@ function Conversation({
   /** Scroll position to restore after older messages are prepended. */
   const anchor = useRef<{ height: number; top: number } | null>(null);
   const group = isGroup(chatId);
+  const channel = isChannel(chatId);
   const connected = account.status === "working";
   const picture = usePicture(account.id, chatId, connected);
   const moreStored = messages.length >= limit;
@@ -542,6 +716,49 @@ function Conversation({
   useNativeAutoTranslate(messages, autoTranslate?.in);
   const onMenu = useCallback((m: NativeMessage, pos: { x: number; y: number }) => setMenu({ m, pos }), []);
 
+  // A reply, an edit, or a forward does not survive a chat switch.
+  useEffect(() => {
+    setReplyTo(null);
+    setEditing(null);
+    setForward(null);
+  }, [chatId]);
+
+  const deleteMessage = async (m: NativeMessage) => {
+    const choice = await confirm({
+      title: "Delete message?",
+      choices: [
+        {
+          id: "everyone",
+          label: "Delete for everyone",
+          hint: "Removes it from the chat for all participants (own messages only).",
+          danger: true,
+        },
+      ],
+    });
+    if (choice !== "everyone") return;
+    try {
+      await nativeWa.deleteMessage(account.id, chatId, m.id);
+      useRevoked.getState().add({
+        id: m.id,
+        chat: prefsKey,
+        timestamp: Math.floor(m.timestamp / 1000),
+        fromMe: true,
+      });
+    } catch (e) {
+      onError(errMsg(e));
+    }
+  };
+
+  const pinMessage = async (m: NativeMessage) => {
+    const on = !isPinned(pins, prefsKey, m.id);
+    try {
+      await nativeWa.pinMessage(account.id, chatId, m.id, on);
+      usePins.getState().set(prefsKey, m.id, on ? Date.now() + PIN_MS : 0);
+    } catch (e) {
+      onError(errMsg(e));
+    }
+  };
+
   const loadOlder = () => {
     const el = listRef.current;
     anchor.current = el ? { height: el.scrollHeight, top: el.scrollTop } : null;
@@ -561,13 +778,21 @@ function Conversation({
           <button
             className="flex items-center gap-3 min-w-0 flex-1 text-left"
             onClick={() => setInfo((v) => !v)}
-            title={group ? "Group info" : "Contact info"}
+            title={group ? "Group info" : channel ? "Channel info" : "Contact info"}
           >
             <Avatar src={picture} name={name} size={36} />
             <div className="min-w-0">
               <div className="font-medium truncate">{title}</div>
               <div className="text-xs truncate text-neutral-500">
-                {group ? "Group · click for members" : pushName ? `~${pushName}` : chat?.saved && chat.phone ? chat.phone : "Contact"}
+                {group
+                  ? "Group · click for members"
+                  : channel
+                    ? "Channel · read-only"
+                    : pushName
+                      ? `~${pushName}`
+                      : chat?.saved && chat.phone
+                        ? chat.phone
+                        : "Contact"}
               </div>
             </div>
           </button>
@@ -632,31 +857,80 @@ function Conversation({
                   </div>
                 )}
                 <ErrorBoundary inline label="message">
-                  <Bubble accountId={account.id} connected={connected} message={m} showSender={showSender} onMenu={onMenu} />
+                  <Bubble
+                    accountId={account.id}
+                    connected={connected}
+                    message={m}
+                    showSender={showSender}
+                    pinned={isPinned(pins, prefsKey, m.id)}
+                    onMenu={onMenu}
+                  />
                 </ErrorBoundary>
               </div>
             );
           })}
         </div>
 
-        <Composer
-          account={account}
-          chatId={chatId}
-          chatName={name}
-          messages={messages}
-          autoOut={autoTranslate?.out}
-          picked={draftPick}
-          onPicked={() => setDraftPick(null)}
-          onPick={setDraftPick}
-          onError={onError}
-        />
+        {channel ? (
+          <div className="shrink-0 flex items-center justify-center gap-2 bg-white dark:bg-neutral-900 border-t border-neutral-200 dark:border-neutral-800 px-4 py-3 text-xs text-neutral-500">
+            <Megaphone size={14} /> Channels are read-only — only the channel can post.
+          </div>
+        ) : (
+          <Composer
+            account={account}
+            chatId={chatId}
+            chatName={name}
+            messages={messages}
+            autoOut={autoTranslate?.out}
+            picked={draftPick}
+            onPicked={() => setDraftPick(null)}
+            onPick={setDraftPick}
+            onError={onError}
+            replyTo={replyTo}
+            editing={editing}
+            onCancelReply={() => setReplyTo(null)}
+            onCancelEdit={() => setEditing(null)}
+          />
+        )}
         {menu && (
           <NativeMessageMenu
             accountId={account.id}
             message={menu.m}
             pos={menu.pos}
+            pinned={isPinned(pins, prefsKey, menu.m.id)}
+            readOnly={channel}
             onSave={() => saveNativeMedia(account.id, menu.m).catch((e) => onError(errMsg(e)))}
+            onReply={
+              channel
+                ? undefined
+                : () => {
+                    setEditing(null);
+                    setReplyTo(menu.m);
+                  }
+            }
+            onEdit={
+              // Only plain text can be edited (a caption edit needs the media message), and
+              // only within WhatsApp's edit window.
+              !channel && menu.m.fromMe && menu.m.kind === "text" && Date.now() - menu.m.timestamp < EDIT_WINDOW_MS
+                ? () => {
+                    setReplyTo(null);
+                    setEditing(menu.m);
+                  }
+                : undefined
+            }
+            onDelete={!channel && menu.m.fromMe ? () => void deleteMessage(menu.m) : undefined}
+            onPin={channel ? undefined : () => void pinMessage(menu.m)}
+            onForward={() => setForward(menu.m)}
             onClose={() => setMenu(null)}
+          />
+        )}
+        {forward && (
+          <NativeForwardDialog
+            accountId={account.id}
+            fromChatId={chatId}
+            message={forward}
+            onClose={() => setForward(null)}
+            onError={onError}
           />
         )}
         {summary && (
@@ -740,16 +1014,38 @@ const Bubble = memo(function Bubble({
   connected,
   message: m,
   showSender,
+  pinned,
   onMenu,
 }: {
   accountId: string;
   connected: boolean;
   message: NativeMessage;
   showSender: boolean;
+  pinned: boolean;
   onMenu: (m: NativeMessage, pos: { x: number; y: number }) => void;
 }) {
   const mine = m.fromMe;
   const sticker = m.media?.kind === "sticker";
+  // Hooks run before the tombstone early return: a message can be deleted in place.
+  const reactionMap = useReactions((s) => s.byMsg[bareId(m.id)]);
+  const tomb = useRevoked((s) => s.items[`${convKey(accountId, m.chatId)}:${bareId(m.id)}`]);
+  if (tomb && (tomb.kind ?? "revoked") === "revoked") {
+    return (
+      <div className={cn("flex", mine ? "justify-end" : "justify-start")}>
+        <div
+          className={cn(
+            "max-w-[70%] rounded-lg px-3 py-1.5 text-sm italic text-neutral-500 dark:text-neutral-400 border border-dashed",
+            mine
+              ? "border-wa-dark/40 bg-[#d9fdd3]/40 dark:bg-wa-teal/30"
+              : "border-neutral-300 dark:border-neutral-700 bg-white/60 dark:bg-neutral-800/60",
+          )}
+        >
+          🚫 {mine ? "You deleted this message" : "This message was deleted"}
+        </div>
+      </div>
+    );
+  }
+  const reactions = summarize(reactionMap, []);
   return (
     <div className={cn("flex", mine ? "justify-end" : "justify-start")}>
       <div className={cn("flex flex-col max-w-[70%]", mine ? "items-end" : "items-start")}>
@@ -774,6 +1070,11 @@ const Bubble = memo(function Bubble({
               {m.senderPhone && m.senderName && m.senderName !== m.senderPhone && <span className="text-neutral-400">{m.senderPhone}</span>}
             </div>
           )}
+          {pinned && (
+            <div className="flex items-center gap-1 text-[10px] text-neutral-500 dark:text-neutral-300/70 mb-0.5">
+              <Pin size={10} /> Pinned
+            </div>
+          )}
           {m.media ? (
             <div className={cn(m.body && "mb-1")}>
               <NativeMediaView accountId={accountId} message={m} connected={connected} />
@@ -795,10 +1096,108 @@ const Bubble = memo(function Bubble({
             {mine && <Check size={12} />}
           </div>
         </div>
+        {reactions.length > 0 && (
+          <div className="-mt-2 mx-2 flex gap-1 z-10">
+            {reactions.map((r) => (
+              <span
+                key={r.emoji}
+                title={r.me ? "You reacted" : undefined}
+                className={cn(
+                  "rounded-full bg-white dark:bg-neutral-800 border px-1.5 py-px text-[12px] leading-4 shadow-sm",
+                  r.me ? "border-wa-dark" : "border-neutral-200 dark:border-neutral-700",
+                )}
+              >
+                {r.emoji}
+                {r.count > 1 && <span className="ml-0.5 text-[10px] text-neutral-500">{r.count}</span>}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
 });
+
+/** Forward a stored message to another chat of the same account. */
+function NativeForwardDialog({
+  accountId,
+  fromChatId,
+  message,
+  onClose,
+  onError,
+}: {
+  accountId: string;
+  fromChatId: string;
+  message: NativeMessage;
+  onClose: () => void;
+  onError: (e: string) => void;
+}) {
+  const [chats, setChats] = useState<NativeChat[] | null>(null);
+  const [q, setQ] = useState("");
+  const [busy, setBusy] = useState<string | null>(null);
+  const [done, setDone] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    nativeWa
+      .chats(accountId)
+      .then(setChats)
+      .catch((e) => onError(errMsg(e)));
+  }, [accountId, onError]);
+
+  const term = q.trim().toLowerCase();
+  const list = (chats ?? [])
+    .filter((c) => c.id !== "status@broadcast" && !isChannel(c.id))
+    .filter((c) => !term || (c.name ?? "").toLowerCase().includes(term) || c.id.includes(term))
+    .slice(0, 50);
+
+  const send = async (toChatId: string) => {
+    setBusy(toChatId);
+    try {
+      await nativeWa.forward(accountId, fromChatId, message.id, toChatId);
+      setDone((d) => new Set(d).add(toChatId));
+    } catch (e) {
+      onError(errMsg(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 grid place-items-center" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="w-[380px] max-h-[70vh] flex flex-col rounded-xl bg-white dark:bg-neutral-900 shadow-2xl">
+        <div className="flex items-center gap-2 p-3 border-b border-neutral-200 dark:border-neutral-800">
+          <span className="font-semibold flex-1">Forward to…</span>
+          <button onClick={onClose}>
+            <X size={16} />
+          </button>
+        </div>
+        <div className="p-2 relative">
+          <Search size={14} className="absolute left-4 top-4.5 text-neutral-400" />
+          <Input className="pl-8" placeholder="Search" value={q} onChange={(e) => setQ(e.target.value)} autoFocus />
+        </div>
+        <div className="flex-1 overflow-y-auto">
+          {list.map((c) => {
+            const name = c.name || displayId(c.id);
+            return (
+              <div key={c.id} className="flex items-center gap-2 px-3 py-1.5">
+                <Avatar name={name} size={30} />
+                <span className="flex-1 truncate text-sm">{name}</span>
+                <Button
+                  size="sm"
+                  variant={done.has(c.id) ? "secondary" : "primary"}
+                  disabled={busy === c.id || done.has(c.id)}
+                  onClick={() => void send(c.id)}
+                >
+                  {busy === c.id ? <Loader2 size={12} className="animate-spin" /> : done.has(c.id) ? "Sent" : "Send"}
+                </Button>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 /** Pasted, dropped or picked file waiting to be sent, with the draft as its caption. */
 interface Attachment {
@@ -816,6 +1215,10 @@ function Composer({
   onPicked,
   onPick,
   onError,
+  replyTo,
+  editing,
+  onCancelReply,
+  onCancelEdit,
 }: {
   account: NativeAccount;
   chatId: string;
@@ -828,6 +1231,12 @@ function Composer({
   onPicked: () => void;
   onPick: (text: string) => void;
   onError: (e: string) => void;
+  /** The message being replied to, quoted when the text is sent. */
+  replyTo: NativeMessage | null;
+  /** The message being edited; sending replaces its text instead of a new message. */
+  editing: NativeMessage | null;
+  onCancelReply: () => void;
+  onCancelEdit: () => void;
 }) {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
@@ -870,6 +1279,20 @@ function Composer({
     taRef.current?.focus();
   }, [picked, onPicked]);
 
+  // Editing loads the message's text into the composer; finishing or cancelling the edit
+  // brings back whatever draft was there before.
+  const draftBeforeEdit = useRef<string | null>(null);
+  useEffect(() => {
+    if (editing) {
+      draftBeforeEdit.current ??= text;
+      setText(editing.body);
+      taRef.current?.focus();
+    } else if (draftBeforeEdit.current !== null) {
+      setText(draftBeforeEdit.current);
+      draftBeforeEdit.current = null;
+    }
+  }, [editing]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Keep the textarea's height in step with programmatic changes (send, emoji, AI rewrite).
   useEffect(() => {
     const el = taRef.current;
@@ -890,13 +1313,18 @@ function Composer({
     if (readReceiptsFor(nativeAccountKey(account.id)) === "on-reply") void nativeWa.sendReceipt(account.id, chatId).catch(() => {});
     setSending(true);
     try {
-      const body = draft && autoOut ? await translate(draft, autoOut) : draft;
-      if (attachment) {
-        const sent = await nativeWa.sendMedia(account.id, chatId, attachment.file, attachment.file.name, body);
+      const body = draft && autoOut && !editing ? await translate(draft, autoOut) : draft;
+      if (editing) {
+        await nativeWa.edit(account.id, chatId, editing.id, body);
+        onCancelEdit();
+      } else if (attachment) {
+        const sent = await nativeWa.sendMedia(account.id, chatId, attachment.file, attachment.file.name, body, replyTo?.id ?? null);
         void cacheSentMedia(account.id, sent, attachment.file);
         setAttachment(null);
+        onCancelReply();
       } else {
-        await nativeWa.sendText(account.id, chatId, body);
+        await nativeWa.sendText(account.id, chatId, body, replyTo?.id ?? null);
+        onCancelReply();
       }
       setText("");
     } catch (e) {
@@ -938,8 +1366,31 @@ function Composer({
           }}
         />
       )}
-      <NativeSmartReplies accountId={account.id} chatId={chatId} chatName={chatName} messages={messages} onPick={onPick} />
-      {attachment && (
+      {!editing && <NativeSmartReplies accountId={account.id} chatId={chatId} chatName={chatName} messages={messages} onPick={onPick} />}
+      {editing ? (
+        <div className="flex items-start gap-2 rounded-lg bg-neutral-100 dark:bg-neutral-800 px-2 py-1.5 text-xs">
+          <Pencil size={14} className="mt-0.5 text-neutral-500" />
+          <div className="min-w-0 flex-1">
+            <div className="font-medium text-wa-dark dark:text-wa">Editing message</div>
+            <div className="truncate text-neutral-500">{stripWaMarkdown(editing.body) || "📎 Media"}</div>
+          </div>
+          <button onClick={onCancelEdit} title="Cancel edit" className="p-1 text-neutral-500 hover:text-neutral-800">
+            <X size={14} />
+          </button>
+        </div>
+      ) : replyTo ? (
+        <div className="flex items-start gap-2 rounded-lg bg-neutral-100 dark:bg-neutral-800 px-2 py-1.5 text-xs">
+          <Reply size={14} className="mt-0.5 text-neutral-500" />
+          <div className="min-w-0 flex-1">
+            <div className="font-medium text-wa-dark dark:text-wa">{replyTo.fromMe ? "You" : replyTo.senderName || "Them"}</div>
+            <div className="truncate text-neutral-500">{stripWaMarkdown(replyTo.body) || "📎 Media"}</div>
+          </div>
+          <button onClick={onCancelReply} title="Cancel reply" className="p-1 text-neutral-500 hover:text-neutral-800">
+            <X size={14} />
+          </button>
+        </div>
+      ) : null}
+      {!editing && attachment && (
         <div className="flex items-center gap-2 rounded-lg bg-neutral-100 dark:bg-neutral-800 px-2 py-1.5 text-xs">
           {attachment.preview ? (
             <img src={attachment.preview} alt="" className="w-10 h-10 rounded object-cover" />
@@ -971,7 +1422,7 @@ function Composer({
             e.target.value = "";
           }}
         />
-        <Button variant="ghost" onClick={() => fileRef.current?.click()} disabled={!connected} title="Attach a file">
+        <Button variant="ghost" onClick={() => fileRef.current?.click()} disabled={!connected || !!editing} title="Attach a file">
           <Paperclip size={18} />
         </Button>
         <TranslateDraftButton text={text} onResult={setText} />
