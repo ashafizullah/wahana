@@ -8,7 +8,7 @@ import { Button, Input, Label } from "@/components/ui";
 import { errMsg } from "@/lib/utils";
 
 export function ProfilesSection() {
-  const { profiles, activeProfile, switchProfile, removeProfile, addProfile } = useSettings();
+  const { profiles, activeProfile, switchProfile, removeProfile, addProfile, setProfileDisabled } = useSettings();
   const qc = useQueryClient();
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
@@ -37,19 +37,23 @@ export function ProfilesSection() {
 
   return (
     <>
-      {profiles.length === 0 && !adding && <p className="text-sm text-neutral-500">No server yet — fill in Connection below or add one.</p>}
+      {profiles.length === 0 && !adding && <p className="text-sm text-neutral-500">No server yet — fill in the form below or add one.</p>}
       <ul className="space-y-1">
         {profiles.map((p) => (
           <li
             key={p.id}
             className={
               "flex items-center gap-3 rounded-lg px-3 py-2 " +
-              (p.id === activeProfile ? "bg-wa-dark/10 ring-1 ring-wa-dark/40" : "bg-neutral-50 dark:bg-neutral-800/60")
+              (p.id === activeProfile ? "bg-wa-dark/10 ring-1 ring-wa-dark/40" : "bg-neutral-50 dark:bg-neutral-800/60") +
+              (p.disabled ? " opacity-60" : "")
             }
           >
-            <span className={"w-2 h-2 rounded-full " + (p.id === activeProfile ? "bg-wa" : "bg-neutral-400")} />
+            <span className={"w-2 h-2 rounded-full " + (p.id === activeProfile && !p.disabled ? "bg-wa" : "bg-neutral-400")} />
             <span className="min-w-0 flex-1">
-              <span className="block text-sm font-medium truncate">{p.name}</span>
+              <span className="block text-sm font-medium truncate">
+                {p.name}
+                {p.disabled && <span className="ml-2 text-xs font-normal text-neutral-500">Disabled</span>}
+              </span>
               <span className="block text-xs text-neutral-500 truncate selectable">
                 {p.baseUrl} · {p.session}
               </span>
@@ -66,6 +70,16 @@ export function ProfilesSection() {
                 Use
               </Button>
             )}
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={async () => {
+                await setProfileDisabled(p.id, !p.disabled);
+                qc.clear();
+              }}
+            >
+              {p.disabled ? "Enable" : "Disable"}
+            </Button>
             <button
               className="text-neutral-400 hover:text-red-600"
               title="Remove server"

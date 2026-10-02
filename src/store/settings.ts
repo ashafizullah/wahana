@@ -17,6 +17,8 @@ export interface Profile {
   name: string;
   baseUrl: string;
   session: string;
+  /** Switched off: no client, sockets or background jobs, but the server and key stay saved. */
+  disabled?: boolean;
 }
 
 /** When read receipts (blue ticks) are sent. */
@@ -108,11 +110,12 @@ interface SettingsState extends Prefs {
   addProfile: (p: { name: string; baseUrl: string; apiKey: string; session?: string }) => Promise<void>;
   switchProfile: (id: string) => Promise<void>;
   removeProfile: (id: string) => Promise<void>;
+  setProfileDisabled: (id: string, disabled: boolean) => Promise<void>;
   clear: () => Promise<void>;
 }
 
-function makeClient(baseUrl: string, apiKey: string) {
-  return baseUrl && apiKey ? new WahaClient({ baseUrl, apiKey }) : null;
+function makeClient(baseUrl: string, apiKey: string, disabled?: boolean) {
+  return !disabled && baseUrl && apiKey ? new WahaClient({ baseUrl, apiKey }) : null;
 }
 
 const readKey = (profileId: string) => getSecret(profileId);
@@ -200,7 +203,7 @@ export const useSettings = create<SettingsState>((set, get) => ({
       baseUrl: prof?.baseUrl ?? "",
       session: prof?.session ?? "default",
       apiKey,
-      client: makeClient(prof?.baseUrl ?? "", apiKey),
+      client: makeClient(prof?.baseUrl ?? "", apiKey, prof?.disabled),
     });
   },
 
@@ -251,7 +254,7 @@ export const useSettings = create<SettingsState>((set, get) => ({
       baseUrl: nextUrl,
       session: prof?.session ?? "default",
       apiKey,
-      client: baseUrl !== undefined || newKey !== undefined ? makeClient(nextUrl, apiKey) : st.client,
+      client: baseUrl !== undefined || newKey !== undefined ? makeClient(nextUrl, apiKey, prof?.disabled) : st.client,
     });
   },
 
@@ -272,7 +275,13 @@ export const useSettings = create<SettingsState>((set, get) => ({
     const s = await store();
     await s.set("activeProfile", id);
     const apiKey = await readKey(id);
-    set({ activeProfile: id, baseUrl: prof.baseUrl, session: prof.session, apiKey, client: makeClient(prof.baseUrl, apiKey) });
+    set({
+      activeProfile: id,
+      baseUrl: prof.baseUrl,
+      session: prof.session,
+      apiKey,
+      client: makeClient(prof.baseUrl, apiKey, prof.disabled),
+    });
   },
 
   async removeProfile(id) {
@@ -285,6 +294,18 @@ export const useSettings = create<SettingsState>((set, get) => ({
     if (get().activeProfile === id) {
       if (profiles[0]) await get().switchProfile(profiles[0].id);
       else set({ activeProfile: "", baseUrl: "", session: "default", apiKey: "", client: null });
+    }
+  },
+
+  async setProfileDisabled(id, disabled) {
+    profileClients.clear();
+    const s = await store();
+    const profiles = get().profiles.map((p) => (p.id === id ? { ...p, disabled: disabled || undefined } : p));
+    await s.set("profiles", profiles);
+    set({ profiles });
+    if (get().activeProfile === id) {
+      const prof = profiles.find((p) => p.id === id);
+      set({ client: makeClient(prof?.baseUrl ?? "", get().apiKey, disabled) });
     }
   },
 
@@ -318,6 +339,7 @@ export async function clientForProfile(profileId: string | undefined): Promise<W
   if (cached) return cached;
   const prof = st.profiles.find((p) => p.id === profileId);
   if (!prof) throw new Error(`WAHA server "${profileId}" was removed`);
+  if (prof.disabled) throw new Error(`WAHA server "${prof.name}" is disabled`);
   const c = makeClient(prof.baseUrl, await readKey(profileId));
   if (!c) throw new Error(`WAHA server "${prof.name}" is not configured`);
   profileClients.set(profileId, c);

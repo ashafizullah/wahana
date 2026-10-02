@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Bell, DatabaseBackup, HardDrive, Image as ImageIcon, Info, Plug, Server, Sparkles } from "lucide-react";
+import { Bell, DatabaseBackup, HardDrive, Image as ImageIcon, Info, Server, Sparkles } from "lucide-react";
 import { usingFallback } from "@/lib/secrets";
 import { OpenCtx, Section } from "./settings/shared";
 import { ProfilesSection } from "./settings/ProfilesSection";
@@ -12,7 +12,7 @@ import { BackupSection } from "./settings/BackupSection";
 import { AboutSection } from "./settings/AboutSection";
 
 const OPEN_KEY = "settings.open";
-const DEFAULT_OPEN = ["Servers", "Connection"];
+const DEFAULT_OPEN = ["Servers"];
 function loadOpen(): string[] {
   try {
     const v = JSON.parse(localStorage.getItem(OPEN_KEY) ?? "null") as unknown;
@@ -21,7 +21,7 @@ function loadOpen(): string[] {
     return DEFAULT_OPEN;
   }
 }
-const ALL_SECTIONS = ["Servers", "Connection", "Media", "Storage", "AI", "Notifications", "Backup & restore", "About"];
+const ALL_SECTIONS = ["Servers", "Media", "Storage", "AI", "Notifications", "Backup & restore", "About"];
 
 export function SettingsScreen({ onSaved }: { onSaved: () => void }) {
   const [open, setOpen] = useState<string[]>(loadOpen);
@@ -56,8 +56,6 @@ export function SettingsScreen({ onSaved }: { onSaved: () => void }) {
             description="You can keep several WAHA servers and switch between them. Each server's API key is stored in the OS keychain (macOS Keychain / Windows Credential Manager)."
           >
             <ProfilesSection />
-          </Section>
-          <Section icon={Plug} title="Connection" description="Settings for the selected server.">
             <ConnectionSection onSaved={onSaved} />
           </Section>
           <Section

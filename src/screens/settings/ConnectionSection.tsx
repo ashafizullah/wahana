@@ -55,6 +55,9 @@ export function ConnectionSection({ onSaved }: { onSaved: () => void }) {
 
   return (
     <>
+      <div className="border-t border-neutral-200 dark:border-neutral-800 pt-3 text-sm font-medium">
+        {settings.profiles.length > 0 ? "Edit active server" : "Connect to a server"}
+      </div>
       <div>
         <Label>Server name</Label>
         <Input placeholder="Default" value={name} onChange={(e) => setName(e.target.value)} />

@@ -23,7 +23,7 @@ export function useProfileSockets() {
   });
   const targets = withRules
     .map(accountParts)
-    .filter((p) => p?.kind === "waha" && p.profile && p.profile !== active && profiles.some((x) => x.id === p.profile))
+    .filter((p) => p?.kind === "waha" && p.profile && p.profile !== active && profiles.some((x) => x.id === p.profile && !x.disabled))
     .map((p) => JSON.stringify([p!.profile, p!.session]))
     .sort()
     .join("\n");
