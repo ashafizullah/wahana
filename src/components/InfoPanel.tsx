@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { X, Loader2, Images, ChevronRight, ChevronLeft } from "lucide-react";
 import { requireClient } from "@/store/settings";
-import { Avatar } from "@/components/ui";
+import { Avatar, CopyButton } from "@/components/ui";
 import { displayId, isGroup } from "@/lib/utils";
 import type { ChatOverview } from "@/api/types";
 import { WaMarkdown, type MentionResolver } from "@/lib/waMarkdown";
@@ -57,7 +57,10 @@ export function InfoPanel({
           <div className="flex flex-col items-center gap-2 p-5 border-b border-neutral-100 dark:border-neutral-800">
             <Avatar src={chat?.picture} name={name} size={88} />
             <div className="font-semibold text-center selectable">{name}</div>
-            <div className="text-xs text-neutral-500 selectable">{chatId}</div>
+            <div className="flex items-center gap-1.5 text-xs text-neutral-500 selectable">
+              {chatId}
+              {chatId.endsWith("@c.us") && <CopyButton text={`+${chatId.split("@")[0]}`} title="Copy number" />}
+            </div>
             {contactQ.data?.pushname && contactQ.data.pushname !== name && (
               <div className="text-xs text-neutral-500">~{contactQ.data.pushname}</div>
             )}

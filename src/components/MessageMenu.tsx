@@ -1,5 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
+  MessageCircle,
   Reply,
   SmilePlus,
   Pencil,
@@ -50,6 +52,8 @@ export function MessageMenu({
   onReply,
   onEdit,
   onInfo,
+  onChat,
+  onReplyPrivately,
 }: {
   message: WAMessage;
   session: string;
@@ -59,6 +63,10 @@ export function MessageMenu({
   onReply: () => void;
   onEdit: () => void;
   onInfo: () => void;
+  /** Group: open the direct chat with the sender. */
+  onChat?: () => void;
+  /** Group: reply to the sender in a direct chat. */
+  onReplyPrivately?: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const qc = useQueryClient();
@@ -110,11 +118,24 @@ export function MessageMenu({
     };
   }, [onClose]);
 
-  // Keep the menu inside the viewport.
-  const style: React.CSSProperties = {
-    left: Math.min(pos.x, window.innerWidth - 240),
-    top: Math.min(pos.y, window.innerHeight - 320),
-  };
+  // Keep the whole menu inside the viewport: measure it and shift it, again whenever its size changes.
+  const [at, setAt] = useState({ left: pos.x, top: pos.y });
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const place = () => {
+      const { width, height } = el.getBoundingClientRect();
+      const margin = 8;
+      const left = pos.x + width + margin > window.innerWidth ? Math.max(margin, pos.x - width) : pos.x;
+      const top = pos.y + height + margin > window.innerHeight ? Math.max(margin, window.innerHeight - height - margin) : pos.y;
+      setAt((cur) => (cur.left === left && cur.top === top ? cur : { left, top }));
+    };
+    place();
+    const observer = new ResizeObserver(place);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [pos.x, pos.y, forward]);
+  const style: React.CSSProperties = { ...at, maxHeight: "calc(100vh - 16px)" };
 
   const run = async (name: string, fn: () => Promise<unknown>, close = true) => {
     setBusy(name);
@@ -168,11 +189,11 @@ export function MessageMenu({
     return <ForwardDialog session={session} messageId={m.id} onClose={onClose} />;
   }
 
-  return (
+  return createPortal(
     <div
       ref={ref}
       style={style}
-      className="fixed z-50 w-56 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-xl py-1 text-sm"
+      className="fixed z-50 w-56 overflow-y-auto rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-xl py-1 text-sm"
       onContextMenu={(e) => e.preventDefault()}
     >
       <div className="flex justify-between px-2 py-1.5 border-b border-neutral-100 dark:border-neutral-800">
@@ -199,6 +220,26 @@ export function MessageMenu({
           onClose();
         }}
       />
+      {onReplyPrivately && (
+        <Item
+          icon={Reply}
+          label="Reply privately"
+          onClick={() => {
+            onReplyPrivately();
+            onClose();
+          }}
+        />
+      )}
+      {onChat && (
+        <Item
+          icon={MessageCircle}
+          label="Chat"
+          onClick={() => {
+            onChat();
+            onClose();
+          }}
+        />
+      )}
       <Item
         icon={Info}
         label="Info"
@@ -288,7 +329,8 @@ export function MessageMenu({
           {busy ? <Loader2 size={12} className="animate-spin" /> : <span className="text-red-600">{err}</span>}
         </div>
       )}
-    </div>
+    </div>,
+    document.body,
   );
 }
 

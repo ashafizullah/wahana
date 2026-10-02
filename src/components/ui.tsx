@@ -1,4 +1,5 @@
-import { useRef, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from "react";
+import { useRef, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from "react";
+import { Check, Copy } from "lucide-react";
 import { cn, initials } from "@/lib/utils";
 import { useDismiss } from "@/lib/hooks";
 
@@ -132,6 +133,24 @@ export function MenuItem({ className, children, ...props }: ButtonHTMLAttributes
       {...props}
     >
       {children}
+    </button>
+  );
+}
+
+/** Small icon button that copies `text` and flashes a check. */
+export function CopyButton({ text, title = "Copy" }: { text: string; title?: string }) {
+  const [done, setDone] = useState(false);
+  return (
+    <button
+      title={title}
+      className="text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"
+      onClick={() => {
+        void navigator.clipboard.writeText(text);
+        setDone(true);
+        setTimeout(() => setDone(false), 1500);
+      }}
+    >
+      {done ? <Check size={13} /> : <Copy size={13} />}
     </button>
   );
 }

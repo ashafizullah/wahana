@@ -3,7 +3,7 @@ import { confirm } from "@/components/Confirm";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { X, Camera, Trash2, Loader2, Check, Pencil } from "lucide-react";
 import { requireClient } from "@/store/settings";
-import { Avatar, Button, Input, Label } from "@/components/ui";
+import { Avatar, Button, CopyButton, Input, Label } from "@/components/ui";
 import { fileToBase64, errMsg } from "@/lib/utils";
 import { qk } from "@/api/queries";
 
@@ -110,7 +110,10 @@ export function ProfileModal({ session, onClose }: { session: string; onClose: (
                     <Trash2 size={12} /> Remove photo
                   </button>
                 )}
-                <div className="text-xs text-neutral-500 selectable">+{profile.data.id.split("@")[0]}</div>
+                <div className="flex items-center gap-1.5 text-xs text-neutral-500 selectable">
+                  +{profile.data.id.split("@")[0]}
+                  <CopyButton text={`+${profile.data.id.split("@")[0]}`} title="Copy number" />
+                </div>
               </div>
 
               <div>

@@ -7,6 +7,8 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { InfoPanel } from "@/components/InfoPanel";
 import { MessageInfoModal } from "@/components/MessageInfo";
 import { MessageMenu, type MenuPos } from "@/components/MessageMenu";
+import { mediaKind } from "@/store/settings";
+import { useDrafts } from "@/store/drafts";
 import { PinBanner } from "@/components/PinBanner";
 import { stripWaMarkdown } from "@/lib/waMarkdown";
 import { useChatPins, usePins } from "@/store/pins";
@@ -374,6 +376,25 @@ function Conversation({ session, chatId, onOpenChat }: { session: string; chatId
             onReply={() => setReplyTo(menu.m)}
             onEdit={() => setEditing(menu.m)}
             onInfo={() => setMsgInfo(menu.m)}
+            onChat={group && !menu.m.fromMe ? () => onOpenChat(menu.m.participant || menu.m.from) : undefined}
+            onReplyPrivately={
+              group && !menu.m.fromMe
+                ? () => {
+                    const dm = menu.m.participant || menu.m.from;
+                    const quote = menu.m.body || (menu.m.hasMedia ? `[${mediaKind(menu.m) ?? "media"}]` : "");
+                    if (quote) {
+                      useDrafts.getState().set(
+                        convKey(session, dm),
+                        `${quote
+                          .split("\n")
+                          .map((l) => `> ${l}`)
+                          .join("\n")}\n`,
+                      );
+                    }
+                    onOpenChat(dm);
+                  }
+                : undefined
+            }
           />
         )}
         {msgInfo && <MessageInfoModal message={msgInfo} chatId={chatId} resolveName={resolveName} onClose={() => setMsgInfo(null)} />}
