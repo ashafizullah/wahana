@@ -50,6 +50,9 @@ const COMMANDS: &[&str] = &[
     "wa_native_label_delete",
     "wa_native_label_link",
     "wa_native_pin_chat",
+    "wa_native_message_info",
+    "wa_native_mark_all_read",
+    "wa_native_delete_chats",
 ];
 
 fn main() {

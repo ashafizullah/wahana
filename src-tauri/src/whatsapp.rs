@@ -870,12 +870,13 @@ async fn handle_event(app: AppHandle, account: Arc<WaAccount>, generation: u64, 
                 .iter()
                 .map(|id| id.to_string())
                 .collect();
-            let changed = account
-                .db
-                .lock()
-                .unwrap()
-                .raise_ack(&ids, ack)
-                .unwrap_or(false);
+            let sender = bare_jid(&receipt.source.sender.to_string());
+            let at = receipt.timestamp.timestamp_millis();
+            let changed = {
+                let db = account.db.lock().unwrap();
+                let _ = db.add_receipts(&ids, &sender, ack, at);
+                db.raise_ack(&ids, ack).unwrap_or(false)
+            };
             if changed {
                 emit_chats(&app, &account);
             }
@@ -1940,6 +1941,128 @@ pub fn wa_native_mark_read(
     let result = account.db.lock().unwrap().mark_read(&chat_id);
     result.map_err(|e| e.to_string())?;
     emit_account(&app, &account);
+    Ok(())
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MessageReceipt {
+    pub id: String,
+    pub name: String,
+    pub delivered_at: Option<i64>,
+    pub read_at: Option<i64>,
+    pub played_at: Option<i64>,
+}
+
+/// Who got, read or played a message of mine, and when (as far as receipts were seen).
+#[tauri::command]
+pub fn wa_native_message_info(
+    state: State<'_, WaState>,
+    id: String,
+    message_id: String,
+) -> Result<Vec<MessageReceipt>, String> {
+    let account = state.get(&id)?;
+    let db = account.db.lock().unwrap();
+    let rows = db.receipts_for(&message_id).map_err(|e| e.to_string())?;
+    let mut out: Vec<MessageReceipt> = Vec::new();
+    for (who, ack, at) in rows {
+        let i = match out.iter().position(|r| r.id == who) {
+            Some(i) => i,
+            None => {
+                let w = db.who(&who).ok();
+                let name = w
+                    .as_ref()
+                    .and_then(|w| w.name.clone().or(w.phone.clone().map(|p| format!("+{p}"))))
+                    .unwrap_or_else(|| format!("+{}", who.split('@').next().unwrap_or(&who)));
+                out.push(MessageReceipt {
+                    id: who.clone(),
+                    name,
+                    delivered_at: None,
+                    read_at: None,
+                    played_at: None,
+                });
+                out.len() - 1
+            }
+        };
+        match ack {
+            2 => out[i].delivered_at = Some(at),
+            3 => out[i].read_at = Some(at),
+            4 => out[i].played_at = Some(at),
+            _ => {}
+        }
+    }
+    Ok(out)
+}
+
+/// Clears the unread count of every chat, or only of `chat_ids` when given. Local only,
+/// like `wa_native_mark_read`; the phone is told best-effort so its badges clear too.
+#[tauri::command]
+pub async fn wa_native_mark_all_read(
+    app: AppHandle,
+    state: State<'_, WaState>,
+    id: String,
+    chat_ids: Option<Vec<String>>,
+) -> Result<(), String> {
+    let account = state.get(&id)?;
+    let targets: Vec<String> = match &chat_ids {
+        Some(ids) => ids.clone(),
+        None => account
+            .db
+            .lock()
+            .unwrap()
+            .chats()
+            .map_err(|e| e.to_string())?
+            .into_iter()
+            .filter(|c| c.unread > 0)
+            .map(|c| c.id)
+            .collect(),
+    };
+    {
+        let db = account.db.lock().unwrap();
+        let result = match &chat_ids {
+            Some(ids) => ids.iter().try_for_each(|c| db.mark_read(c)),
+            None => db.mark_all_read(),
+        };
+        result.map_err(|e| e.to_string())?;
+    }
+    emit_account(&app, &account);
+    emit_chats(&app, &account);
+    let client = account.inner.lock().unwrap().client.clone();
+    if let Some(client) = client {
+        for chat in targets {
+            if let Ok(jid) = chat.parse::<Jid>() {
+                let _ = client.chat_actions().mark_chat_as_read(&jid, true, None).await;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Deletes chats from this device and, when the account is online, from the linked phone.
+#[tauri::command]
+pub async fn wa_native_delete_chats(
+    app: AppHandle,
+    state: State<'_, WaState>,
+    id: String,
+    chat_ids: Vec<String>,
+) -> Result<(), String> {
+    let account = state.get(&id)?;
+    let client = account.inner.lock().unwrap().client.clone();
+    if let Some(client) = client {
+        for chat in &chat_ids {
+            if let Ok(jid) = chat.parse::<Jid>() {
+                let _ = client.chat_actions().delete_chat(&jid, true, None).await;
+            }
+        }
+    }
+    {
+        let db = account.db.lock().unwrap();
+        for chat in &chat_ids {
+            db.delete_chat(chat).map_err(|e| e.to_string())?;
+        }
+    }
+    emit_account(&app, &account);
+    emit_chats(&app, &account);
     Ok(())
 }
 

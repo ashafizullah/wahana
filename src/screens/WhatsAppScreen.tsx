@@ -17,6 +17,9 @@ import {
   Info,
   X,
   Reply,
+  Trash2,
+  CheckSquare,
+  Check,
 } from "lucide-react";
 import { Avatar, Button, Input, Popover } from "@/components/ui";
 import { confirm } from "@/components/Confirm";
@@ -33,6 +36,7 @@ import { QuickReplyPicker } from "@/components/QuickReplyPicker";
 import { LinkPreviewCard } from "@/components/LinkPreview";
 import { AckIcon, ImageNoteView, TranslationView } from "@/screens/chats/MessageBubble";
 import { NativeMessageMenu, NativeSmartReplies, NativeSummaryModal, useNativeAutoTranslate } from "@/screens/whatsapp/NativeAi";
+import { NativeMessageInfo } from "@/screens/whatsapp/NativeMessageInfo";
 import { NativeInfoPanel } from "@/screens/whatsapp/NativeInfoPanel";
 import { usePicture } from "@/screens/whatsapp/usePicture";
 import { useNativeTyping } from "@/screens/whatsapp/useNativeTyping";
@@ -126,7 +130,16 @@ export function WhatsAppScreen({ account, header }: { account: NativeAccount; he
 
   return (
     <>
-      <ChatList account={account} header={header} chats={chats} selected={chatId} onSelect={setChatId} error={error} width={listWidth} />
+      <ChatList
+        account={account}
+        header={header}
+        chats={chats}
+        selected={chatId}
+        onSelect={setChatId}
+        onDeleted={(ids) => ids.includes(chatId ?? "") && setChatId(null)}
+        error={error}
+        width={listWidth}
+      />
       <ResizeHandle onDrag={(dx) => setListWidth((w) => w + dx)} onReset={() => setListWidth(320)} />
       {account.status === "qr" ? (
         <Pairing accountId={account.id} />
@@ -163,6 +176,7 @@ function ChatList({
   chats,
   selected,
   onSelect,
+  onDeleted,
   error,
   width,
 }: {
@@ -171,6 +185,7 @@ function ChatList({
   chats: NativeChat[];
   selected: string | null;
   onSelect: (id: string) => void;
+  onDeleted: (ids: string[]) => void;
   error: string | null;
   width: number;
 }) {
@@ -181,6 +196,10 @@ function ChatList({
   const [menu, setMenu] = useState<{ chat: NativeChat; x: number; y: number } | null>(null);
   const [labelsFor, setLabelsFor] = useState<NativeChat | null>(null);
   const [relabel, setRelabel] = useState(0);
+  const [selecting, setSelecting] = useState(false);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const pinned = useChatPrefs((s) => s.pinned);
   const muted = useChatPrefs((s) => s.muted);
@@ -224,6 +243,62 @@ function ChatList({
     return [...list].sort((a, b) => (pinned[nativeChatKey(account.id, b.id)] ?? 0) - (pinned[nativeChatKey(account.id, a.id)] ?? 0));
   }, [chats, q, filter, pinned, account.id]);
 
+  // Chats that vanish from the list (deleted elsewhere) drop out of the selection.
+  useEffect(() => {
+    setPicked((cur) => {
+      const next = new Set([...cur].filter((id) => chats.some((c) => c.id === id)));
+      return next.size === cur.size ? cur : next;
+    });
+  }, [chats]);
+  useEffect(() => {
+    setSelecting(false);
+    setPicked(new Set());
+  }, [account.id]);
+
+  const exitSelect = () => {
+    setSelecting(false);
+    setPicked(new Set());
+  };
+  const toggle = (id: string) =>
+    setPicked((cur) => {
+      const next = new Set(cur);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
+  const totalUnread = chats.filter((c) => c.unread > 0).length;
+  const run = async (fn: () => Promise<void>) => {
+    setBusy(true);
+    setActionError(null);
+    try {
+      await fn();
+    } catch (e) {
+      setActionError(errMsg(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const markRead = () =>
+    run(async () => {
+      await nativeWa.markAllRead(account.id, picked.size ? [...picked] : undefined);
+      exitSelect();
+    });
+  const deletePicked = async () => {
+    const ids = [...picked];
+    if (ids.length === 0) return;
+    const ok = await confirm({
+      title: ids.length === 1 ? "Delete this chat?" : `Delete ${ids.length} chats?`,
+      message: "Removes the conversations and their messages from this account and its linked phone. This cannot be undone.",
+      confirmLabel: "Delete",
+      danger: true,
+    });
+    if (!ok) return;
+    await run(async () => {
+      await nativeWa.deleteChats(account.id, ids);
+      onDeleted(ids);
+      exitSelect();
+    });
+  };
+
   return (
     <div
       style={{ width }}
@@ -259,11 +334,58 @@ function ChatList({
               {f}
             </button>
           ))}
+          <span className="ml-auto flex items-center gap-1">
+            {!selecting && totalUnread > 0 && (
+              <button
+                onClick={() => void markRead()}
+                disabled={busy}
+                title="Mark every chat as read"
+                className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300 disabled:opacity-50"
+              >
+                <CheckCheck size={12} /> Read all
+              </button>
+            )}
+            <button
+              onClick={() => (selecting ? exitSelect() : setSelecting(true))}
+              title="Select chats"
+              className={cn(
+                "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium",
+                selecting ? "bg-wa-dark text-white" : "bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300",
+              )}
+            >
+              <CheckSquare size={12} /> {selecting ? "Cancel" : "Select"}
+            </button>
+          </span>
         </div>
+        {selecting && (
+          <div className="flex items-center gap-1.5 text-xs">
+            <span className="text-neutral-500 mr-auto">{picked.size} selected</span>
+            <button
+              className="rounded px-1.5 py-0.5 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+              onClick={() => setPicked(picked.size === shown.length ? new Set() : new Set(shown.map((c) => c.id)))}
+            >
+              {picked.size === shown.length && shown.length > 0 ? "None" : "All"}
+            </button>
+            <button
+              disabled={busy || picked.size === 0}
+              onClick={() => void markRead()}
+              className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-neutral-100 dark:hover:bg-neutral-800 disabled:opacity-40"
+            >
+              <CheckCheck size={13} /> Read
+            </button>
+            <button
+              disabled={busy || picked.size === 0}
+              onClick={() => void deletePicked()}
+              className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 disabled:opacity-40"
+            >
+              <Trash2 size={13} /> Delete
+            </button>
+          </div>
+        )}
       </div>
-      {(error || account.error) && (
+      {(error || account.error || actionError) && (
         <div className="px-3 py-2 text-xs bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 selectable">
-          {error ?? account.error}
+          {actionError ?? error ?? account.error}
         </div>
       )}
       <div className="flex-1 overflow-y-auto">
@@ -288,12 +410,15 @@ function ChatList({
                 chat={c}
                 accountId={account.id}
                 connected={account.status === "working"}
-                active={c.id === selected}
+                active={!selecting && c.id === selected}
                 pinned={!!pinned[key]}
                 chips={chips}
-                onClick={() => onSelect(c.id)}
+                selecting={selecting}
+                checked={picked.has(c.id)}
+                onClick={() => (selecting ? toggle(c.id) : onSelect(c.id))}
                 onMenu={(e) => {
                   e.preventDefault();
+                  if (selecting) return toggle(c.id);
                   setMenu({ chat: c, x: e.clientX, y: e.clientY });
                 }}
               />
@@ -400,6 +525,8 @@ const ChatRow = memo(function ChatRow({
   active,
   pinned,
   chips,
+  selecting,
+  checked,
   onClick,
   onMenu,
 }: {
@@ -409,6 +536,8 @@ const ChatRow = memo(function ChatRow({
   active: boolean;
   pinned: boolean;
   chips: { name: string; color: string }[];
+  selecting: boolean;
+  checked: boolean;
   onClick: () => void;
   onMenu: (e: React.MouseEvent) => void;
 }) {
@@ -425,9 +554,19 @@ const ChatRow = memo(function ChatRow({
       onContextMenu={onMenu}
       className={cn(
         "w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-neutral-100 dark:hover:bg-neutral-800",
-        active && "bg-neutral-100 dark:bg-neutral-800",
+        (active || checked) && "bg-neutral-100 dark:bg-neutral-800",
       )}
     >
+      {selecting && (
+        <span
+          className={cn(
+            "shrink-0 w-4 h-4 rounded border grid place-items-center",
+            checked ? "bg-wa border-wa text-white" : "border-neutral-400",
+          )}
+        >
+          {checked && <Check size={12} />}
+        </span>
+      )}
       <Avatar src={picture} name={pushName ?? title} size={44} />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1">
@@ -501,6 +640,7 @@ function Conversation({
   const name = pushName ?? title;
   const prefsKey = convKey(account.id, chatId);
   const autoTranslate = useChatPrefs((s) => s.autoTranslate[prefsKey]);
+  const [infoFor, setInfoFor] = useState<NativeMessage | null>(null);
   const [menu, setMenu] = useState<{ m: NativeMessage; pos: { x: number; y: number } } | null>(null);
   const [summary, setSummary] = useState(false);
   const [draftPick, setDraftPick] = useState<string | null>(null);
@@ -825,9 +965,11 @@ function Conversation({
             onDelete={!channel && !menu.m.revokedAt && menu.m.fromMe ? () => void deleteMessage(menu.m) : undefined}
             onPin={channel || menu.m.revokedAt ? undefined : () => void pinMessage(menu.m)}
             onForward={menu.m.revokedAt ? undefined : () => setForward(menu.m)}
+            onInfo={menu.m.fromMe && !channel ? () => setInfoFor(menu.m) : undefined}
             onClose={() => setMenu(null)}
           />
         )}
+        {infoFor && <NativeMessageInfo accountId={account.id} message={infoFor} onClose={() => setInfoFor(null)} />}
         {forward && (
           <NativeForwardDialog
             accountId={account.id}

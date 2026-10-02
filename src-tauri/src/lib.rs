@@ -128,6 +128,9 @@ pub fn run() {
             whatsapp::wa_native_label_create,
             whatsapp::wa_native_label_delete,
             whatsapp::wa_native_label_link,
+            whatsapp::wa_native_message_info,
+            whatsapp::wa_native_mark_all_read,
+            whatsapp::wa_native_delete_chats,
             whatsapp::wa_native_pin_chat
         ])
         .setup(|app| {

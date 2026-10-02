@@ -9,6 +9,7 @@ import {
   ListChecks,
   Loader2,
   Pencil,
+  Info,
   Pin,
   RefreshCw,
   Reply,
@@ -134,6 +135,7 @@ export function NativeMessageMenu({
   onDelete,
   onPin,
   onForward,
+  onInfo,
   onClose,
 }: {
   accountId: string;
@@ -148,6 +150,7 @@ export function NativeMessageMenu({
   onDelete?: () => void;
   onPin?: () => void;
   onForward?: () => void;
+  onInfo?: () => void;
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -240,6 +243,7 @@ export function NativeMessageMenu({
           ))}
         </div>
       )}
+      {onInfo && item(<Info size={14} />, "Info", onInfo)}
       {onReply && item(<Reply size={14} />, "Reply", onReply)}
       {onPin && item(<Pin size={14} />, pinned ? "Unpin" : "Pin (7 days)", onPin)}
       {onForward && item(<Forward size={14} />, "Forward…", onForward)}

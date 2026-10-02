@@ -14,7 +14,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use crate::whatsapp::{ChatInfo, EditView, MediaInfo, MessageKind, MessageView};
 
 /// Bumped with every schema change; `open` migrates older files up to it.
-const SCHEMA_VERSION: i64 = 5;
+const SCHEMA_VERSION: i64 = 6;
 
 /// How much a name source is trusted. A name only replaces one from an equal or lower
 /// source, so a push name never overwrites a contact's saved name.
@@ -190,6 +190,19 @@ impl ChatDb {
                      replaced_at INTEGER NOT NULL
                  );
                  CREATE INDEX IF NOT EXISTS message_edits_by_msg ON message_edits (chat_id, id);",
+            )?;
+        }
+        if version < 6 {
+            // When each recipient got, read or played a message of mine (one row per
+            // recipient and level). Only receipts seen from now on are recorded.
+            conn.execute_batch(
+                "CREATE TABLE IF NOT EXISTS receipts (
+                     message_id TEXT NOT NULL,
+                     recipient TEXT NOT NULL,
+                     ack INTEGER NOT NULL,
+                     at INTEGER NOT NULL,
+                     PRIMARY KEY (message_id, recipient, ack)
+                 );",
             )?;
         }
         conn.execute_batch(&format!("PRAGMA user_version = {SCHEMA_VERSION}"))?;
@@ -373,6 +386,29 @@ impl ChatDb {
         Ok(changed)
     }
 
+    /// Records when `recipient` reached `ack` (2 delivered, 3 read, 4 played) for each id.
+    /// A later level implies the earlier ones, so those are filled in when missing.
+    pub fn add_receipts(&self, ids: &[String], recipient: &str, ack: u8, at: i64) -> rusqlite::Result<()> {
+        let mut stmt = self.conn.prepare(
+            "INSERT OR IGNORE INTO receipts (message_id, recipient, ack, at) VALUES (?1, ?2, ?3, ?4)",
+        )?;
+        for id in ids {
+            for level in 2..=ack {
+                stmt.execute(params![id, recipient, level, at])?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Per recipient: (recipient, ack, unix ms), ordered by time.
+    pub fn receipts_for(&self, id: &str) -> rusqlite::Result<Vec<(String, u8, i64)>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT recipient, ack, at FROM receipts WHERE message_id = ?1 ORDER BY at")?;
+        let rows = stmt.query_map(params![id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+        rows.collect()
+    }
+
     /// Removes one stored message (e.g. a status I deleted).
     pub fn delete_message(&self, chat_id: &str, id: &str) -> rusqlite::Result<()> {
         self.conn.execute(
@@ -387,6 +423,25 @@ impl ChatDb {
             "UPDATE chats SET unread = 0 WHERE id = ?1",
             params![chat_id],
         )?;
+        Ok(())
+    }
+
+    pub fn mark_all_read(&self) -> rusqlite::Result<()> {
+        self.conn
+            .execute("UPDATE chats SET unread = 0 WHERE unread > 0", [])?;
+        Ok(())
+    }
+
+    /// Removes a chat with its messages, edit history and label links from this device.
+    pub fn delete_chat(&self, chat_id: &str) -> rusqlite::Result<()> {
+        for sql in [
+            "DELETE FROM messages WHERE chat_id = ?1",
+            "DELETE FROM message_edits WHERE chat_id = ?1",
+            "DELETE FROM chat_labels WHERE chat_id = ?1",
+            "DELETE FROM chats WHERE id = ?1",
+        ] {
+            self.conn.execute(sql, params![chat_id])?;
+        }
         Ok(())
     }
 

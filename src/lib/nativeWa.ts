@@ -70,6 +70,15 @@ export interface NativeMessage {
   edits: NativeEdit[];
 }
 
+/** When one recipient got, read and played a message of mine (unix ms; null = not seen). */
+export interface NativeReceipt {
+  id: string;
+  name: string;
+  deliveredAt: number | null;
+  readAt: number | null;
+  playedAt: number | null;
+}
+
 /** One earlier text of an edited message. */
 export interface NativeEdit {
   body: string;
@@ -236,6 +245,12 @@ export const nativeWa = {
   /** Ask the phone for older messages; they arrive later as a chats update. */
   loadOlder: (id: string, chatId: string) => invoke<void>("wa_native_load_older", { id, chatId }),
   markRead: (id: string, chatId: string) => invoke<void>("wa_native_mark_read", { id, chatId }),
+  /** Per-recipient delivery, read and played times for a message I sent. */
+  messageInfo: (id: string, messageId: string) => invoke<NativeReceipt[]>("wa_native_message_info", { id, messageId }),
+  /** Clear unread on every chat, or only on `chatIds`. */
+  markAllRead: (id: string, chatIds?: string[]) => invoke<void>("wa_native_mark_all_read", { id, chatIds: chatIds ?? null }),
+  /** Delete chats from this device and the linked phone. */
+  deleteChats: (id: string, chatIds: string[]) => invoke<void>("wa_native_delete_chats", { id, chatIds }),
   /** Send read receipts (blue ticks) for the chat's newest incoming messages. */
   sendReceipt: (id: string, chatId: string) => invoke<void>("wa_native_send_receipt", { id, chatId }),
   /** Tell the other side you are (or stopped) typing. */
