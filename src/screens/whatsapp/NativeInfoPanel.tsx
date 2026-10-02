@@ -174,7 +174,7 @@ function Header({ chatId, details, picture }: { chatId: string; details: NativeC
     sub = `Group · ${details.members.length} participants`;
   } else if (details?.type === "channel") {
     name = details.name;
-    sub = `Channel · ${details.subscribers.toLocaleString()} followers`;
+    sub = details.subscribers != null ? `Channel · ${details.subscribers.toLocaleString()} followers` : "Channel";
   } else if (details?.type === "contact") {
     if (details.saved && details.name) {
       name = details.name;

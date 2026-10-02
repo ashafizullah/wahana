@@ -95,9 +95,14 @@ export function NativeChannelRows({
   return (
     <>
       <div className="py-1 border-b border-neutral-100 dark:border-neutral-800">
-        <Row icon={Users}>
-          {d.subscribers.toLocaleString()} follower{d.subscribers === 1 ? "" : "s"}
-        </Row>
+        {d.subscribers != null && (
+          <Row icon={Users}>
+            {d.subscribers.toLocaleString()} follower{d.subscribers === 1 ? "" : "s"}
+          </Row>
+        )}
+        {d.warning && (
+          <div className="px-4 py-2 text-xs text-amber-700 dark:text-amber-400 selectable">Couldn't load channel details: {d.warning}</div>
+        )}
         {d.verified && <Row icon={BadgeCheck}>Verified channel</Row>}
         {manager && <Row icon={Megaphone}>You {d.role === "owner" ? "own" : "manage"} this channel</Row>}
         {d.createdAt && <Row icon={Calendar}>Created {new Date(d.createdAt).toLocaleDateString()}</Row>}

@@ -185,8 +185,11 @@ export interface NativeChannelDetails {
   id: string;
   name: string;
   description: string | null;
-  subscribers: number;
+  /** Null when the server would not give the details (see `warning`). */
+  subscribers: number | null;
   verified: boolean;
+  /** Why the details are partial, with the underlying error. */
+  warning: string | null;
   inviteLink: string | null;
   /** The viewer's role: "owner", "admin", "subscriber" or "guest". */
   role: string | null;

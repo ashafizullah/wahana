@@ -2769,8 +2769,11 @@ pub struct ChannelDetails {
     pub id: String,
     pub name: String,
     pub description: Option<String>,
-    pub subscribers: u64,
+    /// `None` when the server would not give the details (see `warning`).
+    pub subscribers: Option<u64>,
     pub verified: bool,
+    /// Why the details are partial, with the underlying error.
+    pub warning: Option<String>,
     pub invite_link: Option<String>,
     /// "owner", "admin", "subscriber" or "guest".
     pub role: Option<String>,
@@ -2787,13 +2790,26 @@ pub enum ChatDetails {
     Channel(ChannelDetails),
 }
 
+/// An error with its causes appended: library errors often hide the server's answer in `source()`.
+fn error_chain(e: &dyn std::error::Error) -> String {
+    let mut text = e.to_string();
+    let mut source = e.source();
+    while let Some(cause) = source {
+        text.push_str(": ");
+        text.push_str(&cause.to_string());
+        source = cause.source();
+    }
+    text
+}
+
 fn channel_details(meta: &NewsletterMetadata) -> ChannelDetails {
     ChannelDetails {
         id: bare_jid(&meta.jid.to_string()),
         name: meta.name.clone(),
         description: meta.description.clone().filter(|d| !d.trim().is_empty()),
-        subscribers: meta.subscriber_count,
+        subscribers: Some(meta.subscriber_count),
         verified: meta.verification == NewsletterVerification::Verified,
+        warning: None,
         invite_link: meta
             .invite_code
             .as_ref()
@@ -2850,11 +2866,48 @@ pub async fn wa_native_chat_info(
         .map_err(|_| format!("invalid chat id: {chat_id}"))?;
 
     if chat_id.ends_with("@newsletter") {
-        let meta = client
-            .newsletter()
-            .get_metadata(&jid)
-            .await
-            .map_err(|e| e.to_string())?;
+        // The single-channel lookup is sometimes refused; the subscribed list carries the same
+        // data. If both fail, still open the panel (unfollow and mute work) and say why.
+        let newsletter = client.newsletter();
+        let meta = match newsletter.get_metadata(&jid).await {
+            Ok(meta) => Ok(meta),
+            Err(first) => match newsletter.list_subscribed().await {
+                Ok(all) => all
+                    .into_iter()
+                    .find(|m| bare_jid(&m.jid.to_string()) == chat_id)
+                    .ok_or_else(|| error_chain(&first)),
+                Err(second) => Err(format!(
+                    "{}; subscribed list: {}",
+                    error_chain(&first),
+                    error_chain(&second)
+                )),
+            },
+        };
+        let meta = match meta {
+            Ok(meta) => meta,
+            Err(why) => {
+                let name = account
+                    .db
+                    .lock()
+                    .unwrap()
+                    .who(&chat_id)
+                    .ok()
+                    .and_then(|w| w.name)
+                    .unwrap_or_else(|| chat_id.split('@').next().unwrap_or_default().to_string());
+                return Ok(ChatDetails::Channel(ChannelDetails {
+                    id: chat_id,
+                    name,
+                    description: None,
+                    subscribers: None,
+                    verified: false,
+                    warning: Some(why),
+                    invite_link: None,
+                    role: None,
+                    created_at: None,
+                    picture: None,
+                }));
+            }
+        };
         let _ = account
             .db
             .lock()
