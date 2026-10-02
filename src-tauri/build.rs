@@ -30,6 +30,7 @@ const COMMANDS: &[&str] = &[
     "wa_native_rename",
     "wa_native_picture",
     "wa_native_load_older",
+    "wa_native_channel_sync",
     "wa_native_media",
     "wa_native_send_media",
     "wa_native_chat_info",

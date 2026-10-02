@@ -128,7 +128,6 @@ export function NativeMessageMenu({
   message: m,
   pos,
   pinned,
-  readOnly,
   onSave,
   onReply,
   onEdit,
@@ -142,8 +141,6 @@ export function NativeMessageMenu({
   message: NativeMessage;
   pos: { x: number; y: number };
   pinned?: boolean;
-  /** A channel message: no reactions (newsletters use their own protocol). */
-  readOnly?: boolean;
   onSave?: () => void;
   onReply?: () => void;
   onEdit?: () => void;
@@ -181,6 +178,8 @@ export function NativeMessageMenu({
     try {
       await nativeWa.react(accountId, m.chatId, m.id, emoji);
       useReactions.getState().set(m.id, "me", emoji);
+      // A channel shows the server's totals: pull the new ones.
+      if (m.chatId.endsWith("@newsletter")) void nativeWa.channelSync(accountId, m.chatId, false).catch(() => {});
       onClose();
     } catch (e) {
       setErr(errMsg(e));
@@ -224,25 +223,23 @@ export function NativeMessageMenu({
       className="fixed z-50 w-56 overflow-y-auto rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-xl py-1"
       onContextMenu={(e) => e.preventDefault()}
     >
-      {!readOnly && (
-        <div className="flex justify-between px-2 py-1.5 border-b border-neutral-100 dark:border-neutral-800">
-          {QUICK_REACTIONS.map((r) => (
-            <button
-              key={r}
-              disabled={busy !== null}
-              // Picking your current reaction again takes it back, as in WhatsApp.
-              onClick={() => void react(r === myReaction ? "" : r)}
-              title={r === myReaction ? "Remove reaction" : undefined}
-              className={cn(
-                "text-lg rounded-full px-0.5 hover:scale-125 transition disabled:opacity-40",
-                r === myReaction && "bg-neutral-200 dark:bg-neutral-700",
-              )}
-            >
-              {r}
-            </button>
-          ))}
-        </div>
-      )}
+      <div className="flex justify-between px-2 py-1.5 border-b border-neutral-100 dark:border-neutral-800">
+        {QUICK_REACTIONS.map((r) => (
+          <button
+            key={r}
+            disabled={busy !== null}
+            // Picking your current reaction again takes it back, as in WhatsApp.
+            onClick={() => void react(r === myReaction ? "" : r)}
+            title={r === myReaction ? "Remove reaction" : undefined}
+            className={cn(
+              "text-lg rounded-full px-0.5 hover:scale-125 transition disabled:opacity-40",
+              r === myReaction && "bg-neutral-200 dark:bg-neutral-700",
+            )}
+          >
+            {r}
+          </button>
+        ))}
+      </div>
       {onInfo && item(<Info size={14} />, "Info", onInfo)}
       {onReply && item(<Reply size={14} />, "Reply", onReply)}
       {onPin && item(<Pin size={14} />, pinned ? "Unpin" : "Pin (7 days)", onPin)}
@@ -297,7 +294,7 @@ export function NativeMessageMenu({
       {isImage && item(<ScanText size={14} />, "Extract text", () => analyzeMessageImage(accountId, m, "ocr"), !ready)}
       {m.media && onSave && item(<Download size={14} />, "Save file…", onSave)}
       {onEdit && item(<Pencil size={14} />, "Edit", onEdit)}
-      {!readOnly && myReaction && (
+      {myReaction && (
         <button
           disabled={busy !== null}
           onClick={() => void react("")}

@@ -35,6 +35,7 @@
     "allow-wa-native-rename",
     "allow-wa-native-picture",
     "allow-wa-native-load-older",
+    "allow-wa-native-channel-sync",
     "allow-wa-native-media",
     "allow-wa-native-send-media",
     "allow-wa-native-chat-info",

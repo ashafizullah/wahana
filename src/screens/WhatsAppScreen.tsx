@@ -770,12 +770,35 @@ function Conversation({
     }
   };
 
+  // A channel's history lives on the server: fetch the latest page (with reaction totals)
+  // on open and every minute while it stays open.
+  useEffect(() => {
+    if (!channel || !connected) return;
+    const sync = () => nativeWa.channelSync(account.id, chatId, false).catch(() => {});
+    void sync();
+    const timer = setInterval(sync, 60_000);
+    return () => clearInterval(timer);
+  }, [channel, connected, account.id, chatId]);
+
   const loadOlder = () => {
     const el = listRef.current;
     anchor.current = el ? { height: el.scrollHeight, top: el.scrollTop } : null;
     setLimit((l) => l + PAGE);
     if (moreStored) return;
     setAsking(true);
+    if (channel) {
+      nativeWa
+        .channelSync(account.id, chatId, true)
+        .then((n) => {
+          // Nothing newly stored means the start of the channel: stop spinning.
+          if (n === 0) setAsking(false);
+        })
+        .catch((e) => {
+          setAsking(false);
+          onError(errMsg(e));
+        });
+      return;
+    }
     nativeWa.loadOlder(account.id, chatId).catch((e) => {
       setAsking(false);
       onError(errMsg(e));
@@ -865,14 +888,14 @@ function Conversation({
               <Loader2 size={16} className="animate-spin text-neutral-400" />
             ) : asking ? (
               <span className="flex items-center gap-1.5 text-[11px] text-neutral-500">
-                <Loader2 size={12} className="animate-spin" /> Asking your phone for older messages…
+                <Loader2 size={12} className="animate-spin" /> {channel ? "Loading older posts…" : "Asking your phone for older messages…"}
               </span>
             ) : connected && messages.length > 0 ? (
               <button
                 onClick={loadOlder}
                 className="rounded-md bg-white/80 dark:bg-neutral-800 px-2 py-0.5 text-[11px] text-wa-dark dark:text-wa shadow-sm hover:bg-white dark:hover:bg-neutral-700"
               >
-                Load older messages from your phone
+                {channel ? "Load older posts" : "Load older messages from your phone"}
               </button>
             ) : messages.length === 0 ? (
               <span className="rounded-md bg-white/80 dark:bg-neutral-800 px-2 py-0.5 text-[11px] text-neutral-600 dark:text-neutral-300 shadow-sm">
@@ -942,7 +965,6 @@ function Conversation({
             message={menu.m}
             pos={menu.pos}
             pinned={isPinned(pins, prefsKey, menu.m.id)}
-            readOnly={channel}
             onSave={() => saveNativeMedia(account.id, menu.m).catch((e) => onError(errMsg(e)))}
             onReply={
               channel || menu.m.revokedAt
@@ -1103,7 +1125,11 @@ const Bubble = memo(function Bubble({
   const [showEdits, setShowEdits] = useState(false);
   // Deleted for everyone: the stored copy keeps what it said; older tombstones only know that it went.
   const revoked = m.revokedAt != null || (!!tomb && (tomb.kind ?? "revoked") === "revoked");
-  const reactions = summarize(reactionMap, []);
+  // A channel reports totals only; mine comes from what I reacted locally.
+  const reactions =
+    m.channelReactions.length > 0
+      ? m.channelReactions.map((r) => ({ emoji: r.emoji, count: r.count, me: reactionMap?.me === r.emoji }))
+      : summarize(reactionMap, []);
   return (
     <div className={cn("flex", mine ? "justify-end" : "justify-start")}>
       <div className={cn("flex flex-col max-w-[70%]", mine ? "items-end" : "items-start")}>

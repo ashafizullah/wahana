@@ -111,6 +111,15 @@ pub struct MessageView {
     pub edited_at: Option<i64>,
     /// Earlier texts of an edited message, oldest first.
     pub edits: Vec<EditView>,
+    /// Reaction totals on a channel message (the server reports counts, not who reacted).
+    pub channel_reactions: Vec<ChannelReaction>,
+}
+
+/// How many times one emoji was used on a channel message.
+#[derive(Clone, Serialize)]
+pub struct ChannelReaction {
+    pub emoji: String,
+    pub count: u64,
 }
 
 /// One earlier text of an edited message.
@@ -791,6 +800,7 @@ fn history_message(chat_id: &str, info: &wa::WebMessageInfo) -> Option<IncomingM
             revoked_at: None,
             edited_at: None,
             edits: Vec::new(),
+            channel_reactions: Vec::new(),
         },
         sender_id,
         media,
@@ -1249,11 +1259,23 @@ async fn run_account(
                     revoked_at: None,
                     edited_at: None,
                     edits: Vec::new(),
+                    channel_reactions: Vec::new(),
                 },
                 sender_id: if from_me { String::new() } else { sender },
                 media,
             };
+            let channel_ref = (message.view.chat_id.ends_with("@newsletter")
+                && ctx.info.server_id > 0)
+                .then(|| (message.view.chat_id.clone(), message.view.id.clone()));
             record_message(&app, &account, generation, message);
+            if let Some((chat, id)) = channel_ref {
+                let _ =
+                    account
+                        .db
+                        .lock()
+                        .unwrap()
+                        .set_server_id(&chat, &id, ctx.info.server_id as i64);
+            }
         }
     };
 
@@ -1593,6 +1615,7 @@ pub async fn wa_native_send_text(
             revoked_at: None,
             edited_at: None,
             edits: Vec::new(),
+            channel_reactions: Vec::new(),
         },
         sender_id: String::new(),
         media: None,
@@ -1625,10 +1648,20 @@ pub async fn wa_native_react(
         .message_target(&chat_id, &message_id)
         .map_err(|e| e.to_string())?
         .ok_or("message not found")?;
-    let key = target_key(&account, &chat_id, &message_id, &target);
     let to: Jid = chat_id
         .parse()
         .map_err(|_| format!("invalid chat id: {chat_id}"))?;
+    if chat_id.ends_with("@newsletter") {
+        let server_id = target
+            .server_id
+            .ok_or("this channel message can't be reacted to (no server id; only messages received while connected can)")?;
+        return client
+            .newsletter()
+            .send_reaction(&to, server_id as u64, &emoji)
+            .await
+            .map_err(|e| e.to_string());
+    }
+    let key = target_key(&account, &chat_id, &message_id, &target);
     client
         .send_reaction(to, key, &emoji)
         .await
@@ -1804,6 +1837,7 @@ pub async fn wa_native_forward(
         revoked_at: None,
         edited_at: None,
         edits: Vec::new(),
+        channel_reactions: Vec::new(),
     };
     record_message(
         &app,
@@ -1929,6 +1963,94 @@ pub async fn wa_native_load_older(
     Ok(())
 }
 
+/// Fetches a page of a channel's own history from the server: the latest messages, or with
+/// `older` the page before the oldest one stored. Stores them with their server ids and
+/// reaction totals, and returns how many the server sent (0 means the start of the channel).
+#[tauri::command]
+pub async fn wa_native_channel_sync(
+    app: AppHandle,
+    state: State<'_, WaState>,
+    id: String,
+    chat_id: String,
+    older: bool,
+) -> Result<usize, String> {
+    let account = state.get(&id)?;
+    let (client, generation) = {
+        let inner = account.inner.lock().unwrap();
+        (
+            inner
+                .client
+                .clone()
+                .ok_or("WhatsApp account is not running")?,
+            inner.generation,
+        )
+    };
+    let jid: Jid = chat_id
+        .parse()
+        .map_err(|_| format!("invalid chat id: {chat_id}"))?;
+    let before = if older {
+        account
+            .db
+            .lock()
+            .unwrap()
+            .oldest_server_id(&chat_id)
+            .map_err(|e| e.to_string())?
+            .map(|id| id as u64)
+    } else {
+        None
+    };
+    let page = client
+        .newsletter()
+        .get_messages(jid, OLDER_PAGE as u32, before)
+        .await
+        .map_err(|e| e.to_string())?;
+    if !account.is_current(generation) {
+        return Ok(0);
+    }
+    let count = page.len();
+    let result = account.db.lock().unwrap().batch(|db| {
+        for m in &page {
+            if m.message_id.is_empty() {
+                continue;
+            }
+            let reactions: Vec<(String, u64)> = m
+                .reactions
+                .iter()
+                .map(|r| (r.code.clone(), r.count))
+                .collect();
+            if let Some((kind, body, media)) = m.message.as_ref().and_then(message_content) {
+                let message = IncomingMessage {
+                    view: MessageView {
+                        id: m.message_id.clone(),
+                        chat_id: chat_id.clone(),
+                        from_me: m.is_sender,
+                        sender_name: String::new(),
+                        sender_phone: None,
+                        kind,
+                        body,
+                        timestamp: m.timestamp as i64 * 1000,
+                        media: None,
+                        ack: ACK_SENT,
+                        revoked_at: None,
+                        edited_at: None,
+                        edits: Vec::new(),
+                        channel_reactions: Vec::new(),
+                    },
+                    sender_id: String::new(),
+                    media,
+                };
+                db.insert_message(&message, false)?;
+            }
+            db.set_server_id(&chat_id, &m.message_id, m.server_id as i64)?;
+            db.set_channel_reactions(&chat_id, &m.message_id, &reactions)?;
+        }
+        Ok(())
+    });
+    result.map_err(|e| e.to_string())?;
+    emit_chats(&app, &account);
+    Ok(count)
+}
+
 /// Clears the local unread count (its own command; see `wa_native_send_receipt` for blue ticks).
 #[tauri::command]
 pub fn wa_native_mark_read(
@@ -2031,7 +2153,10 @@ pub async fn wa_native_mark_all_read(
     if let Some(client) = client {
         for chat in targets {
             if let Ok(jid) = chat.parse::<Jid>() {
-                let _ = client.chat_actions().mark_chat_as_read(&jid, true, None).await;
+                let _ = client
+                    .chat_actions()
+                    .mark_chat_as_read(&jid, true, None)
+                    .await;
             }
         }
     }
@@ -2429,6 +2554,7 @@ pub async fn wa_native_send_media(
             revoked_at: None,
             edited_at: None,
             edits: Vec::new(),
+            channel_reactions: Vec::new(),
         },
         sender_id: String::new(),
         media,

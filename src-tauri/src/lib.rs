@@ -108,6 +108,7 @@ pub fn run() {
             whatsapp::wa_native_rename,
             whatsapp::wa_native_picture,
             whatsapp::wa_native_load_older,
+            whatsapp::wa_native_channel_sync,
             whatsapp::wa_native_media,
             whatsapp::wa_native_send_media,
             whatsapp::wa_native_chat_info,

@@ -68,6 +68,8 @@ export interface NativeMessage {
   editedAt: number | null;
   /** Earlier texts of an edited message, oldest first. */
   edits: NativeEdit[];
+  /** Reaction totals on a channel message (the server reports counts, not who reacted). */
+  channelReactions: { emoji: string; count: number }[];
 }
 
 /** When one recipient got, read and played a message of mine (unix ms; null = not seen). */
@@ -244,6 +246,8 @@ export const nativeWa = {
   messages: (id: string, chatId: string, limit: number) => invoke<NativeMessage[]>("wa_native_messages", { id, chatId, limit }),
   /** Ask the phone for older messages; they arrive later as a chats update. */
   loadOlder: (id: string, chatId: string) => invoke<void>("wa_native_load_older", { id, chatId }),
+  /** Fetch a channel's latest page, or with `older` the page before the oldest stored; resolves to how many came back. */
+  channelSync: (id: string, chatId: string, older: boolean) => invoke<number>("wa_native_channel_sync", { id, chatId, older }),
   markRead: (id: string, chatId: string) => invoke<void>("wa_native_mark_read", { id, chatId }),
   /** Per-recipient delivery, read and played times for a message I sent. */
   messageInfo: (id: string, messageId: string) => invoke<NativeReceipt[]>("wa_native_message_info", { id, messageId }),
