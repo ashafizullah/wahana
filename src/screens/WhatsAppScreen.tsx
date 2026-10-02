@@ -2,7 +2,6 @@ import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useStat
 import {
   Bell,
   BellOff,
-  Check,
   Languages,
   Loader2,
   LogOut,
@@ -35,7 +34,7 @@ import { WaMarkdown, stripWaMarkdown } from "@/lib/waMarkdown";
 import { nativeWa, type NativeAccount, type NativeChat, type NativeLabel, type NativeMessage, type NativeWaStatus } from "@/lib/nativeWa";
 import { TranslateDraftButton, WriteAssistButton } from "@/screens/chats/Composer";
 import { QuickReplyPicker } from "@/components/QuickReplyPicker";
-import { ImageNoteView, TranslationView } from "@/screens/chats/MessageBubble";
+import { AckIcon, ImageNoteView, TranslationView } from "@/screens/chats/MessageBubble";
 import { NativeMessageMenu, NativeSmartReplies, NativeSummaryModal, useNativeAutoTranslate } from "@/screens/whatsapp/NativeAi";
 import { NativeInfoPanel } from "@/screens/whatsapp/NativeInfoPanel";
 import { usePicture } from "@/screens/whatsapp/usePicture";
@@ -606,7 +605,7 @@ const ChatRow = memo(function ChatRow({
               chat.unread ? "text-neutral-800 dark:text-neutral-100 font-medium" : "text-neutral-500",
             )}
           >
-            {chat.lastFromMe && <Check size={12} className="inline mr-1 -mt-0.5" />}
+            {chat.lastFromMe && <AckIcon ack={chat.lastAck} className="inline mr-1 -mt-0.5" />}
             {preview}
           </div>
           {chat.unread > 0 && (
@@ -1153,7 +1152,7 @@ const Bubble = memo(function Bubble({
           <ImageNoteView id={m.id} />
           <div className="flex items-center justify-end gap-1 mt-0.5 text-[10px] text-neutral-500 dark:text-neutral-300/70">
             {formatTime(secs(m.timestamp))}
-            {mine && <Check size={12} />}
+            {mine && <AckIcon ack={m.ack} />}
           </div>
         </div>
         {reactions.length > 0 && (

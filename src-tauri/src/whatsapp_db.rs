@@ -14,7 +14,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use crate::whatsapp::{ChatInfo, MediaInfo, MessageKind, MessageView};
 
 /// Bumped with every schema change; `open` migrates older files up to it.
-const SCHEMA_VERSION: i64 = 3;
+const SCHEMA_VERSION: i64 = 4;
 
 /// How much a name source is trusted. A name only replaces one from an equal or lower
 /// source, so a push name never overwrites a contact's saved name.
@@ -170,6 +170,13 @@ impl ChatDb {
                  CREATE INDEX IF NOT EXISTS chat_labels_by_chat ON chat_labels (chat_id);",
             )?;
         }
+        if version < 4 {
+            // Messages stored before receipts were tracked count as sent.
+            conn.execute_batch(
+                "ALTER TABLE messages ADD COLUMN ack INTEGER NOT NULL DEFAULT 1;
+                 CREATE INDEX IF NOT EXISTS messages_by_id ON messages (id);",
+            )?;
+        }
         conn.execute_batch(&format!("PRAGMA user_version = {SCHEMA_VERSION}"))?;
         // Statuses are stored as messages under `status@broadcast`, not as a chat; drop any
         // row an earlier build created for it.
@@ -243,8 +250,8 @@ impl ChatDb {
         let m = msg.media.as_ref();
         let inserted = self.conn.execute(
             "INSERT OR IGNORE INTO messages (chat_id, id, from_me, sender_id, sender_name, kind, body, timestamp,
-                 media_kind, mimetype, file_name, file_size, seconds, width, height, thumbnail, media_proto)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
+                 media_kind, mimetype, file_name, file_size, seconds, width, height, thumbnail, media_proto, ack)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
             params![
                 v.chat_id,
                 v.id,
@@ -263,9 +270,17 @@ impl ChatDb {
                 m.and_then(|m| m.height),
                 m.and_then(|m| m.thumbnail.as_deref()),
                 m.map(|m| m.proto.as_slice()),
+                v.ack,
             ],
         )? > 0;
         if !inserted {
+            // A history resend may know a later delivery state than what was stored.
+            if v.from_me {
+                self.conn.execute(
+                    "UPDATE messages SET ack = ?3 WHERE chat_id = ?1 AND id = ?2 AND ack < ?3",
+                    params![v.chat_id, v.id, v.ack],
+                )?;
+            }
             // Messages stored before attachments were kept have no media columns; fill
             // them in when the same message comes round again (e.g. "load older").
             if let Some(m) = m {
@@ -327,6 +342,20 @@ impl ChatDb {
             ],
         )?;
         Ok(true)
+    }
+
+    /// Moves my messages with these ids forward to `ack` (never back). Matched by id alone:
+    /// a receipt may name the chat by phone number or privacy id, whichever the chat isn't
+    /// stored under. Returns whether any message changed.
+    pub fn raise_ack(&self, ids: &[String], ack: u8) -> rusqlite::Result<bool> {
+        let mut stmt = self
+            .conn
+            .prepare("UPDATE messages SET ack = ?2 WHERE id = ?1 AND from_me = 1 AND ack < ?2")?;
+        let mut changed = false;
+        for id in ids {
+            changed |= stmt.execute(params![id, ack])? > 0;
+        }
+        Ok(changed)
     }
 
     /// Removes one stored message (e.g. a status I deleted).
@@ -433,7 +462,9 @@ impl ChatDb {
 
     pub fn chats(&self) -> rusqlite::Result<Vec<ChatInfo>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, fallback_name, last_text, last_timestamp, last_from_me, last_sender_id, last_sender, unread
+            "SELECT id, fallback_name, last_text, last_timestamp, last_from_me, last_sender_id, last_sender, unread,
+                    (SELECT ack FROM messages m WHERE m.chat_id = chats.id AND m.from_me = 1
+                     ORDER BY m.timestamp DESC LIMIT 1)
              FROM chats WHERE id != 'status@broadcast' ORDER BY last_timestamp DESC",
         )?;
         let rows = stmt.query_map([], |r| {
@@ -446,13 +477,23 @@ impl ChatDb {
                 r.get::<_, String>(5)?,
                 r.get::<_, String>(6)?,
                 r.get::<_, u32>(7)?,
+                r.get::<_, Option<u8>>(8)?,
             ))
         })?;
         let mut senders: HashMap<String, Resolved> = HashMap::new();
         let mut chats = Vec::new();
         for row in rows {
-            let (id, fallback, last_text, last_timestamp, last_from_me, sender_id, sender, unread) =
-                row?;
+            let (
+                id,
+                fallback,
+                last_text,
+                last_timestamp,
+                last_from_me,
+                sender_id,
+                sender,
+                unread,
+                last_ack,
+            ) = row?;
             let who = self.resolve(&id)?;
             let last_sender = if sender_id.is_empty() {
                 sender
@@ -484,6 +525,7 @@ impl ChatDb {
                 last_text,
                 last_timestamp,
                 last_from_me,
+                last_ack: last_ack.unwrap_or(1),
                 last_sender,
                 unread,
             });
@@ -634,6 +676,7 @@ impl ChatDb {
                     body: r.get(6)?,
                     timestamp: r.get(7)?,
                     media: media.transpose()?,
+                    ack: 0,
                 },
             ))
         })?;
@@ -683,7 +726,7 @@ impl ChatDb {
         let mut stmt = self.conn.prepare(&format!(
             "SELECT * FROM (
                  SELECT id, chat_id, from_me, sender_id, sender_name, kind, body, timestamp,
-                        media_kind, mimetype, file_name, file_size, seconds, width, height, thumbnail
+                        media_kind, mimetype, file_name, file_size, seconds, width, height, thumbnail, ack
                  FROM messages
                  WHERE chat_id = ?1 {filter}
                  ORDER BY timestamp DESC
@@ -719,6 +762,7 @@ impl ChatDb {
                     body: r.get(6)?,
                     timestamp: r.get(7)?,
                     media: media.transpose()?,
+                    ack: r.get(16)?,
                 },
             ))
         })?;

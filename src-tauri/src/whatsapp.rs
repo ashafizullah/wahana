@@ -78,6 +78,8 @@ pub struct ChatInfo {
     pub last_text: String,
     pub last_timestamp: i64,
     pub last_from_me: bool,
+    /// Delivery state of my newest message in the chat (see `MessageView::ack`).
+    pub last_ack: u8,
     /// Name of whoever sent the last message, for "Name: text" group previews.
     pub last_sender: String,
     pub unread: u32,
@@ -101,7 +103,15 @@ pub struct MessageView {
     pub body: String,
     pub timestamp: i64,
     pub media: Option<MediaInfo>,
+    /// Delivery state of a message I sent: 0 pending, 1 sent, 2 delivered, 3 read, 4 played.
+    pub ack: u8,
 }
+
+/// `MessageView::ack` values.
+const ACK_SENT: u8 = 1;
+const ACK_DELIVERED: u8 = 2;
+const ACK_READ: u8 = 3;
+const ACK_PLAYED: u8 = 4;
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -706,6 +716,18 @@ async fn map_lids(app: &AppHandle, account: &WaAccount, generation: u64, client:
     }
 }
 
+/// A history message's delivery state, as the phone last knew it.
+fn history_ack(info: &wa::WebMessageInfo) -> u8 {
+    use wa::web_message_info::Status;
+    match info.status {
+        Some(Status::DeliveryAck) => ACK_DELIVERED,
+        Some(Status::Read) => ACK_READ,
+        Some(Status::Played) => ACK_PLAYED,
+        Some(Status::Error) | Some(Status::Pending) => 0,
+        _ => ACK_SENT,
+    }
+}
+
 /// Converts one message from a history transfer.
 fn history_message(chat_id: &str, info: &wa::WebMessageInfo) -> Option<IncomingMessage> {
     let key = info.key.as_option()?;
@@ -733,6 +755,7 @@ fn history_message(chat_id: &str, info: &wa::WebMessageInfo) -> Option<IncomingM
             body,
             timestamp: info.message_timestamp.unwrap_or_default() as i64 * 1000,
             media: None,
+            ack: history_ack(info),
         },
         sender_id,
         media,
@@ -793,6 +816,35 @@ async fn handle_event(app: AppHandle, account: Arc<WaAccount>, generation: u64, 
         return;
     }
     match &*event {
+        // Delivery and read receipts for messages I sent. Receipts from my own other
+        // devices (`is_from_me`) say nothing about the recipient. In a group, the first
+        // participant to receive or read a message moves it on.
+        Event::Receipt(receipt) => {
+            use whatsapp_rust::types::presence::ReceiptType;
+            if receipt.source.is_from_me {
+                return;
+            }
+            let ack = match receipt.r#type {
+                ReceiptType::Delivered => ACK_DELIVERED,
+                ReceiptType::Read => ACK_READ,
+                ReceiptType::Played => ACK_PLAYED,
+                _ => return,
+            };
+            let ids: Vec<String> = receipt
+                .message_ids
+                .iter()
+                .map(|id| id.to_string())
+                .collect();
+            let changed = account
+                .db
+                .lock()
+                .unwrap()
+                .raise_ack(&ids, ack)
+                .unwrap_or(false);
+            if changed {
+                emit_chats(&app, &account);
+            }
+        }
         Event::HistorySync(sync) => {
             let progress = sync.progress();
             let sync = (**sync).clone();
@@ -1103,6 +1155,7 @@ async fn run_account(
                     body,
                     timestamp: ctx.info.timestamp.timestamp_millis(),
                     media: None,
+                    ack: ACK_SENT,
                 },
                 sender_id: if from_me { String::new() } else { sender },
                 media,
@@ -1158,6 +1211,7 @@ async fn run_account(
         .on_message(on_message)
         .on_event_for(
             &[
+                EventKind::Receipt,
                 EventKind::HistorySync,
                 EventKind::ContactUpdate,
                 EventKind::PushNameUpdate,
@@ -1441,6 +1495,7 @@ pub async fn wa_native_send_text(
             body: text,
             timestamp: now_millis(),
             media: None,
+            ack: ACK_SENT,
         },
         sender_id: String::new(),
         media: None,
@@ -1638,6 +1693,7 @@ pub async fn wa_native_forward(
         body: target.body,
         timestamp: now_millis(),
         media: None,
+        ack: ACK_SENT,
     };
     record_message(
         &app,
@@ -2086,6 +2142,7 @@ pub async fn wa_native_send_media(
             body,
             timestamp: now_millis(),
             media: None,
+            ack: ACK_SENT,
         },
         sender_id: String::new(),
         media,

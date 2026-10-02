@@ -27,6 +27,8 @@ export interface NativeChat {
   lastText: string;
   lastTimestamp: number;
   lastFromMe: boolean;
+  /** Delivery state of my newest message (see `NativeMessage.ack`). */
+  lastAck: number;
   lastSender: string;
   unread: number;
   /** "+62…" for a direct chat whose number is known. */
@@ -58,6 +60,8 @@ export interface NativeMessage {
   body: string;
   timestamp: number;
   media: NativeMedia | null;
+  /** Delivery state of a message I sent: 0 pending, 1 sent, 2 delivered, 3 read, 4 played. */
+  ack: number;
 }
 
 export interface NativeQr {
