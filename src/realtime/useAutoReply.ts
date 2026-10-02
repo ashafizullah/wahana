@@ -1,12 +1,12 @@
 import { useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { sendNotification } from "@tauri-apps/plugin-notification";
-import { useSettings } from "@/store/settings";
+import { clientForProfile, useSettings } from "@/store/settings";
 import { useChatPrefs } from "@/store/chatPrefs";
 import { activeRules, lastReplyAt, logReply, repliesSince, repliesToday, ruleMatches, type AutoReplyRule } from "@/store/autoReply";
 import { expandTemplate } from "@/store/quickReplies";
 import { aiAutoReply } from "@/lib/autoReplyAi";
-import { accountParts, useAccounts } from "@/lib/account";
+import { accountParts } from "@/lib/account";
 import { markSeenOn, sendTextOn } from "@/lib/send";
 import { nativeWa } from "@/lib/nativeWa";
 import { qk } from "@/api/queries";
@@ -30,15 +30,14 @@ const MANUAL_QUIET_S = 15 * 60;
  * subject to a per-chat cooldown. Runs while the app is alive (tray is fine).
  */
 export function useAutoReply() {
-  const accounts = useAccounts();
   const qc = useQueryClient();
   const inflight = useRef(new Set<string>()); // "account:chat" currently being answered
   const handled = useRef(new Set<string>()); // "account:messageId" already considered
   const dailyLimitWarned = useRef(false);
-  const hasAccounts = accounts.length > 0;
 
+  // Always listening: rules of a WAHA server that is not the active one still get messages
+  // (see useProfileSockets) even when the active profile has no sessions.
   useEffect(() => {
-    if (!hasAccounts) return;
     const onIncoming = (ev: Event) => {
       const { account, chatId, message } = (ev as CustomEvent<IncomingMessage>).detail;
       void handle(account, chatId, message);
@@ -57,10 +56,12 @@ export function useAutoReply() {
           hasMedia: !!m.media,
         })) as unknown as WAMessage[];
       }
-      if (!p?.session) return [];
-      const cached = qc.getQueryData<WAMessage[]>(qk.messages(p.session, chatId));
+      if (p?.kind !== "waha" || !p.session) return [];
+      // The query cache is keyed by session name only, so it belongs to the active server.
+      const isActive = !p.profile || p.profile === useSettings.getState().activeProfile;
+      const cached = isActive ? qc.getQueryData<WAMessage[]>(qk.messages(p.session, chatId)) : undefined;
       if (cached) return cached;
-      const c = useSettings.getState().client;
+      const c = await clientForProfile(p.profile).catch(() => null);
       if (!c) return [];
       return c.messages(p.session, chatId, { limit, downloadMedia: false }).catch(() => []);
     };
@@ -173,5 +174,5 @@ export function useAutoReply() {
 
     window.addEventListener("wahana:incoming", onIncoming);
     return () => window.removeEventListener("wahana:incoming", onIncoming);
-  }, [hasAccounts, qc]);
+  }, [qc]);
 }

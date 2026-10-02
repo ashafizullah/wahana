@@ -29,6 +29,7 @@ import { useAutoLabel } from "@/realtime/useAutoLabel";
 import { useScheduler } from "@/realtime/useScheduler";
 import { totalWhatsAppUnread, useWhatsApp } from "@/store/whatsapp";
 import { useAutoReply } from "@/realtime/useAutoReply";
+import { useProfileSockets } from "@/realtime/useProfileSockets";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { ConfirmHost } from "@/components/Confirm";
 import { useHidden } from "@/store/hidden";
@@ -80,6 +81,7 @@ export default function App() {
   useScheduler();
   useBroadcastRunner();
   useAutoReply();
+  useProfileSockets();
   useAutoLabel();
   useEffect(() => {
     pruneLogs().catch((e) => console.warn("log pruning failed", e));

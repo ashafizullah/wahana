@@ -1,4 +1,4 @@
-import { useAccounts } from "@/lib/account";
+import { useAccountLabel, useAccounts } from "@/lib/account";
 import { cn } from "@/lib/utils";
 
 /** Pick which account (WAHA session or native number) something sends from. */
@@ -14,6 +14,7 @@ export function AccountSelect({
   allowAll?: string;
 }) {
   const accounts = useAccounts();
+  const label = useAccountLabel();
   // Keep a since-removed account selectable so an existing job can still be seen/edited.
   const known = accounts.some((a) => a.key === value);
   return (
@@ -27,7 +28,7 @@ export function AccountSelect({
       title="Account"
     >
       {allowAll !== undefined && <option value="">{allowAll}</option>}
-      {value && !known && <option value={value}>{value}</option>}
+      {value && !known && <option value={value}>{label(value)}</option>}
       {accounts.map((a) => (
         <option key={a.key} value={a.key}>
           {a.label}

@@ -68,7 +68,15 @@ export function useAccounts(): AccountRef[] {
 /** A function that turns an account key into its label (falls back to the raw key). */
 export function useAccountLabel(): (key: string) => string {
   const accounts = useAccounts();
-  return (key) => accounts.find((a) => a.key === key)?.label ?? key;
+  const profiles = useSettings((s) => s.profiles);
+  return (key) => {
+    const known = accounts.find((a) => a.key === key)?.label;
+    if (known) return known;
+    // A session of another WAHA server: name the server instead of showing its id.
+    const p = accountParts(key);
+    const server = p?.kind === "waha" ? profiles.find((x) => x.id === p.profile)?.name : undefined;
+    return server ? `${p!.session} · ${server}` : key;
+  };
 }
 
 /** The account the chat screen is showing: a native account if one is picked, else the WAHA session. */

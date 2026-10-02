@@ -1,7 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSettings } from "@/store/settings";
-import { useAccounts } from "@/lib/account";
 import { sendMediaOn, sendTextOn } from "@/lib/send";
 import { getBroadcast, listRunning, markItem, nextPending, setBroadcastStatus } from "@/store/broadcast";
 import { expandTemplate } from "@/store/quickReplies";
@@ -16,15 +15,12 @@ export const MAX_CONSECUTIVE_ERRORS = 5;
  * between recipients (anti-spam). Runs while the app is alive.
  */
 export function useBroadcastRunner() {
-  const accounts = useAccounts();
   const qc = useQueryClient();
   const busy = useRef(false);
   const nextAt = useRef<Record<string, number>>({});
   const errorStreak = useRef<Record<string, number>>({});
-  const hasAccounts = accounts.length > 0;
 
   useEffect(() => {
-    if (!hasAccounts) return;
     const tick = async () => {
       if (busy.current) return;
       busy.current = true;
@@ -85,7 +81,7 @@ export function useBroadcastRunner() {
     void tick();
     const t = setInterval(tick, 1000);
     return () => clearInterval(t);
-  }, [hasAccounts, qc]);
+  }, [qc]);
 }
 
 export { getBroadcast };

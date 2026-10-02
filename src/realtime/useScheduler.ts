@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { accountParts, useAccounts } from "@/lib/account";
+import { accountParts } from "@/lib/account";
 import { postStatusMediaOn, postStatusTextOn, sendMediaOn, sendTextOn, type SendOutcome } from "@/lib/send";
 import { useSettings } from "@/store/settings";
 import { claimRun, dueSchedules, nextOccurrence, recordRun, type Schedule } from "@/store/scheduler";
@@ -28,13 +28,10 @@ async function execute(s: Schedule): Promise<SendOutcome | void> {
 
 /** Runs due schedules of every account while the app is alive (window may be hidden in the tray). */
 export function useScheduler() {
-  const accounts = useAccounts();
   const qc = useQueryClient();
   const running = useRef(false);
-  const hasAccounts = accounts.length > 0;
 
   useEffect(() => {
-    if (!hasAccounts) return;
     const tick = async () => {
       if (running.current) return;
       running.current = true;
@@ -75,5 +72,5 @@ export function useScheduler() {
     void tick();
     const t = setInterval(tick, TICK_MS);
     return () => clearInterval(t);
-  }, [hasAccounts, qc]);
+  }, [qc]);
 }

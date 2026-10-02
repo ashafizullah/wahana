@@ -244,3 +244,11 @@ export function textMatches(r: Pick<AutoReplyRule, "match_kind" | "pattern">, bo
 export function ruleMatches(r: AutoReplyRule, chatId: string, body: string, now = new Date()) {
   return scopeMatches(r, chatId) && inWindow(r, now) && textMatches(r, body);
 }
+
+/** WAHA profiles (servers) that have at least one enabled rule. */
+export async function wahaRuleProfiles(): Promise<string[]> {
+  const rows = await (
+    await db()
+  ).select<{ profile: string }[]>("SELECT DISTINCT profile FROM auto_reply_rules WHERE enabled = 1 AND account LIKE 'waha:%'");
+  return rows.map((r) => r.profile).filter(Boolean);
+}
