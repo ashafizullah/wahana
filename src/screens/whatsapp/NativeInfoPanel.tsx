@@ -34,6 +34,7 @@ import {
 } from "@/lib/nativeWa";
 import { cn, errMsg, formatTime } from "@/lib/utils";
 import { WaMarkdown } from "@/lib/waMarkdown";
+import { NativeChannelRows } from "@/screens/whatsapp/NativeChannel";
 import { MemberMenu, NativeGroupTools } from "@/screens/whatsapp/NativeGroupManage";
 import { nativeMediaBlob, saveNativeMedia } from "@/screens/whatsapp/NativeMediaView";
 import { usePicture } from "@/screens/whatsapp/usePicture";
@@ -63,6 +64,7 @@ export function NativeInfoPanel({
   onClose: () => void;
 }) {
   const group = chatId.endsWith("@g.us");
+  const channel = chatId.endsWith("@newsletter");
   const [view, setView] = useState<"info" | "media">("info");
   const [details, setDetails] = useState<NativeChatDetails | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -95,7 +97,9 @@ export function NativeInfoPanel({
   return (
     <aside className="w-80 shrink-0 flex flex-col border-l border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900">
       <div className="h-14 shrink-0 flex items-center gap-2 px-4 border-b border-neutral-200 dark:border-neutral-800">
-        <span className="font-semibold flex-1">{view === "media" ? "Media, links & docs" : group ? "Group info" : "Contact info"}</span>
+        <span className="font-semibold flex-1">
+          {view === "media" ? "Media, links & docs" : group ? "Group info" : channel ? "Channel info" : "Contact info"}
+        </span>
         <button onClick={onClose}>
           <X size={16} />
         </button>
@@ -116,6 +120,12 @@ export function NativeInfoPanel({
           {!details && !error && <Loader2 className="animate-spin text-neutral-400 m-4" />}
           {error && <div className="p-4 text-xs text-red-600 selectable">{error}</div>}
           {details?.type === "contact" && <ContactRows details={details} />}
+          {details?.type === "channel" && (
+            <>
+              {details.description && <Description text={details.description} />}
+              <NativeChannelRows accountId={accountId} details={details} connected={connected} onLeft={onClose} />
+            </>
+          )}
           {details?.type === "group" && (
             <>
               {details.description && <Description text={details.description} />}
@@ -162,6 +172,9 @@ function Header({ chatId, details, picture }: { chatId: string; details: NativeC
   if (details?.type === "group") {
     name = details.subject;
     sub = `Group · ${details.members.length} participants`;
+  } else if (details?.type === "channel") {
+    name = details.name;
+    sub = `Channel · ${details.subscribers.toLocaleString()} followers`;
   } else if (details?.type === "contact") {
     if (details.saved && details.name) {
       name = details.name;

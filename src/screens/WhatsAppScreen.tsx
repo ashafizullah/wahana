@@ -19,6 +19,7 @@ import {
   Reply,
   Trash2,
   CheckSquare,
+  Plus,
   Check,
 } from "lucide-react";
 import { Avatar, Button, Input, Popover } from "@/components/ui";
@@ -37,6 +38,7 @@ import { LinkPreviewCard } from "@/components/LinkPreview";
 import { AckIcon, ImageNoteView, TranslationView } from "@/screens/chats/MessageBubble";
 import { NativeMessageMenu, NativeSmartReplies, NativeSummaryModal, useNativeAutoTranslate } from "@/screens/whatsapp/NativeAi";
 import { NativeMessageInfo } from "@/screens/whatsapp/NativeMessageInfo";
+import { NativeFollowChannel } from "@/screens/whatsapp/NativeChannel";
 import { NativeInfoPanel } from "@/screens/whatsapp/NativeInfoPanel";
 import { usePicture } from "@/screens/whatsapp/usePicture";
 import { useNativeTyping } from "@/screens/whatsapp/useNativeTyping";
@@ -197,6 +199,7 @@ function ChatList({
   const [labelsFor, setLabelsFor] = useState<NativeChat | null>(null);
   const [relabel, setRelabel] = useState(0);
   const [selecting, setSelecting] = useState(false);
+  const [following, setFollowing] = useState(false);
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -335,6 +338,15 @@ function ChatList({
             </button>
           ))}
           <span className="ml-auto flex items-center gap-1">
+            {!selecting && filter === "channels" && (
+              <button
+                onClick={() => setFollowing(true)}
+                title="Follow a channel from its link"
+                className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300"
+              >
+                <Plus size={12} /> Follow
+              </button>
+            )}
             {!selecting && totalUnread > 0 && (
               <button
                 onClick={() => void markRead()}
@@ -426,6 +438,7 @@ function ChatList({
           })
         )}
       </div>
+      {following && <NativeFollowChannel accountId={account.id} onFollowed={(id) => onSelect(id)} onClose={() => setFollowing(false)} />}
       {menu && (
         <RowMenu
           accountId={account.id}

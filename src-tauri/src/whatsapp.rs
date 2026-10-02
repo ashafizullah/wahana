@@ -17,7 +17,9 @@ use serde::{Deserialize, Serialize};
 use tauri::ipc::{InvokeBody, Request, Response};
 use tauri::{AppHandle, Emitter, Manager, State};
 use whatsapp_rust::download::{Downloadable, MediaType};
-use whatsapp_rust::features::ParticipantChangeResponse;
+use whatsapp_rust::features::{
+    NewsletterMetadata, NewsletterRole, NewsletterVerification, ParticipantChangeResponse,
+};
 use whatsapp_rust::prelude::*;
 use whatsapp_rust::send::{PinDuration, RevokeType};
 use whatsapp_rust::sync_task::MajorSyncTask;
@@ -2051,6 +2053,111 @@ pub async fn wa_native_channel_sync(
     Ok(count)
 }
 
+fn running_client(account: &WaAccount) -> Result<Arc<Client>, String> {
+    account
+        .inner
+        .lock()
+        .unwrap()
+        .client
+        .clone()
+        .ok_or_else(|| "WhatsApp account is not running".to_string())
+}
+
+/// Follows a channel from its invite link (or bare code) and returns its chat id.
+#[tauri::command]
+pub async fn wa_native_channel_follow(
+    app: AppHandle,
+    state: State<'_, WaState>,
+    id: String,
+    invite: String,
+) -> Result<String, String> {
+    let account = state.get(&id)?;
+    let client = running_client(&account)?;
+    let code = invite
+        .trim()
+        .split(['?', '#'])
+        .next()
+        .unwrap_or_default()
+        .trim_end_matches('/')
+        .rsplit('/')
+        .next()
+        .unwrap_or_default()
+        .to_string();
+    if code.is_empty() {
+        return Err("paste a channel link, like whatsapp.com/channel/…".into());
+    }
+    let found = client
+        .newsletter()
+        .get_metadata_by_invite(&code)
+        .await
+        .map_err(|e| e.to_string())?;
+    let meta = client
+        .newsletter()
+        .join(&found.jid)
+        .await
+        .map_err(|e| e.to_string())?;
+    let chat_id = bare_jid(&meta.jid.to_string());
+    {
+        let db = account.db.lock().unwrap();
+        db.set_name(&chat_id, &meta.name, NameSource::GroupSubject)
+            .map_err(|e| e.to_string())?;
+        db.ensure_chat(&chat_id, now_millis(), 0)
+            .map_err(|e| e.to_string())?;
+    }
+    emit_account(&app, &account);
+    emit_chats(&app, &account);
+    Ok(chat_id)
+}
+
+/// Stops following a channel and drops its stored posts.
+#[tauri::command]
+pub async fn wa_native_channel_leave(
+    app: AppHandle,
+    state: State<'_, WaState>,
+    id: String,
+    chat_id: String,
+) -> Result<(), String> {
+    let account = state.get(&id)?;
+    let client = running_client(&account)?;
+    let jid: Jid = chat_id
+        .parse()
+        .map_err(|_| format!("invalid chat id: {chat_id}"))?;
+    client
+        .newsletter()
+        .leave(&jid)
+        .await
+        .map_err(|e| e.to_string())?;
+    account
+        .db
+        .lock()
+        .unwrap()
+        .delete_chat(&chat_id)
+        .map_err(|e| e.to_string())?;
+    emit_account(&app, &account);
+    emit_chats(&app, &account);
+    Ok(())
+}
+
+/// Mutes or unmutes a channel's notifications on the account.
+#[tauri::command]
+pub async fn wa_native_channel_mute(
+    state: State<'_, WaState>,
+    id: String,
+    chat_id: String,
+    muted: bool,
+) -> Result<(), String> {
+    let account = state.get(&id)?;
+    let client = running_client(&account)?;
+    let jid: Jid = chat_id
+        .parse()
+        .map_err(|_| format!("invalid chat id: {chat_id}"))?;
+    client
+        .newsletter()
+        .set_follower_mute(&jid, muted)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// Clears the local unread count (its own command; see `wa_native_send_receipt` for blue ticks).
 #[tauri::command]
 pub fn wa_native_mark_read(
@@ -2612,10 +2719,56 @@ pub struct GroupDetails {
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChannelDetails {
+    pub id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub subscribers: u64,
+    pub verified: bool,
+    pub invite_link: Option<String>,
+    /// "owner", "admin", "subscriber" or "guest".
+    pub role: Option<String>,
+    /// Unix milliseconds.
+    pub created_at: Option<i64>,
+    pub picture: Option<String>,
+}
+
+#[derive(Serialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum ChatDetails {
     Contact(ContactDetails),
     Group(GroupDetails),
+    Channel(ChannelDetails),
+}
+
+fn channel_details(meta: &NewsletterMetadata) -> ChannelDetails {
+    ChannelDetails {
+        id: bare_jid(&meta.jid.to_string()),
+        name: meta.name.clone(),
+        description: meta.description.clone().filter(|d| !d.trim().is_empty()),
+        subscribers: meta.subscriber_count,
+        verified: meta.verification == NewsletterVerification::Verified,
+        invite_link: meta
+            .invite_code
+            .as_ref()
+            .map(|code| format!("https://whatsapp.com/channel/{code}")),
+        role: meta.role.as_ref().map(|r| {
+            match r {
+                NewsletterRole::Owner => "owner",
+                NewsletterRole::Admin => "admin",
+                NewsletterRole::Subscriber => "subscriber",
+                NewsletterRole::Guest => "guest",
+                _ => "guest",
+            }
+            .to_string()
+        }),
+        created_at: meta.creation_time.map(|t| t as i64 * 1000),
+        picture: meta
+            .picture_url
+            .clone()
+            .or_else(|| meta.preview_url.clone()),
+    }
 }
 
 /// Full-size profile picture; `None` when there is none or it is hidden.
@@ -2650,6 +2803,21 @@ pub async fn wa_native_chat_info(
     let jid: Jid = chat_id
         .parse()
         .map_err(|_| format!("invalid chat id: {chat_id}"))?;
+
+    if chat_id.ends_with("@newsletter") {
+        let meta = client
+            .newsletter()
+            .get_metadata(&jid)
+            .await
+            .map_err(|e| e.to_string())?;
+        let _ = account
+            .db
+            .lock()
+            .unwrap()
+            .set_name(&chat_id, &meta.name, NameSource::GroupSubject);
+        emit_chats(&app, &account);
+        return Ok(ChatDetails::Channel(channel_details(&meta)));
+    }
 
     if chat_id.ends_with("@g.us") {
         let meta = client

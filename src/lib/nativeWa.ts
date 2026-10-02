@@ -180,7 +180,22 @@ export interface NativeGroupDetails {
   picture: string | null;
 }
 
-export type NativeChatDetails = NativeContactDetails | NativeGroupDetails;
+export interface NativeChannelDetails {
+  type: "channel";
+  id: string;
+  name: string;
+  description: string | null;
+  subscribers: number;
+  verified: boolean;
+  inviteLink: string | null;
+  /** The viewer's role: "owner", "admin", "subscriber" or "guest". */
+  role: string | null;
+  /** Unix milliseconds. */
+  createdAt: number | null;
+  picture: string | null;
+}
+
+export type NativeChatDetails = NativeContactDetails | NativeGroupDetails | NativeChannelDetails;
 
 /** A change to a group; member ids are as listed in `NativeGroupDetails.members`. */
 export type NativeGroupAction =
@@ -247,6 +262,10 @@ export const nativeWa = {
   /** Ask the phone for older messages; they arrive later as a chats update. */
   loadOlder: (id: string, chatId: string) => invoke<void>("wa_native_load_older", { id, chatId }),
   /** Fetch a channel's latest page, or with `older` the page before the oldest stored; resolves to how many came back. */
+  /** Follow a channel from its invite link or code; resolves to its chat id. */
+  channelFollow: (id: string, invite: string) => invoke<string>("wa_native_channel_follow", { id, invite }),
+  channelLeave: (id: string, chatId: string) => invoke<void>("wa_native_channel_leave", { id, chatId }),
+  channelMute: (id: string, chatId: string, muted: boolean) => invoke<void>("wa_native_channel_mute", { id, chatId, muted }),
   channelSync: (id: string, chatId: string, older: boolean) => invoke<number>("wa_native_channel_sync", { id, chatId, older }),
   markRead: (id: string, chatId: string) => invoke<void>("wa_native_mark_read", { id, chatId }),
   /** Per-recipient delivery, read and played times for a message I sent. */
