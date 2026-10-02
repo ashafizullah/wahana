@@ -116,6 +116,7 @@ pub fn run() {
             whatsapp::wa_native_group_requests,
             whatsapp::wa_native_send_receipt,
             whatsapp::wa_native_set_typing,
+            whatsapp::wa_native_watch_typing,
             whatsapp::wa_native_statuses,
             whatsapp::wa_native_status_viewed,
             whatsapp::wa_native_post_status_text,

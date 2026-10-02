@@ -40,6 +40,8 @@ import { AckIcon, ImageNoteView, TranslationView } from "@/screens/chats/Message
 import { NativeMessageMenu, NativeSmartReplies, NativeSummaryModal, useNativeAutoTranslate } from "@/screens/whatsapp/NativeAi";
 import { NativeInfoPanel } from "@/screens/whatsapp/NativeInfoPanel";
 import { usePicture } from "@/screens/whatsapp/usePicture";
+import { useNativeTyping } from "@/screens/whatsapp/useNativeTyping";
+import { TypingBubble } from "@/screens/chats/TypingBubble";
 import { NativeMediaView, cacheSentMedia, saveNativeMedia } from "@/screens/whatsapp/NativeMediaView";
 import { readReceiptsFor, sendTypingFor, useReadReceipts } from "@/store/settings";
 import { nativeAccountKey, nativeChatKey } from "@/lib/account";
@@ -677,6 +679,7 @@ function Conversation({
   const channel = isChannel(chatId);
   const connected = account.status === "working";
   const picture = usePicture(account.id, chatId, connected);
+  const typists = Object.values(useNativeTyping(account.id, chatId, connected && !channel));
   const moreStored = messages.length >= limit;
   const chatPins = useChatPins(prefsKey);
   const [pinIdx, setPinIdx] = useState(0);
@@ -719,7 +722,7 @@ function Conversation({
     } else if (atBottom.current) {
       el.scrollTop = el.scrollHeight;
     }
-  }, [messages]);
+  }, [messages, typists.length]);
 
   // Scroll to a pinned message, paging in stored history until it shows up.
   useEffect(() => {
@@ -926,6 +929,9 @@ function Conversation({
               </div>
             );
           })}
+          {typists.map((t, i) => (
+            <TypingBubble key={i} who={group ? (t.name ?? undefined) : undefined} recording={t.recording} />
+          ))}
         </div>
 
         {channel ? (

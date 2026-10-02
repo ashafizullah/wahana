@@ -215,6 +215,20 @@ struct PinPayload {
     expires: i64,
 }
 
+/// Someone started or stopped typing (or recording) in a chat. `chat_ids` holds the chat
+/// under both its phone-number and privacy id, since the open chat may run on either.
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TypingPayload {
+    id: String,
+    chat_ids: Vec<String>,
+    sender: String,
+    /// Best known name (or phone number) of the sender, for "Budi is typing" in a group.
+    sender_name: Option<String>,
+    /// "typing", "recording" or "paused".
+    state: &'static str,
+}
+
 #[derive(Serialize, Deserialize)]
 struct StoredAccount {
     id: String,
@@ -239,6 +253,9 @@ struct AccountInner {
     reset_session: bool,
     handle: Option<BotHandle>,
     client: Option<Arc<Client>>,
+    /// Open chats watching for typing. The account stays online while any is open, so a
+    /// chat switch (old chat off, new chat on, in either order) never leaves it offline.
+    typing_watchers: usize,
     syncing: Option<u32>,
     /// Profile picture URLs by chat id; `None` once looked up and found to have none.
     pictures: HashMap<String, Option<String>>,
@@ -863,6 +880,42 @@ async fn handle_event(app: AppHandle, account: Arc<WaAccount>, generation: u64, 
                 emit_chats(&app, &account);
             }
         }
+        Event::ChatPresence(update) => {
+            use whatsapp_rust::types::presence::{ChatPresence, ChatPresenceMedia};
+            if update.source.is_from_me {
+                return;
+            }
+            let state = match (update.state, update.media) {
+                (ChatPresence::Paused, _) => "paused",
+                (ChatPresence::Composing, ChatPresenceMedia::Audio) => "recording",
+                (ChatPresence::Composing, ChatPresenceMedia::Text) => "typing",
+            };
+            let chat = bare_jid(&update.source.chat.to_string());
+            let sender = bare_jid(&update.source.sender.to_string());
+            let mut chat_ids = vec![chat.clone()];
+            let db = account.db.lock().unwrap();
+            if !update.source.is_group {
+                let alt = if chat.ends_with("@lid") {
+                    db.pn_for(&chat)
+                } else {
+                    db.lid_for(&chat)
+                };
+                chat_ids.extend(alt.ok().flatten().filter(|a| *a != chat));
+            }
+            let sender_name = db.who(&sender).ok().and_then(|w| w.name.or(w.phone));
+            drop(db);
+            let _ = app.emit_to(
+                "main",
+                "wa_native:typing",
+                TypingPayload {
+                    id: account.id.clone(),
+                    chat_ids,
+                    sender,
+                    sender_name,
+                    state,
+                },
+            );
+        }
         Event::HistorySync(sync) => {
             let progress = sync.progress();
             let sync = (**sync).clone();
@@ -1256,6 +1309,7 @@ async fn run_account(
                 EventKind::PushNameUpdate,
                 EventKind::LabelEditUpdate,
                 EventKind::LabelAssociationUpdate,
+                EventKind::ChatPresence,
             ],
             on_event,
         )
@@ -1967,6 +2021,57 @@ pub async fn wa_native_set_typing(
         client.chatstate().send_paused(&jid).await
     };
     result.map_err(|e| e.to_string())
+}
+
+/// Starts or stops listening for typing in the open chat. WhatsApp only forwards chat
+/// states to a client that is online and, for a direct chat, subscribed to the contact's
+/// presence, so this marks the account available while a chat is open.
+#[tauri::command]
+pub async fn wa_native_watch_typing(
+    state: State<'_, WaState>,
+    id: String,
+    chat_id: String,
+    on: bool,
+) -> Result<(), String> {
+    let account = state.get(&id)?;
+    let jid: Jid = chat_id
+        .parse()
+        .map_err(|_| format!("invalid chat id: {chat_id}"))?;
+    let (client, toggle) = {
+        let mut inner = account.inner.lock().unwrap();
+        let client = inner
+            .client
+            .clone()
+            .ok_or("WhatsApp account is not running")?;
+        let before = inner.typing_watchers;
+        inner.typing_watchers = if on {
+            before + 1
+        } else {
+            before.saturating_sub(1)
+        };
+        (client, (before == 0) != (inner.typing_watchers == 0))
+    };
+    let direct = !chat_id.ends_with("@g.us");
+    let presence = client.presence();
+    if on {
+        if toggle {
+            presence.set_available().await.map_err(|e| e.to_string())?;
+        }
+        if direct {
+            presence.subscribe(jid).await.map_err(|e| e.to_string())?;
+        }
+    } else {
+        if direct {
+            let _ = presence.unsubscribe(&jid).await;
+        }
+        if toggle {
+            presence
+                .set_unavailable()
+                .await
+                .map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
 }
 
 /// Looks up a chat's profile picture (the small preview), once per chat per run.

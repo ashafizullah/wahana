@@ -19,6 +19,7 @@ import { Button } from "@/components/ui";
 import { cn, convKey, displayId, formatDateDivider, isGroup } from "@/lib/utils";
 import { useNameResolver } from "@/realtime/useNames";
 import { presenceLabel, usePresence } from "@/realtime/usePresence";
+import { TypingBubble } from "@/screens/chats/TypingBubble";
 import { useChatPrefs } from "@/store/chatPrefs";
 import { readReceiptsFor, requireClient, useSettings } from "@/store/settings";
 import { wahaAccountKey } from "@/lib/account";
@@ -118,6 +119,7 @@ function Conversation({ session, chatId, onOpenChat }: { session: string; chatId
   const presence = usePresence(session, chatId);
   const resolveName = useNameResolver(session, chatId);
   const presenceText = presenceLabel(presence, chatId, group, (id) => resolveName(id) ?? displayId(id));
+  const typists = Object.entries(presence).filter(([, e]) => e.status === "typing" || e.status === "recording");
   const { data: sessionsForMe } = useSessions();
   const me = sessionsForMe?.find((x) => x.name === session)?.me;
   const meId = me?.id,
@@ -183,6 +185,12 @@ function Conversation({ session, chatId, onOpenChat }: { session: string; chatId
         .sendSeen(session, chatId)
         .catch(() => {});
   }, [session, chatId, newestIncomingId, markSeen]);
+
+  // Keep the typing bubble in view when it appears while reading the latest messages.
+  useEffect(() => {
+    const el = listRef.current;
+    if (el && typists.length && el.scrollHeight - el.scrollTop - el.clientHeight < 120) el.scrollTop = el.scrollHeight;
+  }, [typists.length, listRef]);
 
   // ⌘/Ctrl+F opens in-chat search (the bar refocuses itself when already open).
   useEffect(() => {
@@ -320,6 +328,10 @@ function Conversation({ session, chatId, onOpenChat }: { session: string; chatId
               );
             })}
           </div>
+          {!hasNewer &&
+            typists.map(([id, e]) => (
+              <TypingBubble key={id} who={group ? (resolveName(id) ?? displayId(id)) : undefined} recording={e.status === "recording"} />
+            ))}
           {hasNewer && (
             <div className="h-6 grid place-items-center text-neutral-400">
               {loadingNewer && <Loader2 size={16} className="animate-spin" />}

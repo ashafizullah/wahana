@@ -475,6 +475,20 @@ impl ChatDb {
             .optional()
     }
 
+    /// The privacy id of a user, if known: itself, or what its phone number maps to.
+    pub fn lid_for(&self, id: &str) -> rusqlite::Result<Option<String>> {
+        if id.ends_with("@lid") {
+            return Ok(Some(id.to_string()));
+        }
+        self.conn
+            .query_row(
+                "SELECT lid FROM lid_pn WHERE pn = ?1 LIMIT 1",
+                params![id],
+                |r| r.get(0),
+            )
+            .optional()
+    }
+
     pub fn chats(&self) -> rusqlite::Result<Vec<ChatInfo>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, fallback_name, last_text, last_timestamp, last_from_me, last_sender_id, last_sender, unread,

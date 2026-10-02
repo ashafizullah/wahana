@@ -240,6 +240,8 @@ export const nativeWa = {
   sendReceipt: (id: string, chatId: string) => invoke<void>("wa_native_send_receipt", { id, chatId }),
   /** Tell the other side you are (or stopped) typing. */
   setTyping: (id: string, chatId: string, on: boolean) => invoke<void>("wa_native_set_typing", { id, chatId, on }),
+  /** Listen for the other side typing in the open chat (goes online and subscribes to their presence). */
+  watchTyping: (id: string, chatId: string, on: boolean) => invoke<void>("wa_native_watch_typing", { id, chatId, on }),
   /** Contact profile or group details and members, fetched live. */
   chatInfo: (id: string, chatId: string) => invoke<NativeChatDetails>("wa_native_chat_info", { id, chatId }),
   groupAction: (id: string, chatId: string, action: NativeGroupAction) =>
@@ -333,3 +335,15 @@ export const onNativeRevoked = (cb: (revoked: NativeRevoked) => void): Promise<U
 /** A message was pinned or unpinned for everyone (from any device). */
 export const onNativePin = (cb: (pin: NativePin) => void): Promise<UnlistenFn> =>
   listen<NativePin>("wa_native:pin", (event) => cb(event.payload));
+
+/** Someone typing, recording or pausing in a chat. `chatIds` lists the chat under both its phone and privacy id. */
+export interface NativeTyping {
+  id: string;
+  chatIds: string[];
+  sender: string;
+  senderName: string | null;
+  state: "typing" | "recording" | "paused";
+}
+
+export const onNativeTyping = (cb: (typing: NativeTyping) => void): Promise<UnlistenFn> =>
+  listen<NativeTyping>("wa_native:typing", (event) => cb(event.payload));
