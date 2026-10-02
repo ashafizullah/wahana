@@ -11,10 +11,10 @@ use std::path::Path;
 use base64::Engine as _;
 use rusqlite::{params, Connection, OptionalExtension};
 
-use crate::whatsapp::{ChatInfo, MediaInfo, MessageKind, MessageView};
+use crate::whatsapp::{ChatInfo, EditView, MediaInfo, MessageKind, MessageView};
 
 /// Bumped with every schema change; `open` migrates older files up to it.
-const SCHEMA_VERSION: i64 = 4;
+const SCHEMA_VERSION: i64 = 5;
 
 /// How much a name source is trusted. A name only replaces one from an equal or lower
 /// source, so a push name never overwrites a contact's saved name.
@@ -177,6 +177,21 @@ impl ChatDb {
                  CREATE INDEX IF NOT EXISTS messages_by_id ON messages (id);",
             )?;
         }
+        if version < 5 {
+            // A message deleted for everyone keeps its content, marked with when it went;
+            // an edited one keeps every earlier text in `message_edits`.
+            conn.execute_batch(
+                "ALTER TABLE messages ADD COLUMN revoked_at INTEGER;
+                 ALTER TABLE messages ADD COLUMN edited_at INTEGER;
+                 CREATE TABLE IF NOT EXISTS message_edits (
+                     chat_id TEXT NOT NULL,
+                     id TEXT NOT NULL,
+                     body TEXT NOT NULL,
+                     replaced_at INTEGER NOT NULL
+                 );
+                 CREATE INDEX IF NOT EXISTS message_edits_by_msg ON message_edits (chat_id, id);",
+            )?;
+        }
         conn.execute_batch(&format!("PRAGMA user_version = {SCHEMA_VERSION}"))?;
         // Statuses are stored as messages under `status@broadcast`, not as a chat; drop any
         // row an earlier build created for it.
@@ -187,7 +202,7 @@ impl ChatDb {
     /// Forgets everything, for a device that was logged out and will pair afresh.
     pub fn clear(&self) -> rusqlite::Result<()> {
         self.conn.execute_batch(
-            "DELETE FROM chats; DELETE FROM messages; DELETE FROM names; DELETE FROM lid_pn;",
+            "DELETE FROM chats; DELETE FROM messages; DELETE FROM message_edits; DELETE FROM names; DELETE FROM lid_pn;",
         )
     }
 
@@ -677,6 +692,9 @@ impl ChatDb {
                     timestamp: r.get(7)?,
                     media: media.transpose()?,
                     ack: 0,
+                    revoked_at: None,
+                    edited_at: None,
+                    edits: Vec::new(),
                 },
             ))
         })?;
@@ -726,7 +744,8 @@ impl ChatDb {
         let mut stmt = self.conn.prepare(&format!(
             "SELECT * FROM (
                  SELECT id, chat_id, from_me, sender_id, sender_name, kind, body, timestamp,
-                        media_kind, mimetype, file_name, file_size, seconds, width, height, thumbnail, ack
+                        media_kind, mimetype, file_name, file_size, seconds, width, height, thumbnail, ack,
+                        revoked_at, edited_at
                  FROM messages
                  WHERE chat_id = ?1 {filter}
                  ORDER BY timestamp DESC
@@ -763,13 +782,20 @@ impl ChatDb {
                     timestamp: r.get(7)?,
                     media: media.transpose()?,
                     ack: r.get(16)?,
+                    revoked_at: r.get(17)?,
+                    edited_at: r.get(18)?,
+                    edits: Vec::new(),
                 },
             ))
         })?;
         let mut senders: HashMap<String, Resolved> = HashMap::new();
         let mut messages = Vec::new();
+        let mut edits = self.edits(chat_id)?;
         for row in rows {
             let (sender_id, mut view) = row?;
+            if view.edited_at.is_some() {
+                view.edits = edits.remove(&view.id).unwrap_or_default();
+            }
             if !sender_id.is_empty() {
                 if !senders.contains_key(&sender_id) {
                     senders.insert(sender_id.clone(), self.resolve(&sender_id)?);
@@ -820,18 +846,128 @@ impl ChatDb {
             .optional()
     }
 
-    /// Replaces a stored message's text (after an edit). Returns whether a row changed.
-    pub fn update_message_body(
+    /// Replaces a stored message's text after an edit, keeping the text it had before.
+    /// Returns the chat the message is stored under, if it is stored. An edit may name the
+    /// chat by the other id (phone number or privacy id), so it falls back to the id alone.
+    pub fn edit_message(
         &self,
         chat_id: &str,
         id: &str,
         body: &str,
-    ) -> rusqlite::Result<bool> {
-        let n = self.conn.execute(
-            "UPDATE messages SET body = ?3 WHERE chat_id = ?1 AND id = ?2",
-            params![chat_id, id, body],
+        at: i64,
+    ) -> rusqlite::Result<Option<String>> {
+        let Some((chat_id, old)) = self.locate(chat_id, id)? else {
+            return Ok(None);
+        };
+        if old != body {
+            self.conn.execute(
+                "INSERT INTO message_edits (chat_id, id, body, replaced_at) VALUES (?1, ?2, ?3, ?4)",
+                params![chat_id, id, old, at],
+            )?;
+            self.conn.execute(
+                "UPDATE messages SET body = ?3, edited_at = ?4 WHERE chat_id = ?1 AND id = ?2",
+                params![chat_id, id, body, at],
+            )?;
+            self.refresh_preview(&chat_id, id)?;
+        }
+        Ok(Some(chat_id))
+    }
+
+    /// Marks a message deleted for everyone, keeping what it said. Returns the chat it is
+    /// stored under, if it is stored.
+    pub fn revoke_message(
+        &self,
+        chat_id: &str,
+        id: &str,
+        at: i64,
+    ) -> rusqlite::Result<Option<String>> {
+        let Some((chat_id, _)) = self.locate(chat_id, id)? else {
+            return Ok(None);
+        };
+        self.conn.execute(
+            "UPDATE messages SET revoked_at = ?3 WHERE chat_id = ?1 AND id = ?2 AND revoked_at IS NULL",
+            params![chat_id, id, at],
         )?;
-        Ok(n > 0)
+        self.refresh_preview(&chat_id, id)?;
+        Ok(Some(chat_id))
+    }
+
+    /// The chat a message is stored under, and its text.
+    fn locate(&self, chat_id: &str, id: &str) -> rusqlite::Result<Option<(String, String)>> {
+        let exact = self
+            .conn
+            .query_row(
+                "SELECT chat_id, body FROM messages WHERE chat_id = ?1 AND id = ?2",
+                params![chat_id, id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?;
+        if exact.is_some() {
+            return Ok(exact);
+        }
+        self.conn
+            .query_row(
+                "SELECT chat_id, body FROM messages WHERE id = ?1 LIMIT 1",
+                params![id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()
+    }
+
+    /// Rewrites the chat-list line when the message it shows was edited or deleted.
+    fn refresh_preview(&self, chat_id: &str, id: &str) -> rusqlite::Result<()> {
+        let row = self
+            .conn
+            .query_row(
+                "SELECT kind, body, media_kind, timestamp, revoked_at IS NOT NULL FROM messages
+                 WHERE chat_id = ?1 AND id = ?2",
+                params![chat_id, id],
+                |r| {
+                    Ok((
+                        r.get::<_, String>(0)?,
+                        r.get::<_, String>(1)?,
+                        r.get::<_, Option<String>>(2)?,
+                        r.get::<_, i64>(3)?,
+                        r.get::<_, bool>(4)?,
+                    ))
+                },
+            )
+            .optional()?;
+        let Some((kind, body, media_kind, timestamp, revoked)) = row else {
+            return Ok(());
+        };
+        let text = if revoked {
+            "🚫 This message was deleted".to_string()
+        } else {
+            preview(kind_from(&kind), &body, media_kind.as_deref())
+        };
+        self.conn.execute(
+            "UPDATE chats SET last_text = ?2 WHERE id = ?1 AND last_timestamp = ?3",
+            params![chat_id, text, timestamp],
+        )?;
+        Ok(())
+    }
+
+    /// Earlier texts of a chat's edited messages, by message id, oldest first.
+    fn edits(&self, chat_id: &str) -> rusqlite::Result<HashMap<String, Vec<EditView>>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, body, replaced_at FROM message_edits WHERE chat_id = ?1 ORDER BY replaced_at ASC",
+        )?;
+        let rows = stmt.query_map(params![chat_id], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                EditView {
+                    body: r.get(1)?,
+                    replaced_at: r.get(2)?,
+                },
+            ))
+        })?;
+        let mut out: HashMap<String, Vec<EditView>> = HashMap::new();
+        for row in rows {
+            let (id, edit) = row?;
+            out.entry(id).or_default().push(edit);
+        }
+        Ok(out)
     }
 
     /// The oldest stored message of a chat: the anchor for asking the phone for more.

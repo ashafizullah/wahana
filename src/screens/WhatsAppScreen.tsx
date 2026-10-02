@@ -768,12 +768,6 @@ function Conversation({
     if (choice !== "everyone") return;
     try {
       await nativeWa.deleteMessage(account.id, chatId, m.id);
-      useRevoked.getState().add({
-        id: m.id,
-        chat: prefsKey,
-        timestamp: Math.floor(m.timestamp / 1000),
-        fromMe: true,
-      });
     } catch (e) {
       onError(errMsg(e));
     }
@@ -960,7 +954,7 @@ function Conversation({
             readOnly={channel}
             onSave={() => saveNativeMedia(account.id, menu.m).catch((e) => onError(errMsg(e)))}
             onReply={
-              channel
+              channel || menu.m.revokedAt
                 ? undefined
                 : () => {
                     setEditing(null);
@@ -970,16 +964,16 @@ function Conversation({
             onEdit={
               // Only plain text can be edited (a caption edit needs the media message), and
               // only within WhatsApp's edit window.
-              !channel && menu.m.fromMe && menu.m.kind === "text" && Date.now() - menu.m.timestamp < EDIT_WINDOW_MS
+              !channel && !menu.m.revokedAt && menu.m.fromMe && menu.m.kind === "text" && Date.now() - menu.m.timestamp < EDIT_WINDOW_MS
                 ? () => {
                     setReplyTo(null);
                     setEditing(menu.m);
                   }
                 : undefined
             }
-            onDelete={!channel && menu.m.fromMe ? () => void deleteMessage(menu.m) : undefined}
-            onPin={channel ? undefined : () => void pinMessage(menu.m)}
-            onForward={() => setForward(menu.m)}
+            onDelete={!channel && !menu.m.revokedAt && menu.m.fromMe ? () => void deleteMessage(menu.m) : undefined}
+            onPin={channel || menu.m.revokedAt ? undefined : () => void pinMessage(menu.m)}
+            onForward={menu.m.revokedAt ? undefined : () => setForward(menu.m)}
             onClose={() => setMenu(null)}
           />
         )}
@@ -1088,22 +1082,9 @@ const Bubble = memo(function Bubble({
   // Hooks run before the tombstone early return: a message can be deleted in place.
   const reactionMap = useReactions((s) => s.byMsg[bareId(m.id)]);
   const tomb = useRevoked((s) => s.items[`${convKey(accountId, m.chatId)}:${bareId(m.id)}`]);
-  if (tomb && (tomb.kind ?? "revoked") === "revoked") {
-    return (
-      <div className={cn("flex", mine ? "justify-end" : "justify-start")}>
-        <div
-          className={cn(
-            "max-w-[70%] rounded-lg px-3 py-1.5 text-sm italic text-neutral-500 dark:text-neutral-400 border border-dashed",
-            mine
-              ? "border-wa-dark/40 bg-[#d9fdd3]/40 dark:bg-wa-teal/30"
-              : "border-neutral-300 dark:border-neutral-700 bg-white/60 dark:bg-neutral-800/60",
-          )}
-        >
-          🚫 {mine ? "You deleted this message" : "This message was deleted"}
-        </div>
-      </div>
-    );
-  }
+  const [showEdits, setShowEdits] = useState(false);
+  // Deleted for everyone: the stored copy keeps what it said; older tombstones only know that it went.
+  const revoked = m.revokedAt != null || (!!tomb && (tomb.kind ?? "revoked") === "revoked");
   const reactions = summarize(reactionMap, []);
   return (
     <div className={cn("flex", mine ? "justify-end" : "justify-start")}>
@@ -1116,13 +1097,26 @@ const Bubble = memo(function Bubble({
           title="Right-click for more"
           className={cn(
             "rounded-lg px-3 py-1.5 text-sm selectable",
-            sticker
-              ? "bg-transparent"
-              : mine
-                ? "bg-[#d9fdd3] dark:bg-wa-teal text-neutral-900 dark:text-white shadow-sm"
-                : "bg-white dark:bg-neutral-800 shadow-sm",
+            revoked
+              ? cn(
+                  "border border-dashed",
+                  mine
+                    ? "border-wa-dark/40 bg-[#d9fdd3]/40 dark:bg-wa-teal/30"
+                    : "border-neutral-300 dark:border-neutral-700 bg-white/60 dark:bg-neutral-800/60",
+                )
+              : sticker
+                ? "bg-transparent"
+                : mine
+                  ? "bg-[#d9fdd3] dark:bg-wa-teal text-neutral-900 dark:text-white shadow-sm"
+                  : "bg-white dark:bg-neutral-800 shadow-sm",
           )}
         >
+          {revoked && (
+            <div className="flex items-center gap-1 text-xs italic text-neutral-500 dark:text-neutral-400 mb-0.5">
+              🚫 {mine ? "You deleted this message" : "This message was deleted"}
+              {m.revokedAt != null && <span className="not-italic text-[10px]">· {formatTime(secs(m.revokedAt))}</span>}
+            </div>
+          )}
           {showSender && (m.senderName || m.senderPhone) && (
             <div className="flex items-baseline gap-1.5 text-[11px] mb-0.5">
               <span className="font-semibold text-wa-dark dark:text-wa">{m.senderName || m.senderPhone}</span>
@@ -1134,23 +1128,47 @@ const Bubble = memo(function Bubble({
               <Pin size={10} /> Pinned
             </div>
           )}
-          {m.media ? (
-            <div className={cn(m.body && "mb-1")}>
-              <NativeMediaView accountId={accountId} message={m} connected={connected} />
-            </div>
-          ) : m.kind !== "text" ? (
-            <div className="italic text-neutral-500 dark:text-neutral-400">
-              {m.kind === "media" ? "📎 Media (not available for this older message)" : "Unsupported message"}
-            </div>
-          ) : null}
-          {m.body && (
-            <div className="break-words">
-              <WaMarkdown text={m.body} />
+          <div className={cn(revoked && "opacity-60")}>
+            {m.media ? (
+              <div className={cn(m.body && "mb-1")}>
+                <NativeMediaView accountId={accountId} message={m} connected={connected} />
+              </div>
+            ) : m.kind !== "text" ? (
+              <div className="italic text-neutral-500 dark:text-neutral-400">
+                {m.kind === "media" ? "📎 Media (not available for this older message)" : "Unsupported message"}
+              </div>
+            ) : null}
+            {m.body && (
+              <div className={cn("break-words", revoked && "line-through decoration-neutral-400")}>
+                <WaMarkdown text={m.body} />
+              </div>
+            )}
+          </div>
+          {showEdits && m.edits.length > 0 && (
+            <div className="mt-1 space-y-1 border-l-2 border-neutral-300 dark:border-neutral-600 pl-2">
+              {m.edits.map((e, i) => (
+                <div key={i} className="text-xs text-neutral-500 dark:text-neutral-400">
+                  <span className="line-through break-words">{e.body}</span>
+                  <span className="ml-1 text-[10px]">· replaced {formatTime(secs(e.replacedAt))}</span>
+                </div>
+              ))}
             </div>
           )}
           <TranslationView id={m.id} />
           <ImageNoteView id={m.id} />
           <div className="flex items-center justify-end gap-1 mt-0.5 text-[10px] text-neutral-500 dark:text-neutral-300/70">
+            {m.editedAt != null &&
+              (m.edits.length > 0 ? (
+                <button
+                  onClick={() => setShowEdits((v) => !v)}
+                  title={showEdits ? "Hide earlier versions" : `Show ${m.edits.length} earlier version${m.edits.length > 1 ? "s" : ""}`}
+                  className="italic underline decoration-dotted hover:text-neutral-700 dark:hover:text-neutral-200"
+                >
+                  edited
+                </button>
+              ) : (
+                <span className="italic">edited</span>
+              ))}
             {formatTime(secs(m.timestamp))}
             {mine && <AckIcon ack={m.ack} />}
           </div>

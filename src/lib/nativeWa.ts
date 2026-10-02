@@ -62,6 +62,19 @@ export interface NativeMessage {
   media: NativeMedia | null;
   /** Delivery state of a message I sent: 0 pending, 1 sent, 2 delivered, 3 read, 4 played. */
   ack: number;
+  /** When it was deleted for everyone (unix ms); its content is kept to show what it was. */
+  revokedAt: number | null;
+  /** When it was last edited (unix ms). */
+  editedAt: number | null;
+  /** Earlier texts of an edited message, oldest first. */
+  edits: NativeEdit[];
+}
+
+/** One earlier text of an edited message. */
+export interface NativeEdit {
+  body: string;
+  /** When this text was replaced (unix ms). */
+  replacedAt: number;
 }
 
 export interface NativeQr {

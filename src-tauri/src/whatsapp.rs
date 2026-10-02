@@ -105,6 +105,21 @@ pub struct MessageView {
     pub media: Option<MediaInfo>,
     /// Delivery state of a message I sent: 0 pending, 1 sent, 2 delivered, 3 read, 4 played.
     pub ack: u8,
+    /// When it was deleted for everyone (unix ms). The content is kept to show what it was.
+    pub revoked_at: Option<i64>,
+    /// When it was last edited (unix ms).
+    pub edited_at: Option<i64>,
+    /// Earlier texts of an edited message, oldest first.
+    pub edits: Vec<EditView>,
+}
+
+/// One earlier text of an edited message.
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EditView {
+    pub body: String,
+    /// When this text was replaced (unix ms).
+    pub replaced_at: i64,
 }
 
 /// `MessageView::ack` values.
@@ -756,6 +771,9 @@ fn history_message(chat_id: &str, info: &wa::WebMessageInfo) -> Option<IncomingM
             timestamp: info.message_timestamp.unwrap_or_default() as i64 * 1000,
             media: None,
             ack: history_ack(info),
+            revoked_at: None,
+            edited_at: None,
+            edits: Vec::new(),
         },
         sender_id,
         media,
@@ -1098,6 +1116,19 @@ async fn run_account(
             if let Some(pm) = base.protocol_message.as_option() {
                 if pm.r#type == Some(wa::message::protocol_message::Type::Revoke) {
                     if let Some(target_id) = pm.key.as_option().and_then(|k| k.id.clone()) {
+                        let stored = account
+                            .db
+                            .lock()
+                            .unwrap()
+                            .revoke_message(
+                                &chat_id,
+                                &target_id,
+                                ctx.info.timestamp.timestamp_millis(),
+                            )
+                            .unwrap_or(None);
+                        if stored.is_some() {
+                            emit_chats(&app, &account);
+                        }
                         let from_me = source.is_from_me;
                         let participant = (is_group || chat_id == "status@broadcast")
                             .then(|| source.sender.to_string());
@@ -1123,9 +1154,14 @@ async fn run_account(
                             .db
                             .lock()
                             .unwrap()
-                            .update_message_body(&chat_id, &target_id, &body)
-                            .unwrap_or(false);
-                        if updated {
+                            .edit_message(
+                                &chat_id,
+                                &target_id,
+                                &body,
+                                ctx.info.timestamp.timestamp_millis(),
+                            )
+                            .unwrap_or(None);
+                        if updated.is_some() {
                             emit_chats(&app, &account);
                         }
                     }
@@ -1156,6 +1192,9 @@ async fn run_account(
                     timestamp: ctx.info.timestamp.timestamp_millis(),
                     media: None,
                     ack: ACK_SENT,
+                    revoked_at: None,
+                    edited_at: None,
+                    edits: Vec::new(),
                 },
                 sender_id: if from_me { String::new() } else { sender },
                 media,
@@ -1496,6 +1535,9 @@ pub async fn wa_native_send_text(
             timestamp: now_millis(),
             media: None,
             ack: ACK_SENT,
+            revoked_at: None,
+            edited_at: None,
+            edits: Vec::new(),
         },
         sender_id: String::new(),
         media: None,
@@ -1568,9 +1610,9 @@ pub async fn wa_native_edit(
         .db
         .lock()
         .unwrap()
-        .update_message_body(&chat_id, &message_id, &text)
+        .edit_message(&chat_id, &message_id, &text, now_millis())
         .map_err(|e| e.to_string())?;
-    if updated {
+    if updated.is_some() {
         emit_chats(&app, &account);
     }
     Ok(())
@@ -1579,6 +1621,7 @@ pub async fn wa_native_edit(
 /// Deletes one of our own messages for everyone (revoke).
 #[tauri::command]
 pub async fn wa_native_delete(
+    app: AppHandle,
     state: State<'_, WaState>,
     id: String,
     chat_id: String,
@@ -1596,9 +1639,18 @@ pub async fn wa_native_delete(
         .parse()
         .map_err(|_| format!("invalid chat id: {chat_id}"))?;
     client
-        .revoke_message(to, message_id, RevokeType::Sender)
+        .revoke_message(to, message_id.clone(), RevokeType::Sender)
         .await
         .map_err(|e| e.to_string())?;
+    let stored = account
+        .db
+        .lock()
+        .unwrap()
+        .revoke_message(&chat_id, &message_id, now_millis())
+        .map_err(|e| e.to_string())?;
+    if stored.is_some() {
+        emit_chats(&app, &account);
+    }
     Ok(())
 }
 
@@ -1694,6 +1746,9 @@ pub async fn wa_native_forward(
         timestamp: now_millis(),
         media: None,
         ack: ACK_SENT,
+        revoked_at: None,
+        edited_at: None,
+        edits: Vec::new(),
     };
     record_message(
         &app,
@@ -2143,6 +2198,9 @@ pub async fn wa_native_send_media(
             timestamp: now_millis(),
             media: None,
             ack: ACK_SENT,
+            revoked_at: None,
+            edited_at: None,
+            edits: Vec::new(),
         },
         sender_id: String::new(),
         media,

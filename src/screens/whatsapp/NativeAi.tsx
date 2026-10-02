@@ -147,7 +147,7 @@ export function NativeMessageMenu({
   onEdit?: () => void;
   onDelete?: () => void;
   onPin?: () => void;
-  onForward: () => void;
+  onForward?: () => void;
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -242,7 +242,7 @@ export function NativeMessageMenu({
       )}
       {onReply && item(<Reply size={14} />, "Reply", onReply)}
       {onPin && item(<Pin size={14} />, pinned ? "Unpin" : "Pin (7 days)", onPin)}
-      {item(<Forward size={14} />, "Forward…", onForward)}
+      {onForward && item(<Forward size={14} />, "Forward…", onForward)}
       {m.body && item(<Copy size={14} />, "Copy text", () => void navigator.clipboard.writeText(m.body))}
       {m.body && (
         <>
