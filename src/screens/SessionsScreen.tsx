@@ -27,7 +27,10 @@ export function SessionsScreen() {
   const { data: sessions, isLoading, error, refetch, isFetching } = useSessions();
   const { data: version } = useServerVersion();
   const act = useSessionAction();
-  const { session: active, save } = useSettings();
+  const { session: active, save, client } = useSettings();
+  // A picked native account takes over the chat screen, so a WAHA session is only "active" without one.
+  const nativeActive = useWhatsApp((s) => s.active);
+  const setNativeActive = useWhatsApp((s) => s.setActive);
   const [newName, setNewName] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
 
@@ -76,13 +79,17 @@ export function SessionsScreen() {
             <SessionCard
               key={s.name}
               session={s}
-              active={s.name === active}
+              active={s.name === active && !nativeActive}
               busy={act.isPending}
-              onSelect={() => save({ session: s.name })}
+              onSelect={() => {
+                setNativeActive(null);
+                void save({ session: s.name });
+              }}
               onAction={(a) => run(a, s.name)}
             />
           ))}
-          {sessions?.length === 0 && <p className="text-sm text-neutral-500">No sessions yet. Create one below.</p>}
+          {client && sessions?.length === 0 && <p className="text-sm text-neutral-500">No sessions yet. Create one below.</p>}
+          {!client && <p className="text-sm text-neutral-500">No WAHA server configured. Add one in Settings to use WAHA sessions.</p>}
         </div>
 
         <div className="space-y-3">
@@ -90,18 +97,20 @@ export function SessionsScreen() {
           <NativeAccountsSection />
         </div>
 
-        <form
-          className="flex gap-2"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (newName.trim()) run("create", newName.trim());
-          }}
-        >
-          <Input placeholder="new session name (e.g. default)" value={newName} onChange={(e) => setNewName(e.target.value)} />
-          <Button type="submit" disabled={!newName.trim() || act.isPending}>
-            <Plus size={16} /> Create & start
-          </Button>
-        </form>
+        {client && (
+          <form
+            className="flex gap-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (newName.trim()) run("create", newName.trim());
+            }}
+          >
+            <Input placeholder="new session name (e.g. default)" value={newName} onChange={(e) => setNewName(e.target.value)} />
+            <Button type="submit" disabled={!newName.trim() || act.isPending}>
+              <Plus size={16} /> Create & start
+            </Button>
+          </form>
+        )}
       </div>
     </div>
   );
@@ -326,7 +335,7 @@ function NativeAccountCard({
           )}
         </div>
         <div className="ml-auto flex gap-1">
-          {!live && a.status !== "qr" && !editing && (
+          {!live && a.status !== "qr" && a.status !== "starting" && !editing && (
             <Button size="sm" variant="secondary" disabled={busy} onClick={() => void run(() => nativeWa.start(a.id))} title="Connect">
               <Play size={14} />
             </Button>

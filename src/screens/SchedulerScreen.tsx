@@ -263,6 +263,7 @@ function ScheduleForm({
 }) {
   const [account, setAccount] = useState(initial?.account ?? defaultAccount);
   const chats = useAccountChats(account);
+  const suffix = accountParts(account)?.kind === "native" ? "@s.whatsapp.net" : "@c.us";
   const [targetType, setTargetType] = useState<TargetType>(initial?.target_type ?? "chat");
   const [targetId, setTargetId] = useState(initial?.target_id ?? "");
   const [targetName, setTargetName] = useState(initial?.target_name ?? "");
@@ -431,7 +432,7 @@ function ScheduleForm({
                         <button
                           onClick={() => {
                             const d = q.replace(/\D/g, "");
-                            setTargetId(`${d}@c.us`);
+                            setTargetId(`${d}${suffix}`);
                             setTargetName("");
                           }}
                           className="w-full px-3 py-1.5 text-left text-sm text-wa-dark hover:bg-neutral-100 dark:hover:bg-neutral-800"

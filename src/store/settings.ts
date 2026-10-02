@@ -205,6 +205,7 @@ export const useSettings = create<SettingsState>((set, get) => ({
   },
 
   async save(patch) {
+    profileClients.clear();
     const s = await store();
     const { apiKey: newKey, baseUrl, session, name, aiApiKey, ...prefPatch } = patch;
     for (const [k, v] of Object.entries(prefPatch)) await s.set(k, v);
@@ -265,6 +266,7 @@ export const useSettings = create<SettingsState>((set, get) => ({
   },
 
   async switchProfile(id) {
+    profileClients.clear();
     const prof = get().profiles.find((p) => p.id === id);
     if (!prof) return;
     const s = await store();
@@ -274,6 +276,7 @@ export const useSettings = create<SettingsState>((set, get) => ({
   },
 
   async removeProfile(id) {
+    profileClients.clear();
     const s = await store();
     const profiles = get().profiles.filter((p) => p.id !== id);
     await s.set("profiles", profiles);
@@ -298,6 +301,26 @@ export const useSettings = create<SettingsState>((set, get) => ({
 export function requireClient() {
   const c = useSettings.getState().client;
   if (!c) throw new Error("WAHA is not configured");
+  return c;
+}
+
+/** Clients of non-active profiles, so background jobs don't re-read the keychain on every send. */
+const profileClients = new Map<string, WahaClient>();
+
+/**
+ * Client for one WAHA profile (server). Schedules, broadcasts and rules remember the profile
+ * they were made under; they must keep sending through that server after the user switches.
+ */
+export async function clientForProfile(profileId: string | undefined): Promise<WahaClient> {
+  const st = useSettings.getState();
+  if (!profileId || profileId === st.activeProfile) return requireClient();
+  const cached = profileClients.get(profileId);
+  if (cached) return cached;
+  const prof = st.profiles.find((p) => p.id === profileId);
+  if (!prof) throw new Error(`WAHA server "${profileId}" was removed`);
+  const c = makeClient(prof.baseUrl, await readKey(profileId));
+  if (!c) throw new Error(`WAHA server "${prof.name}" is not configured`);
+  profileClients.set(profileId, c);
   return c;
 }
 

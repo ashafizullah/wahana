@@ -85,8 +85,10 @@ export function useAutoReply() {
     const aiReply = async (rule: AutoReplyRule, account: string, chatId: string, chatName: string, m: WAMessage, recent: WAMessage[]) => {
       // Always include the trigger message.
       const messages = [...recent.filter((x) => x.id !== m.id), m].sort((a, b) => a.timestamp - b.timestamp).slice(-rule.ai_context);
-      const session = accountParts(account)?.session;
-      const language = session ? useChatPrefs.getState().autoTranslate[convKey(session, chatId)]?.out : undefined;
+      // Same keys the chat screens use: `session:chat` for WAHA, `accountId:chat` for native.
+      const p = accountParts(account);
+      const owner = p?.kind === "native" ? p.id : p?.session;
+      const language = owner ? useChatPrefs.getState().autoTranslate[convKey(owner, chatId)]?.out : undefined;
       return aiAutoReply({ instructions: rule.ai_instructions, account, chatName, isGroup: isGroup(chatId), messages, language });
     };
 

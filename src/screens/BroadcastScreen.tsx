@@ -292,7 +292,7 @@ function NewBroadcast({ defaultAccount, onClose, onCreated }: { defaultAccount: 
           kind,
           text: text.trim() || null,
           media_b64: file ? await fileToBase64(file) : null,
-          media_mime: file?.type ?? null,
+          media_mime: file ? file.type || "application/octet-stream" : null,
           media_name: file?.name ?? null,
           delay_min: delayMin,
           delay_max: delayMax,
