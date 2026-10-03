@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.1 — 2026-10-03
+
+### Added
+
+- @mention group members in the composer: type `@` to pick a member; the message tags them like WhatsApp does.
+- Download button for contacts' status stories (photo/video), also on the `d` key.
+- Reply to a contact's status from the story viewer; the reply quotes the story in their chat.
+
 ## 1.1.0 — 2026-10-03
 
 ### Added
