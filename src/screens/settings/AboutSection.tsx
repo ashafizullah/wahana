@@ -37,6 +37,10 @@ export function AboutSection() {
         <dt className="text-neutral-500">WAHA server</dt>
         <dd className="selectable">{serverText}</dd>
       </dl>
+      <p className="text-xs text-neutral-500">
+        Unofficial client, not affiliated with WhatsApp, Meta, or WAHA/devlike.pro. Unofficial clients may break WhatsApp's Terms of Service
+        and can get your number banned; use at your own risk.
+      </p>
       <Button variant="secondary" size="sm" onClick={openWelcome}>
         Show welcome screen
       </Button>

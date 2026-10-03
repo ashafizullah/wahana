@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.9.0 — 2026-10-03
+
+### Added
+
+- Your own native stories show who viewed them.
+- Full-screen button on videos in chat bubbles (native and WAHA) and in the story viewer; the lightbox can take the whole window full screen (F).
+- Clicking a quoted story in a native chat opens it in the story viewer.
+
+### Changed
+
+- AI image descriptions are always written in My language and use WhatsApp formatting instead of raw Markdown.
+- About shows native accounts and the WAHA server separately, and states that Wahana is an unofficial client (also in the README).
+
 ## 0.8.0 — 2026-10-03
 
 ### Added
