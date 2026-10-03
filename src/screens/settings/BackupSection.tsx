@@ -1,10 +1,25 @@
 import { useState } from "react";
 import { confirm } from "@/components/Confirm";
 import { CheckCircle2, Download, Loader2, Upload, XCircle } from "lucide-react";
-import { exportBackup, pickBackup, restoreBackup, type Backup, type RestoreOptions } from "@/lib/backup";
+import { exportBackup, pickBackup, restoreBackup, type Backup, type NativeRestore, type RestoreOptions } from "@/lib/backup";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui";
 import { errMsg } from "@/lib/utils";
+
+function describeNative(rs: NativeRestore[]) {
+  const names = (o: NativeRestore["outcome"]) =>
+    rs
+      .filter((r) => r.outcome === o)
+      .map((r) => r.name)
+      .join(", ");
+  return [
+    names("added") && `WhatsApp added, scan the QR in Sessions: ${names("added")}.`,
+    names("exists") && `Already on this device, left as is: ${names("exists")}.`,
+  ]
+    .filter(Boolean)
+    .map((t) => `${t} `)
+    .join("");
+}
 
 export function BackupSection() {
   const qc = useQueryClient();
@@ -12,15 +27,25 @@ export function BackupSection() {
   const [busy, setBusy] = useState<"export" | "import" | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [pending, setPending] = useState<{ path: string; backup: Backup } | null>(null);
-  const [opts, setOpts] = useState<RestoreOptions>({ prefs: true, profiles: true, chatPrefs: true, quickReplies: true, schedules: true });
+  const [opts, setOpts] = useState<RestoreOptions>({
+    prefs: true,
+    profiles: true,
+    chatPrefs: true,
+    quickReplies: true,
+    schedules: true,
+    autoReplies: true,
+    stickers: true,
+    nativeAccounts: true,
+  });
 
   return (
     <>
       <div className="space-y-2">
         <div className="text-sm font-medium">Export</div>
         <p className="text-xs text-neutral-500">
-          Includes: preferences, servers, AI settings, pinned/muted/archived chats, quick replies, schedules (without attachments). Not
-          included: message history, media cache, receipts.
+          Includes: preferences, theme, servers, AI settings, pinned/muted/archived chats, quick replies, schedules (without attachments),
+          auto-reply rules, saved stickers, WhatsApp (native) account names. Not included: message history, media cache, broadcast history,
+          WhatsApp (native) logins — restored accounts need a new QR scan.
         </p>
         <label className="flex items-start gap-2 text-sm cursor-pointer">
           <input type="checkbox" className="mt-1" checked={includeSecrets} onChange={(e) => setIncludeSecrets(e.target.checked)} />
@@ -49,7 +74,10 @@ export function BackupSection() {
             setMsg(null);
             try {
               const p = await exportBackup(includeSecrets);
-              if (p) setMsg({ ok: true, text: `Saved to ${p}` });
+              if (p) {
+                setIncludeSecrets(false);
+                setMsg({ ok: true, text: `Saved to ${p}` });
+              }
             } catch (e) {
               setMsg({ ok: false, text: errMsg(e) });
             } finally {
@@ -85,16 +113,21 @@ export function BackupSection() {
             <div className="text-xs text-neutral-500">
               Exported {new Date(pending.backup.exportedAt).toLocaleString()} · app {pending.backup.appVersion} ·{" "}
               {pending.backup.profiles?.length ?? 0} server(s) · {pending.backup.quickReplies?.length ?? 0} quick replies ·{" "}
-              {pending.backup.schedules?.length ?? 0} schedules{pending.backup.secrets ? " · includes API keys" : ""}
+              {pending.backup.schedules?.length ?? 0} schedules · {pending.backup.autoReplyRules?.length ?? 0} auto-reply rules ·{" "}
+              {pending.backup.stickers?.length ?? 0} stickers · {pending.backup.nativeAccounts?.length ?? 0} WhatsApp account(s)
+              {pending.backup.secrets ? " · includes API keys" : ""}
             </div>
             <div className="grid grid-cols-2 gap-1 text-sm">
               {(
                 [
-                  ["prefs", "Preferences & AI settings"],
+                  ["prefs", "Preferences, theme & AI"],
                   ["profiles", "Servers (merged by id)"],
                   ["chatPrefs", "Pinned / muted / archived"],
                   ["quickReplies", "Quick replies"],
                   ["schedules", "Schedules"],
+                  ["autoReplies", "Auto-reply rules"],
+                  ["stickers", "Saved stickers"],
+                  ["nativeAccounts", "WhatsApp accounts"],
                 ] as const
               ).map(([k, label]) => (
                 <label key={k} className="flex items-center gap-2 cursor-pointer">
@@ -117,10 +150,10 @@ export function BackupSection() {
                     return;
                   setBusy("import");
                   try {
-                    await restoreBackup(pending.backup, opts);
+                    const native = await restoreBackup(pending.backup, opts);
                     qc.clear();
                     setPending(null);
-                    setMsg({ ok: true, text: "Restored. Some changes apply after the app is reopened." });
+                    setMsg({ ok: true, text: `Restored. ${describeNative(native)}Some changes apply after the app is reopened.` });
                   } catch (e) {
                     setMsg({ ok: false, text: errMsg(e) });
                   } finally {

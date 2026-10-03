@@ -486,7 +486,10 @@ function JoinRequestsModal({
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [q, setQ] = useState("");
-  const shown = requests.filter((r) => matchesTerm(q, r.name, r.phone, r.id.split("@")[0]));
+  // Newest request first; requests without a time go last.
+  const shown = requests
+    .filter((r) => matchesTerm(q, r.name, r.phone, r.id.split("@")[0]))
+    .sort((a, b) => (b.requestedAt ?? 0) - (a.requestedAt ?? 0));
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();

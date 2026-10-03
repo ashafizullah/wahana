@@ -607,7 +607,10 @@ function JoinRequestsModal({
   // Name and phone are resolved per row (they need lookups); rows report them here to search on.
   const [known, setKnown] = useState<Record<string, string>>({});
   const onKnown = useCallback((id: string, text: string) => setKnown((k) => (k[id] === text ? k : { ...k, [id]: text })), []);
-  const shown = requests.filter((r) => matchesTerm(q, known[r.requesterId], r.requesterId.split("@")[0]));
+  // Newest request first; requests without a time go last.
+  const shown = requests
+    .filter((r) => matchesTerm(q, known[r.requesterId], r.requesterId.split("@")[0]))
+    .sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0));
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();

@@ -2,9 +2,14 @@ import { save, open } from "@tauri-apps/plugin-dialog";
 import { readTextFile, writeTextFile } from "@tauri-apps/plugin-fs";
 import { load } from "@tauri-apps/plugin-store";
 import { getVersion } from "@tauri-apps/api/app";
+import { nativeWa } from "@/lib/nativeWa";
 import { useSettings, type Prefs, type Profile } from "@/store/settings";
 import { getSecret, setSecret } from "@/lib/secrets";
 import { db } from "@/store/scheduler";
+import { useChatPrefs } from "@/store/chatPrefs";
+import { upsertRule, type AutoReplyRule } from "@/store/autoReply";
+import { addSticker, listStickers } from "@/lib/stickers";
+import { getThemeMode, setThemeMode, type ThemeMode } from "@/lib/theme";
 import type { QuickReply } from "@/store/quickReplies";
 import type { Schedule } from "@/store/scheduler";
 
@@ -26,7 +31,46 @@ export interface Backup {
   };
   quickReplies: QuickReply[];
   schedules: Omit<Schedule, "media_b64">[];
+  /** Since backup version 2. */
+  autoReplyRules?: AutoReplyRule[];
+  theme?: ThemeMode;
+  /** Hand-saved tray stickers as base64 WebP (recents are not kept). */
+  stickers?: string[];
+  /**
+   * Native WhatsApp accounts, by id and name only. Their login and chat history are never
+   * exported: a restored account pairs again with a QR scan.
+   */
+  nativeAccounts?: { id: string; name: string }[];
+  /** localStorage keys of channels muted here (WhatsApp does not report channel mutes). */
+  channelMutes?: string[];
 }
+
+const CHANNEL_MUTE_PREFIX = "wa-channel-muted:";
+
+function channelMuteKeys(): string[] {
+  try {
+    return Object.keys(localStorage).filter((k) => k.startsWith(CHANNEL_MUTE_PREFIX) && localStorage.getItem(k) === "1");
+  } catch {
+    return [];
+  }
+}
+
+/** Outcome of re-creating one native account: added (needs a QR scan) or already here. */
+export interface NativeRestore {
+  id: string;
+  name: string;
+  outcome: "added" | "exists";
+}
+
+const BACKUP_VERSION = 2;
+
+const blobToB64 = async (b: Blob) => {
+  const bytes = new Uint8Array(await b.arrayBuffer());
+  let bin = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+};
+const b64ToBlob = (b64: string) => new Blob([Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))], { type: "image/webp" });
 
 const PREF_KEYS: (keyof Prefs)[] = [
   "notifications",
@@ -55,6 +99,7 @@ const PREF_KEYS: (keyof Prefs)[] = [
 
 export async function exportBackup(includeSecrets: boolean): Promise<string | null> {
   const s = useSettings.getState();
+  const nativeAccounts = (await nativeWa.accounts().catch(() => [])).map((a) => ({ id: a.id, name: a.name }));
   const path = await save({
     defaultPath: `wahana-backup-${new Date().toISOString().slice(0, 10)}.json`,
     filters: [{ name: "JSON", extensions: ["json"] }],
@@ -65,7 +110,7 @@ export async function exportBackup(includeSecrets: boolean): Promise<string | nu
   const prefs = Object.fromEntries(PREF_KEYS.map((k) => [k, s[k]])) as unknown as Prefs;
   const backup: Backup = {
     app: "wahana",
-    version: 1,
+    version: BACKUP_VERSION,
     appVersion: await getVersion().catch(() => "dev"),
     exportedAt: new Date().toISOString(),
     prefs,
@@ -81,6 +126,13 @@ export async function exportBackup(includeSecrets: boolean): Promise<string | nu
     schedules: await d.select<Omit<Schedule, "media_b64">[]>(
       "SELECT id, account, profile, session, target_type, target_id, target_name, kind, text, media_mime, media_name, next_run, anchor, repeat, weekdays, enabled, created_at, last_run, last_status, last_error, runs FROM schedules",
     ),
+    autoReplyRules: await d.select<AutoReplyRule[]>("SELECT * FROM auto_reply_rules"),
+    theme: getThemeMode(),
+    stickers: await listStickers("saved")
+      .then((xs) => Promise.all(xs.map((x) => blobToB64(x.blob))))
+      .catch(() => []),
+    nativeAccounts,
+    channelMutes: channelMuteKeys(),
   };
   if (includeSecrets) {
     const secrets: Record<string, string> = {};
@@ -102,23 +154,46 @@ export interface RestoreOptions {
   chatPrefs: boolean;
   quickReplies: boolean;
   schedules: boolean;
+  autoReplies: boolean;
+  stickers: boolean;
+  nativeAccounts: boolean;
 }
 
 /** Pick a backup file and return its parsed content (validated), or null if cancelled. */
 export async function pickBackup(): Promise<{ path: string; backup: Backup } | null> {
   const path = await open({ multiple: false, filters: [{ name: "JSON", extensions: ["json"] }] });
   if (!path || typeof path !== "string") return null;
-  const raw = JSON.parse(await readTextFile(path)) as Backup;
-  if (raw.app !== "wahana" || typeof raw.version !== "number") throw new Error("Not a Wahana backup file.");
+  let raw: Backup;
+  try {
+    raw = JSON.parse(await readTextFile(path)) as Backup;
+  } catch {
+    throw new Error("Not a Wahana backup file (unreadable JSON).");
+  }
+  if (raw?.app !== "wahana" || typeof raw.version !== "number") throw new Error("Not a Wahana backup file.");
+  if (raw.version > BACKUP_VERSION) throw new Error("This backup was made by a newer version of Wahana. Update the app first.");
   return { path, backup: raw };
 }
 
-export async function restoreBackup(b: Backup, opts: RestoreOptions) {
+/** Restores the selected sections; returns what happened to each native account. */
+export async function restoreBackup(b: Backup, opts: RestoreOptions): Promise<NativeRestore[]> {
   const s = useSettings.getState();
+  // Accounts first, under their original ids, so the account-scoped items below still point at them.
+  const native: NativeRestore[] = [];
+  if (opts.nativeAccounts && b.nativeAccounts?.length) {
+    const here = new Set((await nativeWa.accounts()).map((a) => a.id));
+    for (const { id, name } of b.nativeAccounts) {
+      if (here.has(id)) native.push({ id, name, outcome: "exists" });
+      else {
+        await nativeWa.add(id, name);
+        native.push({ id, name, outcome: "added" });
+      }
+    }
+  }
   if (opts.prefs && b.prefs) {
     const patch: Partial<Prefs> = {};
     for (const k of PREF_KEYS) if (k in b.prefs) (patch as Record<string, unknown>)[k] = b.prefs[k];
     await s.save(patch);
+    if (b.theme) setThemeMode(b.theme);
   }
   if (opts.profiles && b.profiles) {
     const store = await load("settings.json", { autoSave: true, defaults: {} });
@@ -133,11 +208,18 @@ export async function restoreBackup(b: Backup, opts: RestoreOptions) {
     await s.hydrate();
   }
   if (opts.chatPrefs && b.chatPrefs) {
+    // Merge into the live store (it owns the file and flushes its in-memory state over it).
     const cp = await load("chat-prefs.json", { autoSave: true, defaults: {} });
-    await cp.set("pinned", b.chatPrefs.pinned ?? {});
-    await cp.set("muted", b.chatPrefs.muted ?? {});
-    await cp.set("archived", b.chatPrefs.archived ?? {});
-    await cp.set("autoTranslate", b.chatPrefs.autoTranslate ?? {});
+    const live = useChatPrefs.getState();
+    for (const k of ["pinned", "muted", "archived", "autoTranslate"] as const) {
+      await cp.set(k, { ...live[k], ...(b.chatPrefs[k] ?? {}) });
+    }
+    await live.hydrate();
+    try {
+      for (const k of b.channelMutes ?? []) if (k.startsWith(CHANNEL_MUTE_PREFIX)) localStorage.setItem(k, "1");
+    } catch {
+      /* channel mutes are a convenience */
+    }
   }
   const d = await db();
   if (opts.quickReplies && b.quickReplies) {
@@ -155,9 +237,9 @@ export async function restoreBackup(b: Backup, opts: RestoreOptions) {
       const kind = "text";
       const enabled = hadMedia && !sc.text ? 0 : sc.enabled;
       await d.execute(
-        `INSERT INTO schedules (id, account, profile, session, target_type, target_id, target_name, kind, text, media_mime, media_name, next_run, repeat, weekdays, enabled, created_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
-         ON CONFLICT(id) DO UPDATE SET account=excluded.account, session=excluded.session, target_type=excluded.target_type, target_id=excluded.target_id, target_name=excluded.target_name, kind=excluded.kind, text=excluded.text, next_run=excluded.next_run, repeat=excluded.repeat, weekdays=excluded.weekdays, enabled=excluded.enabled`,
+        `INSERT INTO schedules (id, account, profile, session, target_type, target_id, target_name, kind, text, media_mime, media_name, next_run, repeat, weekdays, enabled, created_at, anchor)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+         ON CONFLICT(id) DO UPDATE SET account=excluded.account, session=excluded.session, target_type=excluded.target_type, target_id=excluded.target_id, target_name=excluded.target_name, kind=excluded.kind, text=excluded.text, media_mime=NULL, media_name=NULL, next_run=excluded.next_run, repeat=excluded.repeat, weekdays=excluded.weekdays, enabled=excluded.enabled, anchor=excluded.anchor`,
         [
           sc.id,
           sc.account ?? `waha:${sc.profile}:${sc.session}`,
@@ -175,8 +257,16 @@ export async function restoreBackup(b: Backup, opts: RestoreOptions) {
           sc.weekdays,
           enabled,
           sc.created_at,
+          sc.anchor ?? null,
         ],
       );
     }
   }
+  if (opts.autoReplies && b.autoReplyRules) {
+    for (const r of b.autoReplyRules) await upsertRule({ ...r, account: r.account ?? `waha:${r.profile}:${r.session}` });
+  }
+  if (opts.stickers && b.stickers) {
+    for (const s64 of b.stickers) await addSticker(b64ToBlob(s64), "saved");
+  }
+  return native;
 }
