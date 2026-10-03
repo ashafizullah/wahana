@@ -103,3 +103,13 @@ export async function markSeenOn(account: string, chatId: string, messageId?: st
   const { c, session } = await wahaOf(account);
   await c.sendSeen(session, chatId, messageId ? [messageId] : undefined);
 }
+
+/** Show (or stop) "typing…" in a chat, on whichever account. */
+export async function setTypingOn(account: string, chatId: string, on: boolean): Promise<void> {
+  if (accountParts(account)?.kind === "native") {
+    await nativeWa.setTyping(nativeIdOf(account), nativeChat(chatId), on);
+    return;
+  }
+  const { c, session } = await wahaOf(account);
+  await (on ? c.startTyping(session, chatId) : c.stopTyping(session, chatId));
+}

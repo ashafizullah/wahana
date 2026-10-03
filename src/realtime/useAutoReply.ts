@@ -1,13 +1,13 @@
 import { useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { sendNotification } from "@tauri-apps/plugin-notification";
-import { clientForProfile, useSettings } from "@/store/settings";
+import { clientForProfile, sendTypingFor, useSettings } from "@/store/settings";
 import { useChatPrefs } from "@/store/chatPrefs";
 import { activeRules, lastReplyAt, logReply, repliesSince, repliesToday, ruleMatches, type AutoReplyRule } from "@/store/autoReply";
 import { expandTemplate } from "@/store/quickReplies";
 import { aiAutoReply } from "@/lib/autoReplyAi";
 import { accountParts } from "@/lib/account";
-import { markSeenOn, sendTextOn } from "@/lib/send";
+import { markSeenOn, sendTextOn, setTypingOn } from "@/lib/send";
 import { nativeWa } from "@/lib/nativeWa";
 import { qk } from "@/api/queries";
 import { displayId, isGroup, errMsg, convKey } from "@/lib/utils";
@@ -18,6 +18,11 @@ import type { IncomingMessage } from "@/realtime/useWahaSocket";
 const MAX_AGE_S = 120;
 /** Small human-like pause before answering. */
 const DELAY_MS = [1500, 4000] as const;
+/** "Typing…" lasts roughly as long as a person would take to type the reply, within these bounds. */
+const TYPING_MS_PER_CHAR = 40;
+const TYPING_MS = [2000, 8000] as const;
+/** WhatsApp drops a typing indicator after ~25s: refresh it while the AI is still writing. */
+const TYPING_REFRESH_MS = 10_000;
 /** Hard ceiling regardless of the rule's cooldown, so two auto-responders can't ping-pong forever. */
 const MAX_REPLIES = 8;
 const MAX_REPLIES_WINDOW_S = 10 * 60;
@@ -106,6 +111,7 @@ export function useAutoReply() {
       if (inflight.current.has(key)) return; // one at a time per chat: bursts get one answer
       inflight.current.add(key);
       let rule: AutoReplyRule | undefined;
+      let stopTyping: (() => void) | undefined;
       const body = (m.body ?? "").trim();
       const chatName = chatNameFor(m, chatId);
       try {
@@ -134,12 +140,28 @@ export function useAutoReply() {
         const recent = await recentMessages(account, chatId, Math.max(20, rule.ai_context));
         if (userRepliedRecently(recent, m)) return;
 
-        const reply =
-          rule.reply_kind === "ai" ? await aiReply(rule, account, chatId, chatName, m, recent) : templateReply(rule, chatId, chatName);
-        if (!reply) throw new Error("Empty reply");
+        // Read (if asked), then "typing…" while the reply is written, like a person would.
         await new Promise((r) => setTimeout(r, DELAY_MS[0] + Math.random() * (DELAY_MS[1] - DELAY_MS[0])));
         if (useSettings.getState().autoReplyPaused) return;
         if (rule.mark_seen) await markSeenOn(account, chatId, m.id).catch(() => {});
+        if (sendTypingFor(account)) {
+          stopTyping = () => {
+            clearInterval(refresh);
+            void setTypingOn(account, chatId, false).catch(() => {});
+          };
+          const typing = () => void setTypingOn(account, chatId, true).catch(() => {});
+          const refresh = setInterval(typing, TYPING_REFRESH_MS);
+          typing();
+        }
+        const startedAt = Date.now();
+        const reply =
+          rule.reply_kind === "ai" ? await aiReply(rule, account, chatId, chatName, m, recent) : templateReply(rule, chatId, chatName);
+        if (!reply) throw new Error("Empty reply");
+        if (stopTyping) {
+          const typingFor = Math.min(TYPING_MS[1], Math.max(TYPING_MS[0], reply.length * TYPING_MS_PER_CHAR));
+          await new Promise((r) => setTimeout(r, Math.max(0, typingFor - (Date.now() - startedAt))));
+        }
+        if (useSettings.getState().autoReplyPaused) return;
         await sendTextOn(account, chatId, reply, rule.quote ? m.id : undefined);
         await logReply({
           rule_id: rule.id,
@@ -167,6 +189,7 @@ export function useAutoReply() {
           });
         else console.warn("auto-reply failed", e);
       } finally {
+        stopTyping?.();
         inflight.current.delete(key);
         if (rule) qc.invalidateQueries({ queryKey: ["auto-reply"] });
       }

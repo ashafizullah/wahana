@@ -23,6 +23,7 @@ import { confirm } from "@/components/Confirm";
 import { useSettings } from "@/store/settings";
 import { accountParts, useAccountLabel, useAccounts, useActiveAccount } from "@/lib/account";
 import { useAccountChats } from "@/lib/useAccountChats";
+import { nativeWa } from "@/lib/nativeWa";
 import { AccountSelect } from "@/components/AccountSelect";
 import { openSettings } from "@/components/NotConnected";
 import { Avatar, Badge, Button, Input, Label } from "@/components/ui";
@@ -86,6 +87,22 @@ export function AutoReplyScreen() {
     enabled: accounts.length > 0,
     refetchInterval: 15_000,
   });
+  // Native @lid chats carry no number in their id: look it up in each logged account's chat list.
+  const logNative = [...new Set((log.data ?? []).map((l) => l.account))].filter((a) => accountParts(a)?.kind === "native");
+  const nativePhones = useQuery({
+    queryKey: ["auto-reply-phones", logNative],
+    queryFn: async () => {
+      const map = new Map<string, string>();
+      for (const account of logNative) {
+        const id = accountParts(account)?.id;
+        if (!id) continue;
+        for (const c of await nativeWa.chats(id).catch(() => [])) if (c.phone) map.set(`${account}|${c.id}`, c.phone);
+      }
+      return map;
+    },
+    enabled: logNative.length > 0,
+    staleTime: 60_000,
+  });
 
   if (accounts.length === 0) return <NoAccounts />;
   const defaultAccount = active && accounts.some((a) => a.key === active.key) ? active.key : accounts[0]!.key;
@@ -96,14 +113,16 @@ export function AutoReplyScreen() {
     <div className="flex-1 min-w-0 flex flex-col">
       <div className="h-14 shrink-0 flex items-center gap-3 px-6 border-b border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900">
         <Bot size={18} className="text-wa-dark" />
-        <div>
+        <div className="min-w-0">
           <h1 className="font-semibold leading-tight">Auto-reply</h1>
-          <p className="text-[11px] text-neutral-500">
-            Answers incoming messages while this app is running. First matching rule wins; one reply per chat per cooldown; stays quiet for
-            15 min in chats you answered yourself.
+          <p
+            className="text-[11px] text-neutral-500 truncate"
+            title="First matching rule wins; one reply per chat per cooldown; stays quiet for 15 min in chats you answered yourself."
+          >
+            Replies while this app is running. First matching rule wins.
           </p>
         </div>
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto shrink-0 flex items-center gap-2 whitespace-nowrap">
           <label
             className="flex items-center gap-1.5 text-[11px] text-neutral-500"
             title="Spend guard: replies sent per day per account, across its rules (0 = unlimited)"
@@ -119,18 +138,17 @@ export function AutoReplyScreen() {
             />
           </label>
           <Button
-            size="sm"
             variant={autoReplyPaused ? "danger" : "secondary"}
             title="Kill switch for every rule"
             onClick={() => save({ autoReplyPaused: !autoReplyPaused })}
           >
             {autoReplyPaused ? (
               <>
-                <Play size={12} /> Paused — resume
+                <Play size={14} /> Paused — resume
               </>
             ) : (
               <>
-                <Pause size={12} /> Pause all
+                <Pause size={14} /> Pause all
               </>
             )}
           </Button>
@@ -189,7 +207,12 @@ export function AutoReplyScreen() {
           ) : (
             <ul className="divide-y divide-neutral-200 dark:divide-neutral-800 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900">
               {log.data!.map((l) => (
-                <LogRow key={l.id} l={l} ruleName={list.find((r) => r.id === l.rule_id)?.name ?? "(deleted rule)"} />
+                <LogRow
+                  key={l.id}
+                  l={l}
+                  ruleName={list.find((r) => r.id === l.rule_id)?.name ?? "(deleted rule)"}
+                  phone={phoneOf({ id: l.chat_id, phone: nativePhones.data?.get(`${l.account}|${l.chat_id}`) ?? null })}
+                />
               ))}
             </ul>
           )}
@@ -297,13 +320,20 @@ function RuleRow({ r, onEdit, onChanged }: { r: AutoReplyRule; onEdit: () => voi
   );
 }
 
-function LogRow({ l, ruleName }: { l: AutoReplyLog; ruleName: string }) {
+/** The phone number of a direct chat (native knows it even for @lid chats); groups have none. */
+function phoneOf(c: { id: string; phone: string | null }) {
+  if (isGroup(c.id)) return null;
+  return c.phone || (c.id.endsWith("@c.us") || c.id.endsWith("@s.whatsapp.net") ? "+" + c.id.split("@")[0] : null);
+}
+
+function LogRow({ l, ruleName, phone }: { l: AutoReplyLog; ruleName: string; phone: string | null }) {
   return (
     <li className="px-4 py-2 text-xs flex gap-3">
       <span className="shrink-0 text-neutral-500 w-24">{fmt(l.at)}</span>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <span className="font-medium truncate">{l.chat_name || displayId(l.chat_id)}</span>
+          {phone && phone !== (l.chat_name || displayId(l.chat_id)) && <span className="shrink-0 text-neutral-500">{phone}</span>}
           <span className="text-neutral-500 truncate">· {ruleName}</span>
         </div>
         {l.incoming && <div className="text-neutral-500 truncate">« {l.incoming}</div>}
@@ -377,6 +407,7 @@ function RuleForm({
       .slice(0, 20);
   }, [chats, q, chatIds]);
   const chatName = (id: string) => chats.find((c) => c.id === id)?.name || displayId(id);
+  const phoneOfId = (id: string) => phoneOf(chats.find((c) => c.id === id) ?? { id, phone: null });
 
   const regexError = useMemo(() => {
     if (matchKind !== "regex" || !pattern.trim()) return null;
@@ -503,6 +534,7 @@ function RuleForm({
                       >
                         <Avatar name={chatName(id)} size={18} />
                         {chatName(id)}
+                        {phoneOfId(id) && phoneOfId(id) !== chatName(id) && <span className="text-neutral-500">{phoneOfId(id)}</span>}
                         <button onClick={() => setChatIds((x) => x.filter((c) => c !== id))}>
                           <X size={12} />
                         </button>
@@ -527,7 +559,12 @@ function RuleForm({
                         }}
                       >
                         <Avatar name={c.name || displayId(c.id)} size={24} />
-                        <span className="flex-1 truncate text-sm">{c.name || displayId(c.id)}</span>
+                        <span className="flex-1 min-w-0">
+                          <span className="block truncate text-sm">{c.name || displayId(c.id)}</span>
+                          {phoneOf(c) && phoneOf(c) !== c.name && (
+                            <span className="block truncate text-[11px] text-neutral-500">{phoneOf(c)}</span>
+                          )}
+                        </span>
                         {isGroup(c.id) ? (
                           <Badge tone="neutral">
                             <Users size={10} /> group
