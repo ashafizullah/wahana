@@ -34,7 +34,6 @@ import { usePicture } from "@/screens/whatsapp/usePicture";
 /**
  * Status (stories) for a native WhatsApp account: the last 24 hours grouped by poster,
  * a viewer that marks them seen, and posting (text or photo/video) to your saved contacts.
- * Mirrors `StatusScreen` (WAHA) but through `nativeWa`.
  */
 
 interface Story {

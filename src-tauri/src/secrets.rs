@@ -1,4 +1,4 @@
-//! WAHA / AI API keys in the OS keychain (macOS Keychain, Windows Credential Manager,
+//! AI API keys in the OS keychain (macOS Keychain, Windows Credential Manager,
 //! Secret Service on Linux).
 //!
 //! Every key lives in ONE keychain item (a JSON map of id → key), read once per launch
@@ -48,7 +48,7 @@ fn with_vault<T>(
     f(cache.as_mut().unwrap())
 }
 
-/// Store the WAHA API key in the OS keychain (macOS Keychain / Windows Credential Manager).
+/// Store an API key in the OS keychain (macOS Keychain / Windows Credential Manager).
 #[tauri::command]
 pub fn save_api_key(profile: String, api_key: String) -> Result<(), String> {
     if cfg!(debug_assertions) {

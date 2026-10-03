@@ -2,14 +2,16 @@ import { useEffect, useState } from "react";
 import { Check, Loader2, Plus, Tag, Trash2, X } from "lucide-react";
 import { Button, Input } from "@/components/ui";
 import { confirm } from "@/components/Confirm";
-import { LABEL_COLORS } from "@/components/LabelsDialog";
 import { cn, errMsg } from "@/lib/utils";
 import { nativeWa, type NativeLabel } from "@/lib/nativeWa";
+
+/** WhatsApp's label palette (label color index → hex). */
+const LABEL_COLORS = ["#ff9485", "#64c4ff", "#ffd429", "#dfaef0", "#99b6c1", "#55ccb3", "#ff9dff", "#d3a91b", "#ffc5c7", "#a9c4a0"];
 
 /** WhatsApp label colors are indices; map them onto the shared palette. */
 export const labelColorHex = (index: number) => LABEL_COLORS[((index % LABEL_COLORS.length) + LABEL_COLORS.length) % LABEL_COLORS.length]!;
 
-/** Assign labels to a native chat, and create/delete labels inline (mirrors the WAHA dialog). */
+/** Assign labels to a native chat, and create/delete labels inline. */
 export function NativeLabelsDialog({
   accountId,
   chatId,

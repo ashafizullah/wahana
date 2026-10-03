@@ -45,10 +45,10 @@ import { nativeMediaBlob, saveNativeMedia } from "@/screens/whatsapp/NativeMedia
 import { usePicture } from "@/screens/whatsapp/usePicture";
 
 /**
- * Right-hand details panel for a native WhatsApp chat, laid out like the WAHA one
- * (`components/InfoPanel`): the profile on top, a row into "Media, links and docs", the
- * group description and settings, and the participants in a searchable dialog. Details
- * are fetched live; names come from this account's contacts, with unsaved people shown by
+ * Right-hand details panel for a native WhatsApp chat, laid out like WhatsApp: the profile
+ * on top, a row into "Media, links and docs", the group description and settings, and the
+ * participants in a searchable dialog. Details are fetched live; names come from this
+ * account's contacts, with unsaved people shown by
  * number and their own "~name".
  */
 export function NativeInfoPanel({

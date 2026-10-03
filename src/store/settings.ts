@@ -1,6 +1,5 @@
 import { create } from "zustand";
 import { load, type Store } from "@tauri-apps/plugin-store";
-import { WahaClient } from "@/api/client";
 import { deleteSecret, getSecret, setSecret } from "@/lib/secrets";
 
 const STORE_FILE = "settings.json";
@@ -9,16 +8,6 @@ let storePromise: Promise<Store> | null = null;
 function store() {
   storePromise ??= load(STORE_FILE, { autoSave: true, defaults: {} });
   return storePromise;
-}
-
-/** A WAHA server the user can switch between. The API key lives in the keychain under `profile.id`. */
-export interface Profile {
-  id: string;
-  name: string;
-  baseUrl: string;
-  session: string;
-  /** Switched off: no client, sockets or background jobs, but the server and key stay saved. */
-  disabled?: boolean;
 }
 
 /** When read receipts (blue ticks) are sent. */
@@ -56,12 +45,12 @@ export interface Prefs {
   aiAutoLabel: boolean;
   /** Kill switch for all auto-reply rules. */
   autoReplyPaused: boolean;
-  /** Max auto-replies sent per calendar day across all rules of this server (0 = unlimited). Spend guard for AI replies. */
+  /** Max auto-replies sent per calendar day per account across its rules (0 = unlimited). Spend guard for AI replies. */
   autoReplyDailyLimit: number;
   /** Minutes auto-reply stays quiet in a chat after the user wrote there themselves (0 = never). */
   autoReplyManualQuietMin: number;
   // ── Per-account overrides ──
-  // Keyed by account (`waha:<profileId>:<session>` / `native:<accountId>`); a missing entry
+  // Keyed by account (`native:<accountId>`); a missing entry
   // falls back to the global value above, so one setting can still cover every number.
   sendTypingByAccount: Record<string, boolean>;
   readReceiptsByAccount: Record<string, ReadReceipts>;
@@ -99,42 +88,16 @@ interface SettingsState extends Prefs {
   hydrated: boolean;
   /** AI provider key (keychain entry "ai"). */
   aiApiKey: string;
-  profiles: Profile[];
-  activeProfile: string;
-  /** Derived from the active profile (kept flat for convenience). */
-  baseUrl: string;
-  session: string;
-  apiKey: string;
-  client: WahaClient | null;
 
   hydrate: () => Promise<void>;
-  /** Update prefs and/or the active profile's connection (baseUrl, session, apiKey). */
-  save: (patch: Partial<Prefs & { baseUrl: string; session: string; apiKey: string; name: string; aiApiKey: string }>) => Promise<void>;
-  addProfile: (p: { name: string; baseUrl: string; apiKey: string; session?: string }) => Promise<void>;
-  switchProfile: (id: string) => Promise<void>;
-  removeProfile: (id: string) => Promise<void>;
-  setProfileDisabled: (id: string, disabled: boolean) => Promise<void>;
+  save: (patch: Partial<Prefs & { aiApiKey: string }>) => Promise<void>;
   clear: () => Promise<void>;
 }
 
-function makeClient(baseUrl: string, apiKey: string, disabled?: boolean) {
-  return !disabled && baseUrl && apiKey ? new WahaClient({ baseUrl, apiKey }) : null;
-}
-
-const readKey = (profileId: string) => getSecret(profileId);
-
-const newId = () => Math.random().toString(36).slice(2, 10);
-
-export const useSettings = create<SettingsState>((set, get) => ({
+export const useSettings = create<SettingsState>((set) => ({
   ...DEFAULT_PREFS,
   hydrated: false,
   aiApiKey: "",
-  profiles: [],
-  activeProfile: "",
-  baseUrl: "",
-  session: "default",
-  apiKey: "",
-  client: null,
 
   async hydrate() {
     const s = await store();
@@ -145,212 +108,27 @@ export const useSettings = create<SettingsState>((set, get) => ({
     }
     const legacyReceipts = await s.get<boolean>("sendReadReceipts");
     if (legacyReceipts === false) prefs.readReceipts = "never";
-    // Migrate per-session persona overrides to per-account keys ("profile:session" → "waha:…").
-    const legacyPersona = await s.get<Record<string, string>>("aiPersonaBySession");
-    if (legacyPersona) {
-      const migrated: Record<string, string> = { ...prefs.aiPersonaByAccount };
-      for (const [key, value] of Object.entries(legacyPersona)) {
-        if (!value?.trim()) continue;
-        const scoped = key.startsWith("waha:") || key.startsWith("native:") ? key : `waha:${key}`;
-        migrated[scoped] = value;
-      }
-      prefs.aiPersonaByAccount = migrated;
-      await s.set("aiPersonaByAccount", migrated);
-      await s.delete("aiPersonaBySession");
-    }
-    let profiles = (await s.get<Profile[]>("profiles")) ?? [];
-    let active = (await s.get<string>("activeProfile")) ?? "";
-
-    // Migrate the single-server layout (baseUrl/session at top level, key under "default").
-    const legacyUrl = await s.get<string>("baseUrl");
-    if (profiles.length === 0 && legacyUrl) {
-      profiles = [{ id: "default", name: "Default", baseUrl: legacyUrl, session: (await s.get<string>("session")) ?? "default" }];
-      active = "default";
-      await s.set("profiles", profiles);
-      await s.set("activeProfile", active);
-      await s.delete("baseUrl");
-      await s.delete("session");
-    }
-
-    let apiKey = "";
-    // Dev convenience: prefill from .env.development.local when nothing is stored yet.
-    if (import.meta.env.DEV && profiles.length === 0 && import.meta.env.VITE_WAHA_BASE_URL) {
-      profiles = [
-        { id: "dev", name: "Dev", baseUrl: import.meta.env.VITE_WAHA_BASE_URL, session: import.meta.env.VITE_WAHA_SESSION ?? "default" },
-      ];
-      active = "dev";
-      apiKey = import.meta.env.VITE_WAHA_API_KEY ?? "";
-    }
-    if (!profiles.some((p) => p.id === active)) active = profiles[0]?.id ?? "";
-    const prof = profiles.find((p) => p.id === active);
-    if (prof && !apiKey) apiKey = await readKey(prof.id);
-    // Dev: every cargo rebuild is a new binary, so macOS may deny keychain access until re-approved.
-    // Fall back to the dev key when the profile points at the dev server.
-    if (
-      import.meta.env.DEV &&
-      prof &&
-      !apiKey &&
-      import.meta.env.VITE_WAHA_API_KEY &&
-      prof.baseUrl.replace(/\/+$/, "") === (import.meta.env.VITE_WAHA_BASE_URL ?? "").replace(/\/+$/, "")
-    ) {
-      apiKey = import.meta.env.VITE_WAHA_API_KEY;
-    }
-
-    const aiApiKey = await getSecret("ai");
-    set({
-      hydrated: true,
-      ...prefs,
-      aiApiKey,
-      profiles,
-      activeProfile: active,
-      baseUrl: prof?.baseUrl ?? "",
-      session: prof?.session ?? "default",
-      apiKey,
-      client: makeClient(prof?.baseUrl ?? "", apiKey, prof?.disabled),
-    });
+    set({ hydrated: true, ...prefs, aiApiKey: await getSecret("ai") });
   },
 
   async save(patch) {
-    profileClients.clear();
     const s = await store();
-    const { apiKey: newKey, baseUrl, session, name, aiApiKey, ...prefPatch } = patch;
+    const { aiApiKey, ...prefPatch } = patch;
     for (const [k, v] of Object.entries(prefPatch)) await s.set(k, v);
     if (aiApiKey !== undefined) {
       await setSecret("ai", aiApiKey.trim());
       set({ aiApiKey: aiApiKey.trim() });
     }
-
-    const st = get();
-    let profiles = st.profiles;
-    let active = st.activeProfile;
-    let apiKey = st.apiKey;
-
-    if (baseUrl !== undefined || session !== undefined || newKey !== undefined || name !== undefined) {
-      // No profile yet (first-run Save) → create one.
-      if (!profiles.some((p) => p.id === active)) {
-        active = newId();
-        profiles = [...profiles, { id: active, name: name ?? "Default", baseUrl: "", session: "default" }];
-      }
-      profiles = profiles.map((p) =>
-        p.id === active
-          ? {
-              ...p,
-              name: name?.trim() || p.name,
-              baseUrl: baseUrl !== undefined ? baseUrl.trim() : p.baseUrl,
-              session: session !== undefined ? session.trim() : p.session,
-            }
-          : p,
-      );
-      await s.set("profiles", profiles);
-      await s.set("activeProfile", active);
-      if (newKey !== undefined) {
-        apiKey = newKey.trim();
-        await setSecret(active, apiKey);
-      }
-    }
-    const prof = profiles.find((p) => p.id === active);
-    const nextUrl = prof?.baseUrl ?? "";
-    set({
-      ...prefPatch,
-      profiles,
-      activeProfile: active,
-      baseUrl: nextUrl,
-      session: prof?.session ?? "default",
-      apiKey,
-      client: baseUrl !== undefined || newKey !== undefined ? makeClient(nextUrl, apiKey, prof?.disabled) : st.client,
-    });
-  },
-
-  async addProfile({ name, baseUrl, apiKey, session = "default" }) {
-    const s = await store();
-    const id = newId();
-    const profiles = [...get().profiles, { id, name: name.trim() || baseUrl, baseUrl: baseUrl.trim(), session }];
-    await s.set("profiles", profiles);
-    await setSecret(id, apiKey.trim());
-    set({ profiles });
-    await get().switchProfile(id);
-  },
-
-  async switchProfile(id) {
-    profileClients.clear();
-    const prof = get().profiles.find((p) => p.id === id);
-    if (!prof) return;
-    const s = await store();
-    await s.set("activeProfile", id);
-    const apiKey = await readKey(id);
-    set({
-      activeProfile: id,
-      baseUrl: prof.baseUrl,
-      session: prof.session,
-      apiKey,
-      client: makeClient(prof.baseUrl, apiKey, prof.disabled),
-    });
-  },
-
-  async removeProfile(id) {
-    profileClients.clear();
-    const s = await store();
-    const profiles = get().profiles.filter((p) => p.id !== id);
-    await s.set("profiles", profiles);
-    await deleteSecret(id);
-    set({ profiles });
-    if (get().activeProfile === id) {
-      if (profiles[0]) await get().switchProfile(profiles[0].id);
-      else set({ activeProfile: "", baseUrl: "", session: "default", apiKey: "", client: null });
-    }
-  },
-
-  async setProfileDisabled(id, disabled) {
-    profileClients.clear();
-    const s = await store();
-    const profiles = get().profiles.map((p) => (p.id === id ? { ...p, disabled: disabled || undefined } : p));
-    await s.set("profiles", profiles);
-    set({ profiles });
-    if (get().activeProfile === id) {
-      const prof = profiles.find((p) => p.id === id);
-      set({ client: makeClient(prof?.baseUrl ?? "", get().apiKey, disabled) });
-    }
+    set(prefPatch);
   },
 
   async clear() {
     const s = await store();
-    for (const p of get().profiles) await deleteSecret(p.id);
     await deleteSecret("ai");
     await s.clear();
-    set({ ...DEFAULT_PREFS, profiles: [], activeProfile: "", baseUrl: "", session: "default", apiKey: "", client: null });
+    set({ ...DEFAULT_PREFS, aiApiKey: "" });
   },
 }));
-
-/** Convenience: throws if settings are incomplete. Use inside query fns. */
-export function requireClient() {
-  const st = useSettings.getState();
-  if (st.client) return st.client;
-  const prof = st.profiles.find((p) => p.id === st.activeProfile);
-  if (prof?.disabled) throw new Error(`WAHA server "${prof.name}" is disabled. Enable it in Settings → Servers.`);
-  if (prof) throw new Error(`WAHA server "${prof.name}" is missing its URL or API key. Check Settings → Connection.`);
-  throw new Error("No WAHA server yet. Add one in Settings → Servers.");
-}
-
-/** Clients of non-active profiles, so background jobs don't re-read the keychain on every send. */
-const profileClients = new Map<string, WahaClient>();
-
-/**
- * Client for one WAHA profile (server). Schedules, broadcasts and rules remember the profile
- * they were made under; they must keep sending through that server after the user switches.
- */
-export async function clientForProfile(profileId: string | undefined): Promise<WahaClient> {
-  const st = useSettings.getState();
-  if (!profileId || profileId === st.activeProfile) return requireClient();
-  const cached = profileClients.get(profileId);
-  if (cached) return cached;
-  const prof = st.profiles.find((p) => p.id === profileId);
-  if (!prof) throw new Error(`WAHA server "${profileId}" was removed`);
-  if (prof.disabled) throw new Error(`WAHA server "${prof.name}" is disabled`);
-  const c = makeClient(prof.baseUrl, await readKey(profileId));
-  if (!c) throw new Error(`WAHA server "${prof.name}" is not configured`);
-  profileClients.set(profileId, c);
-  return c;
-}
 
 // ── Per-account resolution (falls back to the global value) ──────────────
 
@@ -405,14 +183,4 @@ export function shouldAutoLoad(kind: MediaKind, p: MediaPrefs) {
     default:
       return false;
   }
-}
-
-/** Mimetype prefixes WAHA should pre-download server-side for message lists. */
-export function autoLoadMimePrefixes(p: MediaPrefs) {
-  const out: string[] = [];
-  if (p.autoLoadImages) out.push("image/");
-  else if (p.autoLoadStickers) out.push("image/webp"); // stickers are webp; plain webp photos are rare
-  if (p.autoLoadVideos) out.push("video/");
-  if (p.autoLoadAudio) out.push("audio/");
-  return out;
 }

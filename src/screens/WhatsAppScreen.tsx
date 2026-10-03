@@ -34,10 +34,10 @@ import { formatBytes } from "@/lib/mediaCache";
 import { cn, convKey, displayId, errMsg, formatDateDivider, formatTime, isChannel, isGroup } from "@/lib/utils";
 import { WaMarkdown, stripWaMarkdown } from "@/lib/waMarkdown";
 import { nativeWa, type NativeAccount, type NativeChat, type NativeLabel, type NativeMessage } from "@/lib/nativeWa";
-import { TranslateDraftButton, WriteAssistButton } from "@/screens/chats/Composer";
+import { TranslateDraftButton, WriteAssistButton } from "@/components/DraftAssist";
 import { QuickReplyPicker } from "@/components/QuickReplyPicker";
 import { LinkPreviewCard } from "@/components/LinkPreview";
-import { AckIcon, ImageNoteView, TranslationView } from "@/screens/chats/MessageBubble";
+import { AckIcon, ImageNoteView, TranslationView } from "@/components/MessageExtras";
 import { useStoryJump } from "@/store/storyJump";
 import { NativeMessageMenu, NativeSmartReplies, NativeSummaryModal, useNativeAutoTranslate } from "@/screens/whatsapp/NativeAi";
 import { NativeMessageInfo } from "@/screens/whatsapp/NativeMessageInfo";
@@ -45,7 +45,7 @@ import { NativeFollowChannel } from "@/screens/whatsapp/NativeChannel";
 import { NativeInfoPanel } from "@/screens/whatsapp/NativeInfoPanel";
 import { usePicture } from "@/screens/whatsapp/usePicture";
 import { useNativeTyping } from "@/screens/whatsapp/useNativeTyping";
-import { TypingBubble } from "@/screens/chats/TypingBubble";
+import { TypingBubble } from "@/components/TypingBubble";
 import { NativeMediaView, cacheSentMedia, saveNativeMedia } from "@/screens/whatsapp/NativeMediaView";
 import { readReceiptsFor, sendTypingFor, useReadReceipts } from "@/store/settings";
 import { nativeAccountKey, nativeChatKey } from "@/lib/account";
@@ -61,12 +61,12 @@ import { useRevoked } from "@/store/revoked";
 import { useWhatsApp } from "@/store/whatsapp";
 
 /**
- * Chat screen for a native WhatsApp account (the Rust client, no server and no embedded
- * WhatsApp Web), laid out and styled like the WAHA chat screen. Pairing happens in place:
- * while the account waits for a scan, the conversation area shows the QR code.
+ * Chat screen for a native WhatsApp account (the Rust client, no embedded WhatsApp Web).
+ * Pairing happens in place: while the account waits for a scan, the conversation area
+ * shows the QR code.
  *
  * History comes from the local store (see `whatsapp_db.rs`); attachments download on
- * demand; the AI tools are the WAHA screen's, adapted in `whatsapp/NativeAi`.
+ * demand; the AI tools live in `whatsapp/NativeAi`.
  */
 
 /** Timestamps from the backend are milliseconds; the shared formatters take seconds. */
@@ -268,7 +268,7 @@ function ChatList({
         c.lastText.toLowerCase().includes(needle)
       );
     });
-    // Pinned chats float to the top (most recently pinned first), like the WAHA list.
+    // Pinned chats float to the top (most recently pinned first), like WhatsApp.
     return [...list].sort((a, b) => (pinned[nativeChatKey(account.id, b.id)] ?? 0) - (pinned[nativeChatKey(account.id, a.id)] ?? 0));
   }, [chats, q, filter, pinned, account.id]);
 

@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { sendNotification } from "@tauri-apps/plugin-notification";
-import { clientForProfile, sendTypingFor, useSettings } from "@/store/settings";
+import { sendTypingFor, useSettings } from "@/store/settings";
 import { takeoverKey, useChatPrefs } from "@/store/chatPrefs";
 import {
   activeRules,
@@ -14,16 +14,14 @@ import {
   type AutoReplyRule,
 } from "@/store/autoReply";
 import { expandTemplate } from "@/store/quickReplies";
-import { aiAutoReply } from "@/lib/autoReplyAi";
-import { accountParts } from "@/lib/account";
+import { aiAutoReply, type ReplyMessage } from "@/lib/autoReplyAi";
+import { accountId } from "@/lib/account";
 import { markSeenOn, sendTextOn, setTypingOn } from "@/lib/send";
 import { nativeWa } from "@/lib/nativeWa";
-import { qk } from "@/api/queries";
 import { displayId, isGroup, errMsg, convKey } from "@/lib/utils";
-import type { WAMessage } from "@/api/types";
-import type { IncomingMessage } from "@/realtime/useWahaSocket";
+import type { IncomingMessage } from "@/store/whatsapp";
 
-/** Ignore messages older than this (socket replays / reconnect bursts). */
+/** Ignore messages older than this (redelivered bursts after a reconnect). */
 const MAX_AGE_S = 120;
 /** Small human-like pause before answering. */
 const DELAY_MS = [1500, 4000] as const;
@@ -37,9 +35,9 @@ const MAX_REPLIES = 8;
 const MAX_REPLIES_WINDOW_S = 10 * 60;
 
 /**
- * Answers incoming messages according to the rules of the account the message arrived on
- * (WAHA or native): first enabled rule whose scope, time window and pattern match wins,
- * subject to a per-chat cooldown. Runs while the app is alive (tray is fine).
+ * Answers incoming messages according to the account's rules: first enabled rule whose scope,
+ * time window and pattern match wins, subject to a per-chat cooldown. Runs while the app is
+ * alive (tray is fine).
  */
 export function useAutoReply() {
   const qc = useQueryClient();
@@ -47,39 +45,29 @@ export function useAutoReply() {
   const handled = useRef(new Set<string>()); // "account:messageId" already considered
   const dailyLimitWarned = useRef(false);
 
-  // Always listening: rules of a WAHA server that is not the active one still get messages
-  // (see useProfileSockets) even when the active profile has no sessions.
   useEffect(() => {
     const onIncoming = (ev: Event) => {
       const { account, chatId, message } = (ev as CustomEvent<IncomingMessage>).detail;
       void handle(account, chatId, message);
     };
 
-    const recentMessages = async (account: string, chatId: string, limit: number): Promise<WAMessage[]> => {
-      const p = accountParts(account);
-      if (p?.kind === "native" && p.id) {
-        const list = await nativeWa.messages(p.id, chatId, limit).catch(() => []);
-        return list.map((m) => ({
-          id: m.id,
-          timestamp: Math.floor(m.timestamp / 1000),
-          fromMe: m.fromMe,
-          from: m.chatId,
-          body: m.body,
-          hasMedia: !!m.media,
-        })) as unknown as WAMessage[];
-      }
-      if (p?.kind !== "waha" || !p.session) return [];
-      // The query cache is keyed by session name only, so it belongs to the active server.
-      const isActive = !p.profile || p.profile === useSettings.getState().activeProfile;
-      const cached = isActive ? qc.getQueryData<WAMessage[]>(qk.messages(p.session, chatId)) : undefined;
-      if (cached) return cached;
-      const c = await clientForProfile(p.profile).catch(() => null);
-      if (!c) return [];
-      return c.messages(p.session, chatId, { limit, downloadMedia: false }).catch(() => []);
+    const recentMessages = async (account: string, chatId: string, limit: number): Promise<ReplyMessage[]> => {
+      const id = accountId(account);
+      if (!id) return [];
+      const list = await nativeWa.messages(id, chatId, limit).catch(() => []);
+      return list.map((m) => ({
+        id: m.id,
+        timestamp: Math.floor(m.timestamp / 1000),
+        fromMe: m.fromMe,
+        from: m.chatId,
+        body: m.body,
+        hasMedia: !!m.media,
+        senderName: m.fromMe ? undefined : m.senderName || undefined,
+      }));
     };
 
     /** The user wrote in this chat within the last `quietMin` minutes — they're handling it (our auto-replies don't count). */
-    const userRepliedRecently = async (account: string, chatId: string, recent: WAMessage[], m: WAMessage, quietMin: number) => {
+    const userRepliedRecently = async (account: string, chatId: string, recent: ReplyMessage[], m: ReplyMessage, quietMin: number) => {
       if (quietMin <= 0) return false;
       const since = m.timestamp - quietMin * 60;
       const ours = await replyTextsSince(account, chatId, since - 60);
@@ -89,10 +77,7 @@ export function useAutoReply() {
       return mine > 0;
     };
 
-    const chatNameFor = (m: WAMessage, chatId: string) => {
-      const push = (m._data as { Info?: { PushName?: string } } | undefined)?.Info?.PushName;
-      return (!isGroup(chatId) && push) || displayId(chatId);
-    };
+    const chatNameFor = (m: ReplyMessage, chatId: string) => (!isGroup(chatId) && m.senderName) || displayId(chatId);
 
     const templateReply = (rule: AutoReplyRule, chatId: string, chatName: string) =>
       expandTemplate(rule.text ?? "", {
@@ -100,17 +85,22 @@ export function useAutoReply() {
         phone: /@(c\.us|s\.whatsapp\.net)$/.test(chatId) ? `+${chatId.split("@")[0]}` : "",
       }).trim();
 
-    const aiReply = async (rule: AutoReplyRule, account: string, chatId: string, chatName: string, m: WAMessage, recent: WAMessage[]) => {
+    const aiReply = async (
+      rule: AutoReplyRule,
+      account: string,
+      chatId: string,
+      chatName: string,
+      m: ReplyMessage,
+      recent: ReplyMessage[],
+    ) => {
       // Always include the trigger message.
       const messages = [...recent.filter((x) => x.id !== m.id), m].sort((a, b) => a.timestamp - b.timestamp).slice(-rule.ai_context);
-      // Same keys the chat screens use: `session:chat` for WAHA, `accountId:chat` for native.
-      const p = accountParts(account);
-      const owner = p?.kind === "native" ? p.id : p?.session;
+      const owner = accountId(account);
       const language = owner ? useChatPrefs.getState().autoTranslate[convKey(owner, chatId)]?.out : undefined;
       return aiAutoReply({ instructions: rule.ai_instructions, account, chatName, isGroup: isGroup(chatId), messages, language });
     };
 
-    const handle = async (account: string, chatId: string, m: WAMessage) => {
+    const handle = async (account: string, chatId: string, m: ReplyMessage) => {
       const st = useSettings.getState();
       if (st.autoReplyPaused) return;
       if (Date.now() / 1000 - m.timestamp > MAX_AGE_S) return;
@@ -150,15 +140,14 @@ export function useAutoReply() {
           }
           return;
         }
-        // Recent context: the cache when the chat is open, else a light fetch (the manual-quiet
-        // guard and the AI context both need it; chats never opened here have no cache).
+        // Recent context: local history; the manual-quiet guard and the AI context both need it.
         const recent = await recentMessages(account, chatId, Math.max(20, rule.ai_context));
         if (await userRepliedRecently(account, chatId, recent, m, st.autoReplyManualQuietMin)) return;
 
         // Read (if asked), then "typing…" while the reply is written, like a person would.
         await new Promise((r) => setTimeout(r, DELAY_MS[0] + Math.random() * (DELAY_MS[1] - DELAY_MS[0])));
         if (useSettings.getState().autoReplyPaused || takenOver()) return;
-        if (rule.mark_seen) await markSeenOn(account, chatId, m.id).catch(() => {});
+        if (rule.mark_seen) await markSeenOn(account, chatId).catch(() => {});
         if (sendTypingFor(account)) {
           stopTyping = () => {
             clearInterval(refresh);
@@ -181,7 +170,7 @@ export function useAutoReply() {
         await logReply({
           rule_id: rule.id,
           account,
-          session: accountParts(account)?.session ?? "",
+          session: "",
           chat_id: chatId,
           chat_name: chatName,
           incoming: body || null,
@@ -194,7 +183,7 @@ export function useAutoReply() {
           await logReply({
             rule_id: rule.id,
             account,
-            session: accountParts(account)?.session ?? "",
+            session: "",
             chat_id: chatId,
             chat_name: chatName,
             incoming: body || null,

@@ -77,7 +77,7 @@
       }
     },
     "category": "SocialNetworking",
-    "shortDescription": "WhatsApp desktop client: native accounts or a WAHA server"
+    "shortDescription": "WhatsApp desktop client for your own accounts"
   },
   "plugins": {
     "updater": {

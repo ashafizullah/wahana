@@ -3,7 +3,7 @@ import { db } from "@/store/scheduler";
 
 export interface QuickReply {
   id: string;
-  /** Account this reply is limited to, or null for every account. `waha:<profile>:*` = all sessions of one server. */
+  /** Account this reply is limited to (`native:<id>`), or null for every account. */
   account: string | null;
   shortcut: string;
   text: string;

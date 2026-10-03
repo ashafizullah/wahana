@@ -214,7 +214,7 @@ export function AiSection() {
   );
 }
 
-/** Persona overrides per account (WAHA session or native number). Saved on blur. */
+/** Persona overrides per account (by native number). Saved on blur. */
 function PersonaPerAccount() {
   const accounts = useAccounts();
   const map = useSettings((s) => s.aiPersonaByAccount);

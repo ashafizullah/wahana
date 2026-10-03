@@ -29,7 +29,6 @@ export function BackupSection() {
   const [pending, setPending] = useState<{ path: string; backup: Backup } | null>(null);
   const [opts, setOpts] = useState<RestoreOptions>({
     prefs: true,
-    profiles: true,
     chatPrefs: true,
     quickReplies: true,
     schedules: true,
@@ -43,14 +42,14 @@ export function BackupSection() {
       <div className="space-y-2">
         <div className="text-sm font-medium">Export</div>
         <p className="text-xs text-neutral-500">
-          Includes: preferences, theme, servers, AI settings, pinned/muted/archived chats, quick replies, schedules (without attachments),
-          auto-reply rules, saved stickers, WhatsApp (native) account names. Not included: message history, media cache, broadcast history,
-          WhatsApp (native) logins — restored accounts need a new QR scan.
+          Includes: preferences, theme, AI settings, pinned/muted/archived chats, quick replies, schedules (without attachments), auto-reply
+          rules, saved stickers, WhatsApp account names. Not included: message history, media cache, broadcast history, WhatsApp logins —
+          restored accounts need a new QR scan.
         </p>
         <label className="flex items-start gap-2 text-sm cursor-pointer">
           <input type="checkbox" className="mt-1" checked={includeSecrets} onChange={(e) => setIncludeSecrets(e.target.checked)} />
           <span>
-            Include API keys (WAHA + AI)
+            Include API keys (AI)
             <span className="block text-xs text-amber-700 dark:text-amber-300">
               Keys are written in plain text — keep the file private.
             </span>
@@ -64,7 +63,7 @@ export function BackupSection() {
               includeSecrets &&
               !(await confirm({
                 title: "Export API keys in plain text?",
-                message: "Anyone with the file can use your WAHA server and AI account.",
+                message: "Anyone with the file can use your AI account.",
                 danger: true,
                 confirmLabel: "Export anyway",
               }))
@@ -112,16 +111,15 @@ export function BackupSection() {
             <div className="text-xs text-neutral-500 selectable truncate">{pending.path}</div>
             <div className="text-xs text-neutral-500">
               Exported {new Date(pending.backup.exportedAt).toLocaleString()} · app {pending.backup.appVersion} ·{" "}
-              {pending.backup.profiles?.length ?? 0} server(s) · {pending.backup.quickReplies?.length ?? 0} quick replies ·{" "}
-              {pending.backup.schedules?.length ?? 0} schedules · {pending.backup.autoReplyRules?.length ?? 0} auto-reply rules ·{" "}
-              {pending.backup.stickers?.length ?? 0} stickers · {pending.backup.nativeAccounts?.length ?? 0} WhatsApp account(s)
+              {pending.backup.quickReplies?.length ?? 0} quick replies · {pending.backup.schedules?.length ?? 0} schedules ·{" "}
+              {pending.backup.autoReplyRules?.length ?? 0} auto-reply rules · {pending.backup.stickers?.length ?? 0} stickers ·{" "}
+              {pending.backup.nativeAccounts?.length ?? 0} WhatsApp account(s)
               {pending.backup.secrets ? " · includes API keys" : ""}
             </div>
             <div className="grid grid-cols-2 gap-1 text-sm">
               {(
                 [
                   ["prefs", "Preferences, theme & AI"],
-                  ["profiles", "Servers (merged by id)"],
                   ["chatPrefs", "Pinned / muted / archived"],
                   ["quickReplies", "Quick replies"],
                   ["schedules", "Schedules"],

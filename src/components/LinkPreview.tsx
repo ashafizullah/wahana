@@ -21,8 +21,8 @@ interface ExtText {
   JPEGThumbnail?: string;
 }
 
-/** What a preview needs from a message: WAHA messages carry the raw proto in `_data`, native
- * ones the preview WhatsApp embedded (or only the text). */
+/** What a preview needs from a message: the preview WhatsApp embedded (in the raw proto),
+ * or only the text to fall back on. */
 type PreviewSource = { body?: string | null; _data?: unknown; preview?: Preview | null };
 
 /** Preview data WhatsApp embedded in the message (sender generated it). */

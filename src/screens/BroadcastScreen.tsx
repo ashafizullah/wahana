@@ -17,7 +17,7 @@ import {
   AlertTriangle,
   Clock,
 } from "lucide-react";
-import { accountParts, useAccountLabel, useAccounts, useActiveAccount } from "@/lib/account";
+import { useAccountLabel, useAccounts, useActiveAccount } from "@/lib/account";
 import { useAccountChats } from "@/lib/useAccountChats";
 import { AccountSelect } from "@/components/AccountSelect";
 import { Avatar, Button, Input, Label } from "@/components/ui";
@@ -33,20 +33,20 @@ import {
   type BroadcastSummary,
 } from "@/store/broadcast";
 import type { Kind } from "@/store/scheduler";
-import { openSettings } from "@/components/NotConnected";
+import { openAccounts } from "@/components/NotConnected";
 import { GenerateButton } from "@/components/GenerateButton";
 
 const fmt = (s: number) => new Date(s * 1000).toLocaleString([], { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
 
-/** Shown when nothing can send: no WAHA server and no native account. */
+/** Shown when no account is linked to send from. */
 function NoAccounts() {
   return (
     <div className="flex-1 grid place-items-center text-neutral-500 text-sm p-6">
       <div className="flex flex-col items-center gap-3 max-w-md text-center">
         <Radio size={28} className="text-neutral-400" />
         <p className="font-medium text-neutral-700 dark:text-neutral-300">No account to send from.</p>
-        <p className="text-xs">Link a WhatsApp account in Sessions, or add a WAHA server in Settings.</p>
-        <Button onClick={openSettings}>Open settings</Button>
+        <p className="text-xs">Link a WhatsApp account first.</p>
+        <Button onClick={openAccounts}>Open accounts</Button>
       </div>
     </div>
   );
@@ -235,7 +235,7 @@ export function BroadcastScreen() {
 function NewBroadcast({ defaultAccount, onClose, onCreated }: { defaultAccount: string; onClose: () => void; onCreated: () => void }) {
   const [account, setAccount] = useState(defaultAccount);
   const chats = useAccountChats(account);
-  const suffix = accountParts(account)?.kind === "native" ? "@s.whatsapp.net" : "@c.us";
+  const suffix = "@s.whatsapp.net";
   const [name, setName] = useState("");
   const [q, setQ] = useState("");
   const [picked, setPicked] = useState<Map<string, string>>(new Map()); // id → name
@@ -281,13 +281,12 @@ function NewBroadcast({ defaultAccount, onClose, onCreated }: { defaultAccount: 
       const id = Math.random().toString(36).slice(2, 12);
       const recipients = [...picked.entries()].map(([chatId, n]) => ({ chatId, name: n }));
       for (const n of pastedNumbers) if (!picked.has(`${n}${suffix}`)) recipients.push({ chatId: `${n}${suffix}`, name: `+${n}` });
-      const parts = accountParts(account);
       await createBroadcast(
         {
           id,
           account,
-          profile: parts?.kind === "waha" ? (parts.profile ?? "") : "",
-          session: parts?.kind === "waha" ? (parts.session ?? "") : "",
+          profile: "",
+          session: "",
           name: name.trim() || null,
           kind,
           text: text.trim() || null,

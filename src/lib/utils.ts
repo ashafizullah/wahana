@@ -10,10 +10,7 @@ export function errMsg(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
-/**
- * Key for per-conversation state that is scoped to a WAHA session (chatPrefs, liveMessages,
- * revoked tombstones, drafts). Not profile-scoped — see `chatKey` in `store/unread` for that.
- */
+/** Key for per-conversation state (chatPrefs, revoked tombstones, drafts). */
 export function convKey(session: string, chatId: string) {
   return `${session}:${chatId}`;
 }
@@ -74,7 +71,7 @@ export function fileToBase64(file: File): Promise<string> {
 }
 
 /**
- * Resolve the chat a message belongs to. WAHA/GOWS may report LID ids
+ * Resolve the chat a message belongs to. WhatsApp may report LID ids
  * (`@lid`) while the chat list uses phone ids (`@c.us`); prefer the phone form.
  */
 export function messageChatId(m: { from: string; to: string; fromMe: boolean; chatId?: string; _data?: unknown }): string {

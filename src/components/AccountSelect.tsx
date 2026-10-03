@@ -1,7 +1,7 @@
 import { useAccountLabel, useAccounts } from "@/lib/account";
 import { cn } from "@/lib/utils";
 
-/** Pick which account (WAHA session or native number) something sends from. */
+/** Pick which WhatsApp account something sends from. */
 export function AccountSelect({
   value,
   onChange,

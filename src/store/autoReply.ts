@@ -7,7 +7,7 @@ export type ReplyKind = "text" | "ai";
 
 export interface AutoReplyRule {
   id: string;
-  /** `waha:<profileId>:<session>` or `native:<accountId>`. */
+  /** `native:<accountId>`; `profile`/`session` are unused legacy columns. */
   account: string;
   profile: string;
   session: string;
@@ -36,7 +36,7 @@ export interface AutoReplyRule {
 export interface AutoReplyLog {
   id: number;
   rule_id: string;
-  /** `waha:<profileId>:<session>` or `native:<accountId>`. */
+  /** `native:<accountId>`. */
   account: string;
   session: string;
   chat_id: string;
@@ -254,12 +254,4 @@ export function textMatches(r: Pick<AutoReplyRule, "match_kind" | "pattern">, bo
 
 export function ruleMatches(r: AutoReplyRule, chatId: string, body: string, now = new Date()) {
   return scopeMatches(r, chatId) && inWindow(r, now) && textMatches(r, body);
-}
-
-/** WAHA accounts (`waha:<profile>:<session>`) that have at least one enabled rule. */
-export async function wahaRuleAccounts(): Promise<string[]> {
-  const rows = await (
-    await db()
-  ).select<{ account: string }[]>("SELECT DISTINCT account FROM auto_reply_rules WHERE enabled = 1 AND account LIKE 'waha:%'");
-  return rows.map((r) => r.account);
 }

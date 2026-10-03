@@ -23,11 +23,11 @@ import {
 import { confirm } from "@/components/Confirm";
 import { useSettings } from "@/store/settings";
 import { takeoverKey, useChatPrefs } from "@/store/chatPrefs";
-import { accountParts, useAccountLabel, useAccounts, useActiveAccount } from "@/lib/account";
+import { accountId, useAccountLabel, useAccounts, useActiveAccount } from "@/lib/account";
 import { useAccountChats } from "@/lib/useAccountChats";
 import { nativeWa } from "@/lib/nativeWa";
 import { AccountSelect } from "@/components/AccountSelect";
-import { openSettings } from "@/components/NotConnected";
+import { openAccounts } from "@/components/NotConnected";
 import { Avatar, Badge, Button, Input, Label } from "@/components/ui";
 import { cn, displayId, isGroup, errMsg } from "@/lib/utils";
 import { aiConfigured } from "@/lib/ai";
@@ -57,15 +57,15 @@ const SCOPE_LABEL: Record<Scope, string> = {
   chats: "Specific chats / groups",
 };
 
-/** Shown when nothing can answer: no WAHA server and no native account. */
+/** Shown when no account is linked to answer with. */
 function NoAccounts() {
   return (
     <div className="flex-1 grid place-items-center text-neutral-500 text-sm p-6">
       <div className="flex flex-col items-center gap-3 max-w-md text-center">
         <Bot size={28} className="text-neutral-400" />
         <p className="font-medium text-neutral-700 dark:text-neutral-300">No account to answer with.</p>
-        <p className="text-xs">Link a WhatsApp account in Sessions, or add a WAHA server in Settings.</p>
-        <Button onClick={openSettings}>Open settings</Button>
+        <p className="text-xs">Link a WhatsApp account first.</p>
+        <Button onClick={openAccounts}>Open accounts</Button>
       </div>
     </div>
   );
@@ -89,20 +89,20 @@ export function AutoReplyScreen() {
     enabled: accounts.length > 0,
     refetchInterval: 15_000,
   });
-  // Native @lid chats carry no number in their id: look it up in each logged account's chat list.
-  const logNative = [...new Set((log.data ?? []).map((l) => l.account))].filter((a) => accountParts(a)?.kind === "native");
+  // @lid chats carry no number in their id: look it up in each logged account's chat list.
+  const logAccounts = [...new Set((log.data ?? []).map((l) => l.account))];
   const nativePhones = useQuery({
-    queryKey: ["auto-reply-phones", logNative],
+    queryKey: ["auto-reply-phones", logAccounts],
     queryFn: async () => {
       const map = new Map<string, string>();
-      for (const account of logNative) {
-        const id = accountParts(account)?.id;
+      for (const account of logAccounts) {
+        const id = accountId(account);
         if (!id) continue;
         for (const c of await nativeWa.chats(id).catch(() => [])) if (c.phone) map.set(`${account}|${c.id}`, c.phone);
       }
       return map;
     },
-    enabled: logNative.length > 0,
+    enabled: logAccounts.length > 0,
     staleTime: 60_000,
   });
 
@@ -489,12 +489,11 @@ function RuleForm({
     setBusy(true);
     setErr(null);
     try {
-      const parts = accountParts(account);
       await upsertRule({
         id: initial?.id ?? Math.random().toString(36).slice(2, 12),
         account,
-        profile: parts?.kind === "waha" ? (parts.profile ?? "") : "",
-        session: parts?.kind === "waha" ? (parts.session ?? "") : "",
+        profile: "",
+        session: "",
         name: name.trim(),
         enabled: initial?.enabled ?? 1,
         priority: initial?.priority ?? 0,

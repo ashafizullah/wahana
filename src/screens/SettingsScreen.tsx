@@ -1,9 +1,7 @@
 import { useEffect, useState } from "react";
-import { Bell, Palette, DatabaseBackup, HardDrive, Image as ImageIcon, Info, Server, Sparkles } from "lucide-react";
+import { Bell, Palette, DatabaseBackup, HardDrive, Image as ImageIcon, Info, Sparkles } from "lucide-react";
 import { usingFallback } from "@/lib/secrets";
 import { OpenCtx, Section } from "./settings/shared";
-import { ProfilesSection } from "./settings/ProfilesSection";
-import { ConnectionSection } from "./settings/ConnectionSection";
 import { AppearanceSection } from "./settings/AppearanceSection";
 import { MediaSection } from "./settings/MediaSection";
 import { StorageSection } from "./settings/StorageSection";
@@ -13,7 +11,7 @@ import { BackupSection } from "./settings/BackupSection";
 import { AboutSection } from "./settings/AboutSection";
 
 const OPEN_KEY = "settings.open";
-const DEFAULT_OPEN = ["Servers"];
+const DEFAULT_OPEN: string[] = [];
 function loadOpen(): string[] {
   try {
     const v = JSON.parse(localStorage.getItem(OPEN_KEY) ?? "null") as unknown;
@@ -22,9 +20,9 @@ function loadOpen(): string[] {
     return DEFAULT_OPEN;
   }
 }
-const ALL_SECTIONS = ["Servers", "Appearance", "Media", "Storage", "AI", "Notifications", "Backup & restore", "About"];
+const ALL_SECTIONS = ["Appearance", "Media", "Storage", "AI", "Notifications", "Backup & restore", "About"];
 
-export function SettingsScreen({ onSaved }: { onSaved: () => void }) {
+export function SettingsScreen() {
   const [open, setOpen] = useState<string[]>(loadOpen);
   useEffect(() => {
     try {
@@ -51,14 +49,6 @@ export function SettingsScreen({ onSaved }: { onSaved: () => void }) {
               your computer.
             </div>
           )}
-          <Section
-            icon={Server}
-            title="Servers"
-            description="You can keep several WAHA servers and switch between them. Each server's API key is stored in the OS keychain (macOS Keychain / Windows Credential Manager)."
-          >
-            <ProfilesSection />
-            <ConnectionSection onSaved={onSaved} />
-          </Section>
           <Section icon={Palette} title="Appearance">
             <AppearanceSection />
           </Section>

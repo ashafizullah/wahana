@@ -40,28 +40,3 @@ export function formatBytes(b: number) {
   if (b < 1024 ** 3) return `${(b / 1024 ** 2).toFixed(1)} MB`;
   return `${(b / 1024 ** 3).toFixed(2)} GB`;
 }
-
-/**
- * Get a message's media as a Blob: on-disk cache first, otherwise ask WAHA
- * for the URL (downloading server-side if needed) and fetch it. Caches the result.
- */
-export async function loadMessageMedia(
-  client: import("@/api/client").WahaClient,
-  session: string,
-  chatId: string,
-  m: { id: string; media?: { url?: string | null; mimetype?: string | null } | null },
-): Promise<{ blob: Blob; mimetype: string }> {
-  const mimetype = m.media?.mimetype ?? "application/octet-stream";
-  const key = mediaCacheKey(m.id, mimetype);
-  const hit = await cacheGet(key);
-  if (hit) return { blob: hit, mimetype };
-  let url = m.media?.url ?? null;
-  if (!url) {
-    const full = await client.getMessage(session, chatId, m.id, true);
-    url = full.media?.url ?? null;
-    if (!url) throw new Error("no media url");
-  }
-  const blob = await client.fetchMedia(url);
-  void cachePut(key, blob);
-  return { blob, mimetype };
-}

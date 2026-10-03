@@ -6,7 +6,7 @@ export type Kind = "text" | "image" | "video" | "file";
 
 export interface Schedule {
   id: string;
-  /** `waha:<profileId>:<session>` or `native:<accountId>`. */
+  /** `native:<accountId>`; `profile`/`session` are unused legacy columns. */
   account: string;
   profile: string;
   session: string;

@@ -3,7 +3,6 @@ import { replaceMentions, stripWaMarkdown } from "@/lib/waMarkdown";
 import { displayId, initials, messageChatId } from "@/lib/utils";
 import { expandTemplate } from "@/store/quickReplies";
 import { embeddedPreview, firstUrl, isWebUrl } from "@/components/LinkPreview";
-import type { WAMessage } from "@/api/types";
 
 describe("stripWaMarkdown", () => {
   it("removes WhatsApp markers and list prefixes", () => {
@@ -61,7 +60,7 @@ describe("link previews", () => {
     expect(firstUrl("no links")).toBeNull();
   });
   it("embeddedPreview needs at least a title, description or thumbnail", () => {
-    const mk = (ext: object) => ({ _data: { Message: { extendedTextMessage: ext } } }) as unknown as WAMessage;
+    const mk = (ext: object) => ({ _data: { Message: { extendedTextMessage: ext } } });
     expect(embeddedPreview(mk({ matchedText: "https://x.y" }))).toBeNull();
     expect(embeddedPreview(mk({ canonicalURL: "https://x.y", title: "X" }))?.url).toBe("https://x.y");
   });

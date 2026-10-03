@@ -3,7 +3,7 @@ import { readTextFile, writeTextFile } from "@tauri-apps/plugin-fs";
 import { load } from "@tauri-apps/plugin-store";
 import { getVersion } from "@tauri-apps/api/app";
 import { nativeWa } from "@/lib/nativeWa";
-import { useSettings, type Prefs, type Profile } from "@/store/settings";
+import { useSettings, type Prefs } from "@/store/settings";
 import { getSecret, setSecret } from "@/lib/secrets";
 import { db } from "@/store/scheduler";
 import { useChatPrefs, type Takeover } from "@/store/chatPrefs";
@@ -19,8 +19,6 @@ export interface Backup {
   appVersion: string;
   exportedAt: string;
   prefs: Prefs;
-  profiles: Profile[];
-  activeProfile: string;
   /** Only when the user opted in — plain text. */
   secrets?: Record<string, string>;
   chatPrefs: {
@@ -116,8 +114,6 @@ export async function exportBackup(includeSecrets: boolean): Promise<string | nu
     appVersion: await getVersion().catch(() => "dev"),
     exportedAt: new Date().toISOString(),
     prefs,
-    profiles: s.profiles,
-    activeProfile: s.activeProfile,
     chatPrefs: {
       pinned: (await chatPrefsStore.get("pinned")) ?? {},
       muted: (await chatPrefsStore.get("muted")) ?? {},
@@ -139,10 +135,6 @@ export async function exportBackup(includeSecrets: boolean): Promise<string | nu
   };
   if (includeSecrets) {
     const secrets: Record<string, string> = {};
-    for (const p of s.profiles) {
-      const k = await getSecret(p.id);
-      if (k) secrets[p.id] = k;
-    }
     const ai = await getSecret("ai");
     if (ai) secrets.ai = ai;
     backup.secrets = secrets;
@@ -153,7 +145,6 @@ export async function exportBackup(includeSecrets: boolean): Promise<string | nu
 
 export interface RestoreOptions {
   prefs: boolean;
-  profiles: boolean;
   chatPrefs: boolean;
   quickReplies: boolean;
   schedules: boolean;
@@ -198,15 +189,7 @@ export async function restoreBackup(b: Backup, opts: RestoreOptions): Promise<Na
     await s.save(patch);
     if (b.theme) setThemeMode(b.theme);
   }
-  if (opts.profiles && b.profiles) {
-    const store = await load("settings.json", { autoSave: true, defaults: {} });
-    // Merge by id: keep existing profiles, add/overwrite the imported ones.
-    const merged = [...s.profiles.filter((p) => !b.profiles.some((x) => x.id === p.id)), ...b.profiles];
-    await store.set("profiles", merged);
-    if (b.secrets) for (const [id, key] of Object.entries(b.secrets)) await setSecret(id, key);
-    await store.set("activeProfile", merged.some((p) => p.id === b.activeProfile) ? b.activeProfile : (merged[0]?.id ?? ""));
-    await s.hydrate();
-  } else if (b.secrets?.ai) {
+  if (b.secrets?.ai) {
     await setSecret("ai", b.secrets.ai);
     await s.hydrate();
   }
@@ -245,7 +228,7 @@ export async function restoreBackup(b: Backup, opts: RestoreOptions): Promise<Na
          ON CONFLICT(id) DO UPDATE SET account=excluded.account, session=excluded.session, target_type=excluded.target_type, target_id=excluded.target_id, target_name=excluded.target_name, kind=excluded.kind, text=excluded.text, media_mime=NULL, media_name=NULL, next_run=excluded.next_run, repeat=excluded.repeat, weekdays=excluded.weekdays, enabled=excluded.enabled, anchor=excluded.anchor`,
         [
           sc.id,
-          sc.account ?? `waha:${sc.profile}:${sc.session}`,
+          sc.account,
           sc.profile,
           sc.session,
           sc.target_type,
@@ -266,7 +249,7 @@ export async function restoreBackup(b: Backup, opts: RestoreOptions): Promise<Na
     }
   }
   if (opts.autoReplies && b.autoReplyRules) {
-    for (const r of b.autoReplyRules) await upsertRule({ ...r, account: r.account ?? `waha:${r.profile}:${r.session}` });
+    for (const r of b.autoReplyRules) await upsertRule(r);
   }
   if (opts.stickers && b.stickers) {
     for (const s64 of b.stickers) await addSticker(b64ToBlob(s64), "saved");

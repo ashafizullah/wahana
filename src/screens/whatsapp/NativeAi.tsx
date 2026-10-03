@@ -47,10 +47,9 @@ import { nativeMediaBlob } from "@/screens/whatsapp/NativeMediaView";
 const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
 
 /**
- * The WAHA chat screen's AI features, for native WhatsApp accounts: summary and task
- * extraction, suggested replies, message translation (on demand or automatic), and
- * describing / reading images. They share `lib/ai` with the WAHA screens; only the
- * message shape differs.
+ * AI features for a native WhatsApp chat: summary and task extraction, suggested replies,
+ * message translation (on demand or automatic), and describing / reading images. They share
+ * `lib/ai`; only the message shape differs.
  */
 
 const mediaLabel: Record<string, string> = {

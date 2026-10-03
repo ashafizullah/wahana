@@ -1,6 +1,29 @@
 import { aiConfigured, complete } from "@/lib/ai";
-import { transcript } from "@/lib/exportChat";
-import type { WAMessage } from "@/api/types";
+
+/** A message as the auto-reply runner and its preview see it: enough to build the transcript. */
+export interface ReplyMessage {
+  id: string;
+  /** unix seconds */
+  timestamp: number;
+  fromMe: boolean;
+  /** The sender's chat id (`…@s.whatsapp.net` / `…@lid`). */
+  from: string;
+  body: string;
+  hasMedia: boolean;
+  /** The sender's own profile name, when known. */
+  senderName?: string;
+}
+
+/** Plain-text transcript (`[date time] Name: text`), oldest first, as the prompts expect. */
+function transcript(messages: ReplyMessage[]) {
+  return [...messages]
+    .sort((a, b) => a.timestamp - b.timestamp)
+    .map(
+      (m) =>
+        `[${new Date(m.timestamp * 1000).toLocaleString()}] ${m.fromMe ? "You" : m.senderName || m.from.split("@")[0]}: ${[m.hasMedia ? "[media]" : "", m.body].filter(Boolean).join(" ")}`,
+    )
+    .join("\n");
+}
 
 /**
  * Compose an AI auto-reply. Shared by the runner and the form's preview so both
@@ -13,7 +36,7 @@ export async function aiAutoReply(opts: {
   chatName: string;
   isGroup: boolean;
   /** Recent messages, any order; the last (by timestamp) is the one being answered. */
-  messages: WAMessage[];
+  messages: ReplyMessage[];
   /** Language code to answer in; default = language of the last message. */
   language?: string;
 }) {
@@ -27,19 +50,16 @@ export async function aiAutoReply(opts: {
   ]
     .filter(Boolean)
     .join("\n\n");
-  const user = `Chat with ${opts.chatName}${opts.isGroup ? " (group)" : ""}. Recent messages, oldest first:\n\n<transcript>\n${transcript(ctx, () => undefined).replace(/<\/?transcript>/gi, "")}\n</transcript>\n\nReply to the last message.`;
+  const user = `Chat with ${opts.chatName}${opts.isGroup ? " (group)" : ""}. Recent messages, oldest first:\n\n<transcript>\n${transcript(ctx).replace(/<\/?transcript>/gi, "")}\n</transcript>\n\nReply to the last message.`;
   return (await complete(system, user, { maxTokens: 500, fast: true, account: opts.account })).trim();
 }
 
 /** A fake incoming message for previews. */
-export const sampleMessage = (body: string, from = "sample@c.us"): WAMessage =>
-  ({
-    id: "preview",
-    timestamp: Math.floor(Date.now() / 1000),
-    from,
-    to: "",
-    fromMe: false,
-    body,
-    hasMedia: false,
-    ack: 0,
-  }) as unknown as WAMessage;
+export const sampleMessage = (body: string, from = "sample@s.whatsapp.net"): ReplyMessage => ({
+  id: "preview",
+  timestamp: Math.floor(Date.now() / 1000),
+  from,
+  fromMe: false,
+  body,
+  hasMedia: false,
+});

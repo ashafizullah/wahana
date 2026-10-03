@@ -23,11 +23,28 @@ import { notifyText } from "@/realtime/notify";
 import { useSettings } from "@/store/settings";
 
 /**
- * Native WhatsApp accounts (no server needed), driven by the Rust client. They sit next to
- * WAHA sessions in the session picker; `active` non-null means the chat screen shows that
- * account instead of WAHA. The account list itself is owned and persisted by the backend;
- * only the picker's choice is kept here.
+ * Native WhatsApp accounts (no server needed), driven by the Rust client. `active` is the
+ * account the chat screen shows. The account list itself is owned and persisted by the
+ * backend; only the picker's choice is kept here.
  */
+
+/** Detail of the `wahana:incoming` event: a message just arrived in a native account. */
+export interface IncomingMessage {
+  account: string;
+  chatId: string;
+  message: {
+    id: string;
+    /** unix seconds */
+    timestamp: number;
+    fromMe: boolean;
+    /** The sender's chat id (`…@s.whatsapp.net` / `…@lid`). */
+    from: string;
+    body: string;
+    hasMedia: boolean;
+    /** The sender's own profile name, when known. */
+    senderName?: string;
+  };
+}
 
 const STORE_FILE = "whatsapp.json";
 let storePromise: Promise<Store> | null = null;
@@ -104,9 +121,9 @@ export const useWhatsApp = create<State>((set, get) => ({
       const account = accounts.find((a) => a.id === id);
       for (const m of messages) {
         if (m.fromMe) continue;
-        // Feed the auto-reply runner the same shape the WAHA socket uses.
+        // Feed the auto-reply and auto-label runners.
         window.dispatchEvent(
-          new CustomEvent("wahana:incoming", {
+          new CustomEvent<IncomingMessage>("wahana:incoming", {
             detail: {
               account: nativeAccountKey(id),
               chatId: m.chatId,
@@ -117,7 +134,7 @@ export const useWhatsApp = create<State>((set, get) => ({
                 from: m.chatId,
                 body: m.body,
                 hasMedia: !!m.media,
-                _data: { Info: { PushName: m.senderName || undefined } },
+                senderName: m.senderName || undefined,
               },
             },
           }),

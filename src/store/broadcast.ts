@@ -3,7 +3,7 @@ import type { Kind } from "@/store/scheduler";
 
 export interface Broadcast {
   id: string;
-  /** `waha:<profileId>:<session>` or `native:<accountId>`. */
+  /** `native:<accountId>`. */
   account: string;
   profile: string;
   session: string;

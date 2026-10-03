@@ -1,11 +1,9 @@
 import { useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { accountParts } from "@/lib/account";
 import { postStatusMediaOn, postStatusTextOn, sendMediaOn, sendTextOn, type SendOutcome } from "@/lib/send";
 import { useSettings } from "@/store/settings";
 import { claimRun, dueSchedules, nextOccurrence, recordRun, type Schedule } from "@/store/scheduler";
 import { sendNotification } from "@tauri-apps/plugin-notification";
-import { qk } from "@/api/queries";
 import { errMsg } from "@/lib/utils";
 
 /** Jobs later than this are marked missed instead of sent (app was closed). */
@@ -50,8 +48,6 @@ export function useScheduler() {
           try {
             const res = (await execute(s)) as SendOutcome | undefined;
             await recordRun(s, "ok", { messageId: res?.id });
-            const p = accountParts(s.account);
-            if (s.target_id && p?.kind === "waha" && p.session) qc.invalidateQueries({ queryKey: qk.chats(p.session) });
           } catch (e) {
             const msg = errMsg(e);
             await recordRun(s, "error", { error: msg });

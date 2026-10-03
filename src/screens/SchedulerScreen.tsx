@@ -20,10 +20,10 @@ import {
   CircleDashed,
   Paperclip,
 } from "lucide-react";
-import { accountParts, useAccountLabel, useAccounts, useActiveAccount } from "@/lib/account";
+import { useAccountLabel, useAccounts, useActiveAccount } from "@/lib/account";
 import { useAccountChats } from "@/lib/useAccountChats";
 import { AccountSelect } from "@/components/AccountSelect";
-import { openSettings } from "@/components/NotConnected";
+import { openAccounts } from "@/components/NotConnected";
 import { Avatar, Button, Input, Label } from "@/components/ui";
 import { cn, displayId, fileToBase64, isChannel, isGroup, errMsg } from "@/lib/utils";
 import { stripWaMarkdown } from "@/lib/waMarkdown";
@@ -46,15 +46,15 @@ const fmt = (s: number) =>
   new Date(s * 1000).toLocaleString([], { weekday: "short", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-/** Shown when nothing can send: no WAHA server and no native account. */
+/** Shown when no account is linked to send from. */
 function NoAccounts() {
   return (
     <div className="flex-1 grid place-items-center text-neutral-500 text-sm p-6">
       <div className="flex flex-col items-center gap-3 max-w-md text-center">
         <CalendarClock size={28} className="text-neutral-400" />
         <p className="font-medium text-neutral-700 dark:text-neutral-300">No account to send from.</p>
-        <p className="text-xs">Link a WhatsApp account in Sessions, or add a WAHA server in Settings.</p>
-        <Button onClick={openSettings}>Open settings</Button>
+        <p className="text-xs">Link a WhatsApp account first.</p>
+        <Button onClick={openAccounts}>Open accounts</Button>
       </div>
     </div>
   );
@@ -263,7 +263,7 @@ function ScheduleForm({
 }) {
   const [account, setAccount] = useState(initial?.account ?? defaultAccount);
   const chats = useAccountChats(account);
-  const suffix = accountParts(account)?.kind === "native" ? "@s.whatsapp.net" : "@c.us";
+  const suffix = "@s.whatsapp.net";
   const [targetType, setTargetType] = useState<TargetType>(initial?.target_type ?? "chat");
   const [targetId, setTargetId] = useState(initial?.target_id ?? "");
   const [targetName, setTargetName] = useState(initial?.target_name ?? "");
@@ -321,12 +321,11 @@ function ScheduleForm({
       if (repeat === "once" && firstRun <= now) throw new Error("That time has already passed — pick a time in the future.");
       if (repeat !== "once" && firstRun <= now)
         firstRun = nextOccurrence({ next_run: whenUnix, repeat, weekdays: weekdays.join(",") }, now) ?? whenUnix;
-      const parts = accountParts(account);
       await upsertSchedule({
         id: initial?.id ?? Math.random().toString(36).slice(2, 12),
         account,
-        profile: parts?.kind === "waha" ? (parts.profile ?? "") : "",
-        session: parts?.kind === "waha" ? (parts.session ?? "") : "",
+        profile: "",
+        session: "",
         target_type: targetType,
         target_id: targetType === "status" ? null : targetId,
         target_name: targetType === "status" ? null : targetName || null,

@@ -24,9 +24,9 @@ import { cn, errMsg } from "@/lib/utils";
 import { usePicture } from "@/screens/whatsapp/usePicture";
 
 /**
- * Group management for native WhatsApp accounts, mirroring the WAHA panel's tools
- * (`components/GroupManage`): join requests, add member, photo, settings, name and
- * description, invite link, export, leave. Admin-only tools show only to admins.
+ * Group management for a native WhatsApp account: join requests, add member, photo,
+ * settings, name and description, invite link, export, leave. Admin-only tools show only
+ * to admins.
  */
 
 /** Runs a group action and reports the outcome; `refresh` reloads the panel. */

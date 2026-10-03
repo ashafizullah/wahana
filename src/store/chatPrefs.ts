@@ -27,7 +27,7 @@ export interface Takeover {
   name: string;
   at: number;
 }
-/** Takeovers are keyed by account key (`native:<id>` / `waha:<profile>:<session>`) + chat. */
+/** Takeovers are keyed by account key (`native:<id>`) + chat. */
 export const takeoverKey = (account: string, chatId: string) => `${account}|${chatId}`;
 interface State {
   pinned: Record<string, number>; // value = order (timestamp of pinning)
