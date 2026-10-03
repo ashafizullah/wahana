@@ -25,6 +25,8 @@ export interface AutoReplyRule {
   text: string | null;
   ai_instructions: string | null;
   ai_context: number;
+  /** Whether AI replies may pull facts from the knowledge base (Features → Knowledge). */
+  ai_use_knowledge: number;
   cooldown_min: number;
   quote: number;
   mark_seen: number;
@@ -66,12 +68,12 @@ export async function upsertRule(r: Omit<AutoReplyRule, "created_at" | "replies"
   await (
     await db()
   ).execute(
-    `INSERT INTO auto_reply_rules (id, account, profile, session, name, enabled, priority, scope, chat_ids, hours_from, hours_to, weekdays, match_kind, pattern, reply_kind, text, ai_instructions, ai_context, cooldown_min, quote, mark_seen, created_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
+    `INSERT INTO auto_reply_rules (id, account, profile, session, name, enabled, priority, scope, chat_ids, hours_from, hours_to, weekdays, match_kind, pattern, reply_kind, text, ai_instructions, ai_context, cooldown_min, quote, mark_seen, ai_use_knowledge, created_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
      ON CONFLICT(id) DO UPDATE SET account=excluded.account, session=excluded.session, name=excluded.name, enabled=excluded.enabled, priority=excluded.priority, scope=excluded.scope,
        chat_ids=excluded.chat_ids, hours_from=excluded.hours_from, hours_to=excluded.hours_to, weekdays=excluded.weekdays, match_kind=excluded.match_kind,
        pattern=excluded.pattern, reply_kind=excluded.reply_kind, text=excluded.text, ai_instructions=excluded.ai_instructions, ai_context=excluded.ai_context,
-       cooldown_min=excluded.cooldown_min, quote=excluded.quote, mark_seen=excluded.mark_seen`,
+       cooldown_min=excluded.cooldown_min, quote=excluded.quote, mark_seen=excluded.mark_seen, ai_use_knowledge=excluded.ai_use_knowledge`,
     [
       r.id,
       r.account,
@@ -94,6 +96,7 @@ export async function upsertRule(r: Omit<AutoReplyRule, "created_at" | "replies"
       r.cooldown_min,
       r.quote,
       r.mark_seen,
+      r.ai_use_knowledge ?? 1,
       r.created_at ?? Math.floor(Date.now() / 1000),
     ],
   );

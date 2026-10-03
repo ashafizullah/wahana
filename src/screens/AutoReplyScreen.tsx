@@ -444,6 +444,7 @@ function RuleForm({
   const [replyKind, setReplyKind] = useState<ReplyKind>(initial?.reply_kind ?? "text");
   const [text, setText] = useState(initial?.text ?? "");
   const [instructions, setInstructions] = useState(initial?.ai_instructions ?? "");
+  const [useKnowledge, setUseKnowledge] = useState(initial ? !!initial.ai_use_knowledge : true);
   const [aiContext, setAiContext] = useState(initial?.ai_context ?? 10);
   const [cooldown, setCooldown] = useState(initial?.cooldown_min ?? 60);
   const [quote, setQuote] = useState(initial ? !!initial.quote : true);
@@ -507,6 +508,7 @@ function RuleForm({
         reply_kind: replyKind,
         text: replyKind === "text" ? text.trim() : null,
         ai_instructions: replyKind === "ai" ? instructions.trim() || null : null,
+        ai_use_knowledge: useKnowledge ? 1 : 0,
         ai_context: Math.max(1, Math.min(50, aiContext || 10)),
         cooldown_min: Math.max(0, cooldown || 0),
         quote: quote ? 1 : 0,
@@ -532,6 +534,7 @@ function RuleForm({
         chatName: "Customer",
         isGroup: false,
         messages: [sampleMessage(test.trim())],
+        useKnowledge,
       });
       setPreview({ busy: false, text });
     } catch (e) {
@@ -775,6 +778,12 @@ function RuleForm({
                     className="w-14 rounded-md border border-neutral-300 dark:border-neutral-700 bg-transparent px-1.5 py-0.5 text-xs"
                   />{" "}
                   messages.
+                </div>
+                <label className="flex items-center gap-2 text-sm mt-2">
+                  <input type="checkbox" checked={useKnowledge} onChange={(e) => setUseKnowledge(e.target.checked)} /> Use knowledge base
+                </label>
+                <div className="text-[11px] text-neutral-500">
+                  Retrieves the most relevant facts from Features → Knowledge for each reply. Off = instructions only.
                 </div>
                 <div className="mt-2 rounded-lg bg-neutral-50 dark:bg-neutral-800/60 p-2 space-y-1.5">
                   <div className="flex items-center gap-2">

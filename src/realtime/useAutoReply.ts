@@ -97,7 +97,15 @@ export function useAutoReply() {
       const messages = [...recent.filter((x) => x.id !== m.id), m].sort((a, b) => a.timestamp - b.timestamp).slice(-rule.ai_context);
       const owner = accountId(account);
       const language = owner ? useChatPrefs.getState().autoTranslate[convKey(owner, chatId)]?.out : undefined;
-      return aiAutoReply({ instructions: rule.ai_instructions, account, chatName, isGroup: isGroup(chatId), messages, language });
+      return aiAutoReply({
+        instructions: rule.ai_instructions,
+        account,
+        chatName,
+        isGroup: isGroup(chatId),
+        messages,
+        language,
+        useKnowledge: !!rule.ai_use_knowledge,
+      });
     };
 
     const handle = async (account: string, chatId: string, m: ReplyMessage) => {

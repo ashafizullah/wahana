@@ -5,6 +5,10 @@
 <h1 align="center">Wahana</h1>
 
 <p align="center">
+  <strong>English</strong> · <a href="README.zh-CN.md">简体中文</a>
+</p>
+
+<p align="center">
   An unofficial, cross-platform WhatsApp desktop client. Link your phone directly — no server, no embedded browser.<br>
   Chat across several accounts — with scheduling, broadcasts, auto-reply, stories, and built-in AI.
 </p>
@@ -75,6 +79,7 @@ Optionally, for the AI features, your own API key for Anthropic or any OpenAI-co
 - Describe an image or extract its text (OCR)
 - Draft a broadcast or status from a short brief ("Draft with AI" in the composer)
 - Optionally label new direct chats automatically with your existing labels (Settings → AI)
+- **Knowledge base** (Features → Knowledge) — tables with your own columns and free-text documents, embedded once and injected into AI replies as authoritative facts; each entry is scoped to one account or shared with all, and embeddings may use their own endpoint/key
 
 **App**
 
@@ -121,7 +126,7 @@ Signing uses a minisign keypair: `npx tauri signer generate -w ~/.tauri/wahana.k
 ```
 src/realtime/    scheduler, broadcast & auto-reply runners, notifications, updater
 src/store/       zustand stores (settings, reactions, pins, drafts, …) and SQLite data layers
-src/screens/     Chats, Status, Features (Scheduler / Broadcast / Auto-reply / Tweaks / Quick replies), Accounts, Settings (settings/ = one file per section)
+src/screens/     Chats, Status, Features (Scheduler / Broadcast / Auto-reply / Knowledge / Tweaks / Quick replies), Accounts, Settings (settings/ = one file per section)
                  WhatsAppScreen + whatsapp/ = pairing, info panel, group tools, media, labels, status, AI
 src/components/  dialogs, menus, media, pickers
 src/lib/         WhatsApp markdown, AI client, media cache, secrets, backup; nativeWa.ts (commands & events), send.ts

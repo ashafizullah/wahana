@@ -43,6 +43,18 @@ export interface Prefs {
   aiSystemPrompt: string;
   /** Assign existing labels to new direct chats automatically (one AI call per new chat). */
   aiAutoLabel: boolean;
+  /** Whether embeddings use the chat endpoint/key (true) or their own below (false). */
+  aiEmbedSameAsChat: boolean;
+  /** OpenAI-compatible base URL for embeddings when they are not the chat one. Anthropic has no embeddings API. */
+  aiEmbedBaseUrl: string;
+  /** Embedding model for the knowledge base (empty = knowledge base disabled). */
+  aiEmbedModel: string;
+  /** Master switch: inject retrieved knowledge-base chunks into AI auto-replies. */
+  kbEnabled: boolean;
+  /** How many knowledge chunks to retrieve per auto-reply. */
+  kbTopK: number;
+  /** Minimum cosine similarity for a knowledge chunk to be used. */
+  kbMinScore: number;
   /** Kill switch for all auto-reply rules. */
   autoReplyPaused: boolean;
   /** Max auto-replies sent per calendar day per account across its rules (0 = unlimited). Spend guard for AI replies. */
@@ -76,6 +88,12 @@ const DEFAULT_PREFS: Prefs = {
   aiComposeTo: "en",
   aiSystemPrompt: "",
   aiAutoLabel: false,
+  aiEmbedSameAsChat: true,
+  aiEmbedBaseUrl: "",
+  aiEmbedModel: "",
+  kbEnabled: true,
+  kbTopK: 5,
+  kbMinScore: 0.3,
   autoReplyPaused: false,
   autoReplyDailyLimit: 300,
   autoReplyManualQuietMin: 15,
@@ -88,9 +106,11 @@ interface SettingsState extends Prefs {
   hydrated: boolean;
   /** AI provider key (keychain entry "ai"). */
   aiApiKey: string;
+  /** Embedding key when it is not the chat one (keychain entry "ai-embed"). */
+  aiEmbedApiKey: string;
 
   hydrate: () => Promise<void>;
-  save: (patch: Partial<Prefs & { aiApiKey: string }>) => Promise<void>;
+  save: (patch: Partial<Prefs & { aiApiKey: string; aiEmbedApiKey: string }>) => Promise<void>;
   clear: () => Promise<void>;
 }
 
@@ -98,6 +118,7 @@ export const useSettings = create<SettingsState>((set) => ({
   ...DEFAULT_PREFS,
   hydrated: false,
   aiApiKey: "",
+  aiEmbedApiKey: "",
 
   async hydrate() {
     const s = await store();
@@ -108,16 +129,20 @@ export const useSettings = create<SettingsState>((set) => ({
     }
     const legacyReceipts = await s.get<boolean>("sendReadReceipts");
     if (legacyReceipts === false) prefs.readReceipts = "never";
-    set({ hydrated: true, ...prefs, aiApiKey: await getSecret("ai") });
+    set({ hydrated: true, ...prefs, aiApiKey: await getSecret("ai"), aiEmbedApiKey: await getSecret("ai-embed") });
   },
 
   async save(patch) {
     const s = await store();
-    const { aiApiKey, ...prefPatch } = patch;
+    const { aiApiKey, aiEmbedApiKey, ...prefPatch } = patch;
     for (const [k, v] of Object.entries(prefPatch)) await s.set(k, v);
     if (aiApiKey !== undefined) {
       await setSecret("ai", aiApiKey.trim());
       set({ aiApiKey: aiApiKey.trim() });
+    }
+    if (aiEmbedApiKey !== undefined) {
+      await setSecret("ai-embed", aiEmbedApiKey.trim());
+      set({ aiEmbedApiKey: aiEmbedApiKey.trim() });
     }
     set(prefPatch);
   },
@@ -125,8 +150,9 @@ export const useSettings = create<SettingsState>((set) => ({
   async clear() {
     const s = await store();
     await deleteSecret("ai");
+    await deleteSecret("ai-embed");
     await s.clear();
-    set({ ...DEFAULT_PREFS, aiApiKey: "" });
+    set({ ...DEFAULT_PREFS, aiApiKey: "", aiEmbedApiKey: "" });
   },
 }));
 

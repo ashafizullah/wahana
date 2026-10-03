@@ -77,6 +77,12 @@ pub fn run() {
                             sql: include_str!("../migrations/007_sidebar_accounts.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
+                        tauri_plugin_sql::Migration {
+                            version: 8,
+                            description: "knowledge base documents and chunks",
+                            sql: include_str!("../migrations/008_knowledge_base.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
                     ],
                 )
                 .build(),

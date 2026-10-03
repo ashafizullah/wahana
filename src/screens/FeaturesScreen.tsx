@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { Bot, CalendarClock, Megaphone, SlidersHorizontal, Zap } from "lucide-react";
+import { BookOpen, Bot, CalendarClock, Megaphone, SlidersHorizontal, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AccountScopePicker, ScopeCtx } from "./settings/shared";
 import { TweaksSection } from "./settings/TweaksSection";
 import { QuickRepliesSection } from "./settings/QuickRepliesSection";
+import { KnowledgeSection } from "./settings/KnowledgeSection";
 import { SchedulerScreen } from "./SchedulerScreen";
 import { BroadcastScreen } from "./BroadcastScreen";
 import { AutoReplyScreen } from "./AutoReplyScreen";
@@ -15,6 +16,7 @@ const FEATURES = [
   { id: "scheduler", icon: CalendarClock, label: "Scheduler" },
   { id: "broadcast", icon: Megaphone, label: "Broadcast" },
   { id: "autoreply", icon: Bot, label: "Auto-reply" },
+  { id: "knowledge", icon: BookOpen, label: "Knowledge" },
   { id: "tweaks", icon: SlidersHorizontal, label: "Tweaks" },
   { id: "quickreplies", icon: Zap, label: "Quick replies" },
 ] as const;
@@ -78,6 +80,23 @@ export function FeaturesScreen() {
         {tab === "scheduler" && <SchedulerScreen />}
         {tab === "broadcast" && <BroadcastScreen />}
         {tab === "autoreply" && <AutoReplyScreen />}
+        {tab === "knowledge" && (
+          <ScopeCtx.Provider value={{ scope, setScope }}>
+            <div className="flex-1 overflow-auto p-6">
+              <div className="space-y-4">
+                <h1 className="text-xl font-semibold">Knowledge</h1>
+                <p className="text-xs text-neutral-500">
+                  Facts the AI auto-reply can draw on: tables with your own columns (products, prices, stock) and free-text documents
+                  (policies, FAQ). Each entry is embedded and only the most relevant chunks are sent with a reply.
+                </p>
+                <div className="rounded-lg bg-neutral-50 dark:bg-neutral-800/60 px-3 py-2">
+                  <AccountScopePicker />
+                </div>
+                <KnowledgeSection />
+              </div>
+            </div>
+          </ScopeCtx.Provider>
+        )}
         {tab === "quickreplies" && (
           <ScopeCtx.Provider value={{ scope, setScope }}>
             <div className="flex-1 overflow-auto p-6">

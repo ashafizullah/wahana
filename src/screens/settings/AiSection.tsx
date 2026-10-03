@@ -1,7 +1,7 @@
 import { Toggle } from "./shared";
 import { useEffect, useState } from "react";
 import { CheckCircle2, ChevronDown, Loader2, XCircle } from "lucide-react";
-import { DEFAULT_MODELS, LANGUAGES, testAi } from "@/lib/ai";
+import { DEFAULT_MODELS, LANGUAGES, embedOne, testAi } from "@/lib/ai";
 import { useSettings } from "@/store/settings";
 import { useAccounts } from "@/lib/account";
 import { Button, Input, Label } from "@/components/ui";
@@ -13,6 +13,10 @@ export function AiSection() {
   const [baseUrl, setBaseUrl] = useState(s.aiBaseUrl);
   const [model, setModel] = useState(s.aiModel);
   const [fastModel, setFastModel] = useState(s.aiFastModel);
+  const [embedModel, setEmbedModel] = useState(s.aiEmbedModel);
+  const [embedSame, setEmbedSame] = useState(s.aiEmbedSameAsChat);
+  const [embedBaseUrl, setEmbedBaseUrl] = useState(s.aiEmbedBaseUrl);
+  const [embedKey, setEmbedKey] = useState(s.aiEmbedApiKey);
   const [key, setKey] = useState(s.aiApiKey);
   const [persona, setPersona] = useState(s.aiSystemPrompt);
   const [busy, setBusy] = useState<"test" | "save" | null>(null);
@@ -22,17 +26,39 @@ export function AiSection() {
     setBaseUrl(s.aiBaseUrl);
     setModel(s.aiModel);
     setFastModel(s.aiFastModel);
+    setEmbedModel(s.aiEmbedModel);
+    setEmbedSame(s.aiEmbedSameAsChat);
+    setEmbedBaseUrl(s.aiEmbedBaseUrl);
+    setEmbedKey(s.aiEmbedApiKey);
     setKey(s.aiApiKey);
     setPersona(s.aiSystemPrompt);
-  }, [s.aiProvider, s.aiBaseUrl, s.aiModel, s.aiFastModel, s.aiApiKey, s.aiSystemPrompt]);
+  }, [
+    s.aiProvider,
+    s.aiBaseUrl,
+    s.aiModel,
+    s.aiFastModel,
+    s.aiEmbedModel,
+    s.aiEmbedSameAsChat,
+    s.aiEmbedBaseUrl,
+    s.aiEmbedApiKey,
+    s.aiApiKey,
+    s.aiSystemPrompt,
+  ]);
   const dirty =
     provider !== s.aiProvider ||
     baseUrl.trim() !== s.aiBaseUrl ||
     model.trim() !== s.aiModel ||
     fastModel.trim() !== s.aiFastModel ||
+    embedModel.trim() !== s.aiEmbedModel ||
+    embedSame !== s.aiEmbedSameAsChat ||
+    embedBaseUrl.trim() !== s.aiEmbedBaseUrl ||
+    embedKey.trim() !== s.aiEmbedApiKey ||
     key.trim() !== s.aiApiKey ||
     persona.trim() !== s.aiSystemPrompt;
   const cfg = { provider, baseUrl: baseUrl.trim(), model: model.trim() || DEFAULT_MODELS[provider], apiKey: key.trim() };
+  const embedCfg = embedSame
+    ? { baseUrl: cfg.baseUrl, model: embedModel.trim(), apiKey: cfg.apiKey }
+    : { baseUrl: embedBaseUrl.trim().replace(/\/+$/, ""), model: embedModel.trim(), apiKey: embedKey.trim() };
 
   return (
     <>
@@ -99,6 +125,45 @@ export function AiSection() {
           Short edits don't need the strongest model. A small model answers in ~1–2 s; summaries keep using Model above.
         </p>
       </div>
+      <div className="grid grid-cols-2 gap-3 items-end">
+        <div>
+          <Label>Embedding model — knowledge base (optional)</Label>
+          <Input
+            value={embedModel}
+            onChange={(e) => setEmbedModel(e.target.value)}
+            placeholder="text-embedding-3-small, nomic-embed-text"
+            spellCheck={false}
+          />
+        </div>
+        <label className="flex items-center gap-2 text-sm pb-2">
+          <input type="checkbox" checked={embedSame} onChange={(e) => setEmbedSame(e.target.checked)} /> Same endpoint &amp; key as chat
+        </label>
+      </div>
+      {!embedSame && (
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <Label>Embedding base URL</Label>
+            <Input
+              value={embedBaseUrl}
+              onChange={(e) => setEmbedBaseUrl(e.target.value)}
+              placeholder="https://api.openai.com/v1"
+              spellCheck={false}
+            />
+          </div>
+          <div>
+            <Label>Embedding API key</Label>
+            <Input type="password" value={embedKey} onChange={(e) => setEmbedKey(e.target.value)} placeholder="sk-…" />
+          </div>
+        </div>
+      )}
+      {embedSame && provider === "anthropic" && !!embedModel.trim() && (
+        <div className="text-[11px] text-amber-700 dark:text-amber-300">
+          Anthropic serves no embeddings API — uncheck the box to point embeddings at a separate OpenAI-compatible endpoint.
+        </div>
+      )}
+      <p className="text-[11px] text-neutral-500">
+        Powers the knowledge base (Features → Knowledge), used by AI auto-replies. Empty model = knowledge base disabled.
+      </p>
       <div className="grid grid-cols-2 gap-3">
         <div>
           <Label>My language</Label>
@@ -178,7 +243,17 @@ export function AiSection() {
             setResult(null);
             try {
               const out = await testAi(cfg);
-              setResult({ ok: true, text: `Model replied: ${out.slice(0, 80)}` });
+              const text = `Model replied: ${out.slice(0, 80)}`;
+              if (embedModel.trim()) {
+                try {
+                  const vec = await embedOne("ping", embedCfg);
+                  setResult({ ok: true, text: `${text} · embeddings OK (${vec.length} dims)` });
+                } catch (e) {
+                  setResult({ ok: false, text: `Chat OK, but embeddings failed: ${errMsg(e)}` });
+                }
+              } else {
+                setResult({ ok: true, text });
+              }
             } catch (e) {
               setResult({ ok: false, text: errMsg(e) });
             } finally {
@@ -198,6 +273,10 @@ export function AiSection() {
                 aiBaseUrl: cfg.baseUrl,
                 aiModel: cfg.model,
                 aiFastModel: fastModel.trim(),
+                aiEmbedModel: embedModel.trim(),
+                aiEmbedSameAsChat: embedSame,
+                aiEmbedBaseUrl: embedBaseUrl.trim(),
+                aiEmbedApiKey: embedKey.trim(),
                 aiApiKey: cfg.apiKey,
                 aiSystemPrompt: persona.trim(),
               });

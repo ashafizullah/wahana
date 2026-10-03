@@ -168,6 +168,90 @@ export async function testAi(cfg: AiConfig) {
   return out;
 }
 
+// ── Embeddings (knowledge base) ────────────────────────────────────────────
+// Anthropic serves no embeddings API, so this always talks to an OpenAI-compatible
+// `/embeddings` endpoint (OpenAI, a router, or Ollama).
+
+export interface EmbedConfig {
+  baseUrl: string;
+  model: string;
+  apiKey: string;
+}
+
+/**
+ * Embeddings endpoint + model from Settings → AI. Embeddings may share the chat endpoint/key
+ * (the default) or use their own URL and key.
+ */
+export function embedConfig(): EmbedConfig {
+  const s = useSettings.getState();
+  const same = s.aiEmbedSameAsChat;
+  return {
+    baseUrl: (same ? s.aiBaseUrl : s.aiEmbedBaseUrl).trim().replace(/\/+$/, ""),
+    model: s.aiEmbedModel.trim(),
+    apiKey: same ? s.aiApiKey : s.aiEmbedApiKey,
+  };
+}
+
+/** Why the knowledge base cannot embed right now, or null when it can. */
+export function embedConfigIssue(): string | null {
+  const s = useSettings.getState();
+  const c = embedConfig();
+  if (!c.model) return "Set an embedding model in Settings → AI to index and use the knowledge base.";
+  if (s.aiEmbedSameAsChat && s.aiProvider === "anthropic")
+    return 'Anthropic serves no embeddings API — in Settings → AI, uncheck "Same endpoint & key as chat" and set an OpenAI-compatible embeddings endpoint.';
+  if (!c.baseUrl) return "Set the embedding base URL in Settings → AI.";
+  if (!c.apiKey) return "Set the embedding API key in Settings → AI.";
+  return null;
+}
+
+export function embedConfigured() {
+  return embedConfigIssue() === null;
+}
+
+/** Embeds a batch of texts. Batches the request and returns vectors in input order. */
+export async function embed(texts: string[], cfg = embedConfig()): Promise<number[][]> {
+  if (!cfg.apiKey) throw new Error("AI API key is not set (Settings → AI).");
+  if (!cfg.model) throw new Error("Embedding model is not set (Settings → AI).");
+  if (!cfg.baseUrl) throw new Error("Embedding base URL is not set (Settings → AI).");
+  const url = /\/embeddings$/.test(cfg.baseUrl) ? cfg.baseUrl : `${cfg.baseUrl}/embeddings`;
+  const out: number[][] = [];
+  for (let i = 0; i < texts.length; i += 32) {
+    const input = texts.slice(i, i + 32);
+    const res = await tauriFetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${cfg.apiKey}` },
+      body: JSON.stringify({ model: cfg.model, input }),
+      signal: AbortSignal.timeout(AI_TIMEOUT_MS),
+    });
+    const text = await res.text();
+    if (!res.ok) {
+      let msg = `${res.status} ${res.statusText}`;
+      try {
+        const j = JSON.parse(text) as { error?: { message?: string } | string; message?: string };
+        msg = (typeof j.error === "string" ? j.error : j.error?.message) ?? j.message ?? msg;
+      } catch {
+        /* keep */
+      }
+      throw new Error(msg);
+    }
+    const j = JSON.parse(text) as { data?: { embedding?: number[]; index?: number }[] };
+    const rows = j.data ?? [];
+    if (rows.length !== input.length) throw new Error(`Embeddings endpoint returned ${rows.length} vectors for ${input.length} inputs.`);
+    // Providers are expected to preserve order, but sort by index when present to be safe.
+    const ordered = rows.every((r) => typeof r.index === "number") ? [...rows].sort((a, b) => a.index! - b.index!) : rows;
+    for (const r of ordered) {
+      if (!Array.isArray(r.embedding) || r.embedding.length === 0) throw new Error("Embeddings endpoint returned an empty vector.");
+      out.push(r.embedding);
+    }
+  }
+  return out;
+}
+
+/** Embed a single text (used for a retrieval query). */
+export async function embedOne(text: string, cfg = embedConfig()): Promise<number[]> {
+  return (await embed([text], cfg))[0]!;
+}
+
 /** Longest transcript sent to the model (~100k tokens); "All loaded" can be thousands of messages after a long scroll. */
 export const MAX_TRANSCRIPT_CHARS = 400_000;
 

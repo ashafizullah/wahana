@@ -6,6 +6,7 @@ import { nativeWa } from "@/lib/nativeWa";
 import { useSettings, type Prefs } from "@/store/settings";
 import { getSecret, setSecret } from "@/lib/secrets";
 import { db } from "@/store/scheduler";
+import { invalidateKbCache, kbConfigured, reindexAll } from "@/lib/knowledge";
 import { useChatPrefs, type Takeover } from "@/store/chatPrefs";
 import { upsertRule, type AutoReplyRule } from "@/store/autoReply";
 import { addSticker, listStickers } from "@/lib/stickers";
@@ -42,6 +43,19 @@ export interface Backup {
   nativeAccounts?: { id: string; name: string }[];
   /** localStorage keys of channels muted here (WhatsApp does not report channel mutes). */
   channelMutes?: string[];
+  /** Since backup version 3. Vectors are not exported; "Re-index all" regenerates them after restore. */
+  knowledge?: KbDocExport[];
+}
+
+/** A knowledge entry as exported: text/table content only, no vectors. */
+export interface KbDocExport {
+  id: string;
+  account: string | null;
+  type: "table" | "text";
+  title: string;
+  columns: string | null;
+  rows: string | null;
+  text: string | null;
 }
 
 const CHANNEL_MUTE_PREFIX = "wa-channel-muted:";
@@ -61,7 +75,7 @@ export interface NativeRestore {
   outcome: "added" | "exists";
 }
 
-const BACKUP_VERSION = 2;
+const BACKUP_VERSION = 3;
 
 const blobToB64 = async (b: Blob) => {
   const bytes = new Uint8Array(await b.arrayBuffer());
@@ -89,6 +103,12 @@ const PREF_KEYS: (keyof Prefs)[] = [
   "aiComposeTo",
   "aiSystemPrompt",
   "aiAutoLabel",
+  "aiEmbedSameAsChat",
+  "aiEmbedBaseUrl",
+  "aiEmbedModel",
+  "kbEnabled",
+  "kbTopK",
+  "kbMinScore",
   "autoReplyPaused",
   "autoReplyDailyLimit",
   "autoReplyManualQuietMin",
@@ -126,6 +146,7 @@ export async function exportBackup(includeSecrets: boolean): Promise<string | nu
       "SELECT id, account, profile, session, target_type, target_id, target_name, kind, text, media_mime, media_name, next_run, anchor, repeat, weekdays, enabled, created_at, last_run, last_status, last_error, runs FROM schedules",
     ),
     autoReplyRules: await d.select<AutoReplyRule[]>("SELECT * FROM auto_reply_rules"),
+    knowledge: await d.select<KbDocExport[]>("SELECT id, account, type, title, columns, rows, text FROM kb_docs"),
     theme: getThemeMode(),
     stickers: await listStickers("saved")
       .then((xs) => Promise.all(xs.map((x) => blobToB64(x.blob))))
@@ -137,6 +158,8 @@ export async function exportBackup(includeSecrets: boolean): Promise<string | nu
     const secrets: Record<string, string> = {};
     const ai = await getSecret("ai");
     if (ai) secrets.ai = ai;
+    const aiEmbed = await getSecret("ai-embed");
+    if (aiEmbed) secrets.aiEmbed = aiEmbed;
     backup.secrets = secrets;
   }
   await writeTextFile(path, JSON.stringify(backup, null, 2));
@@ -149,6 +172,7 @@ export interface RestoreOptions {
   quickReplies: boolean;
   schedules: boolean;
   autoReplies: boolean;
+  knowledge: boolean;
   stickers: boolean;
   nativeAccounts: boolean;
 }
@@ -189,8 +213,9 @@ export async function restoreBackup(b: Backup, opts: RestoreOptions): Promise<Na
     await s.save(patch);
     if (b.theme) setThemeMode(b.theme);
   }
-  if (b.secrets?.ai) {
-    await setSecret("ai", b.secrets.ai);
+  if (b.secrets?.ai || b.secrets?.aiEmbed) {
+    if (b.secrets.ai) await setSecret("ai", b.secrets.ai);
+    if (b.secrets.aiEmbed) await setSecret("ai-embed", b.secrets.aiEmbed);
     await s.hydrate();
   }
   if (opts.chatPrefs && b.chatPrefs) {
@@ -250,6 +275,24 @@ export async function restoreBackup(b: Backup, opts: RestoreOptions): Promise<Na
   }
   if (opts.autoReplies && b.autoReplyRules) {
     for (const r of b.autoReplyRules) await upsertRule(r);
+  }
+  if (opts.knowledge && b.knowledge) {
+    const now = Math.floor(Date.now() / 1000);
+    for (const k of b.knowledge) {
+      // Vectors are not in the backup: drop any existing ones and mark the entry for re-indexing.
+      await d.execute("DELETE FROM kb_chunks WHERE doc_id = $1", [k.id]);
+      await d.execute(
+        `INSERT INTO kb_docs (id, account, type, title, columns, rows, text, embed_model, status, error, chunk_count, created_at, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,NULL,'new',NULL,0,$8,$9)
+         ON CONFLICT(id) DO UPDATE SET account=excluded.account, type=excluded.type, title=excluded.title, columns=excluded.columns,
+           rows=excluded.rows, text=excluded.text, embed_model=NULL, status='new', error=NULL, chunk_count=0, updated_at=excluded.updated_at`,
+        [k.id, k.account ?? null, k.type, k.title, k.columns, k.rows, k.text, now, now],
+      );
+    }
+    invalidateKbCache();
+    // Prefs and keys were restored above, so embeddings may already be usable: rebuild the vectors in
+    // the background instead of leaving every entry silently unused until "Re-index all".
+    if (b.knowledge.length && kbConfigured()) void reindexAll().catch((e) => console.warn("knowledge re-index after restore failed", e));
   }
   if (opts.stickers && b.stickers) {
     for (const s64 of b.stickers) await addSticker(b64ToBlob(s64), "saved");
