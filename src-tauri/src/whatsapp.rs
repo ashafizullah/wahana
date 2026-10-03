@@ -971,9 +971,87 @@ fn history_message(chat_id: &str, info: &wa::WebMessageInfo) -> Option<IncomingM
     })
 }
 
+/// The latest pin state for one message, read out of history.
+struct HistoryPin {
+    chat_id: String,
+    message_id: String,
+    on: bool,
+    /// When the pin or unpin happened (unix ms); the newest one wins.
+    at: i64,
+    secs: u32,
+}
+
+/// Pins and unpins a history entry carries. The phone sends them three ways: as a pin
+/// notice (`pin_in_chat`), as a plain pin message, or as an add-on on the pinned
+/// message itself.
+fn history_pins(chat_id: &str, info: &wa::WebMessageInfo) -> Vec<HistoryPin> {
+    const DEFAULT_SECS: u32 = 7 * 24 * 3600;
+    let sent_at = info.message_timestamp.unwrap_or_default() as i64 * 1000;
+    let mut pins = Vec::new();
+    let mut push = |message_id: Option<&String>, on: bool, at: Option<i64>, secs: Option<u32>| {
+        if let Some(message_id) = message_id.filter(|id| !id.is_empty()) {
+            pins.push(HistoryPin {
+                chat_id: chat_id.to_string(),
+                message_id: message_id.clone(),
+                on,
+                at: at.filter(|ms| *ms > 0).unwrap_or(sent_at),
+                secs: secs.filter(|s| *s > 0).unwrap_or(DEFAULT_SECS),
+            });
+        }
+    };
+    if let Some(pin) = info.pin_in_chat.as_option() {
+        push(
+            pin.key.as_option().and_then(|k| k.id.as_ref()),
+            pin.r#type == Some(wa::pin_in_chat::Type::PinForAll),
+            pin.sender_timestamp_ms.or(pin.server_timestamp_ms),
+            pin.message_add_on_context_info
+                .as_option()
+                .and_then(|c| c.message_add_on_duration_in_secs),
+        );
+    }
+    if let Some(message) = info.message.as_option() {
+        if let Some(pin) = message.pin_in_chat_message.as_option() {
+            push(
+                pin.key.as_option().and_then(|k| k.id.as_ref()),
+                pin.r#type == Some(wa::message::pin_in_chat_message::Type::PinForAll),
+                pin.sender_timestamp_ms,
+                message
+                    .message_context_info
+                    .as_option()
+                    .and_then(|c| c.message_add_on_duration_in_secs),
+            );
+        }
+    }
+    let own_id = info.key.as_option().and_then(|k| k.id.as_ref());
+    for add_on in &info.message_add_ons {
+        if add_on.message_add_on_type != Some(wa::message_add_on::MessageAddOnType::PinInChat) {
+            continue;
+        }
+        let Some(pin) = add_on
+            .message_add_on
+            .as_option()
+            .and_then(|m| m.pin_in_chat_message.as_option())
+        else {
+            continue;
+        };
+        push(
+            own_id,
+            pin.r#type == Some(wa::message::pin_in_chat_message::Type::PinForAll),
+            add_on.sender_timestamp_ms.or(add_on.server_timestamp_ms),
+            add_on
+                .add_on_context_info
+                .as_option()
+                .and_then(|c| c.message_add_on_duration_in_secs),
+        );
+    }
+    pins
+}
+
 /// Writes a decoded history chunk: conversations with their unread counts, their
-/// messages, and the push names that came with them.
-fn store_history(db: &ChatDb, sync: &wa::HistorySync) -> rusqlite::Result<()> {
+/// messages, and the push names that came with them. Returns the pins it found, newest
+/// state per message.
+fn store_history(db: &ChatDb, sync: &wa::HistorySync) -> rusqlite::Result<Vec<HistoryPin>> {
+    let mut pins: HashMap<(String, String), HistoryPin> = HashMap::new();
     for mapping in &sync.phone_number_to_lid_mappings {
         if let (Some(pn), Some(lid)) = (&mapping.pn_jid, &mapping.lid_jid) {
             db.set_lid_pn(&bare_jid(lid), &bare_jid(pn))?;
@@ -1028,9 +1106,15 @@ fn store_history(db: &ChatDb, sync: &wa::HistorySync) -> rusqlite::Result<()> {
             if let Some(message) = history_message(chat_id, info) {
                 db.insert_message(&message, false)?;
             }
+            for pin in history_pins(chat_id, info) {
+                let key = (pin.chat_id.clone(), pin.message_id.clone());
+                if pins.get(&key).is_none_or(|seen| seen.at <= pin.at) {
+                    pins.insert(key, pin);
+                }
+            }
         }
     }
-    Ok(())
+    Ok(pins.into_values().collect())
 }
 
 /// Handles the events the per-kind `Bot` callbacks do not cover: history transfers and
@@ -1114,7 +1198,7 @@ async fn handle_event(app: AppHandle, account: Arc<WaAccount>, generation: u64, 
             // the async runtime.
             let result = tauri::async_runtime::spawn_blocking(move || {
                 let Some(decoded) = sync.get() else {
-                    return Ok(());
+                    return Ok(Vec::new());
                 };
                 db_account
                     .db
@@ -1124,7 +1208,31 @@ async fn handle_event(app: AppHandle, account: Arc<WaAccount>, generation: u64, 
             })
             .await;
             match result {
-                Ok(Ok(())) => {}
+                Ok(Ok(pins)) => {
+                    // Only the current state matters: skip pins that have already lapsed.
+                    let now = now_millis();
+                    for pin in pins {
+                        let expires = if pin.on {
+                            pin.at + i64::from(pin.secs) * 1000
+                        } else {
+                            0
+                        };
+                        if pin.on && expires <= now {
+                            continue;
+                        }
+                        let _ = app.emit_to(
+                            "main",
+                            "wa_native:pin",
+                            PinPayload {
+                                id: account.id.clone(),
+                                chat_id: pin.chat_id,
+                                message_id: pin.message_id,
+                                on: pin.on,
+                                expires,
+                            },
+                        );
+                    }
+                }
                 Ok(Err(e)) => eprintln!("failed to store WhatsApp history: {e}"),
                 Err(e) => eprintln!("WhatsApp history task failed: {e}"),
             }
@@ -2016,7 +2124,8 @@ pub async fn wa_native_delete_local(
     Ok(())
 }
 
-/// Pins a message for everyone (7 days) or unpins it.
+/// Pins a message for everyone for `duration_secs` (24 hours, 7 days or 30 days; default 7 days)
+/// or unpins it.
 #[tauri::command]
 pub async fn wa_native_pin_message(
     state: State<'_, WaState>,
@@ -2024,7 +2133,14 @@ pub async fn wa_native_pin_message(
     chat_id: String,
     message_id: String,
     on: bool,
+    duration_secs: Option<u32>,
 ) -> Result<(), String> {
+    let duration = match duration_secs {
+        None | Some(604_800) => PinDuration::Days7,
+        Some(86_400) => PinDuration::Hours24,
+        Some(2_592_000) => PinDuration::Days30,
+        Some(other) => return Err(format!("unsupported pin duration: {other}s")),
+    };
     let account = state.get(&id)?;
     let client = {
         let inner = account.inner.lock().unwrap();
@@ -2045,7 +2161,7 @@ pub async fn wa_native_pin_message(
         .parse()
         .map_err(|_| format!("invalid chat id: {chat_id}"))?;
     let result = if on {
-        client.pin_message(to, key, PinDuration::Days7).await
+        client.pin_message(to, key, duration).await
     } else {
         client.unpin_message(to, key).await
     };

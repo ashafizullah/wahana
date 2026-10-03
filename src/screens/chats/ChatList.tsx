@@ -371,6 +371,7 @@ export function senderShort(m: WAMessage) {
 /** Short label for body-less messages (media, polls, contacts, locations…). */
 export function previewKind(m: WAMessage) {
   const msg = (m._data as { Message?: Record<string, unknown> } | undefined)?.Message ?? {};
+  if (msg.pinInChatMessage) return (msg.pinInChatMessage as { type?: number }).type === 2 ? "📌 Unpinned a message" : "📌 Pinned a message";
   if (m.location) return "📍 Location";
   if (m.vCards?.length) return "👤 Contact";
   if (Object.keys(msg).some((k) => k.startsWith("pollCreation"))) return "📊 Poll";

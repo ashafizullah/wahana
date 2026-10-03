@@ -15,6 +15,7 @@ import { usePolls, type PollVoteEvent } from "@/store/polls";
 import { isMutedUntil, useChatPrefs } from "@/store/chatPrefs";
 import { useCalls, type CallEvent } from "@/store/calls";
 import { useLiveMessages } from "@/store/liveMessages";
+import { applyWahaPins, wahaPinOf } from "@/store/pins";
 import { convKey, messageChatId } from "@/lib/utils";
 import { useLatest } from "@/lib/hooks";
 import { pushPresence } from "@/realtime/usePresence";
@@ -170,6 +171,12 @@ export function useWahaSocket() {
               .map((x) => x.replace(/@s\.whatsapp\.net$/, "@c.us"));
             const match = known.find((c) => c.id === alt.find((a) => a === c.id) || c.id.split("@")[0] === digits);
             if (match) chatId = match.id;
+          }
+          // A pin or unpin from the phone or another member: pin the target, nothing to show or notify.
+          const pin = wahaPinOf(m);
+          if (pin) {
+            applyWahaPins(convKey(e.session, chatId), [m]);
+            break;
           }
           // Replays / duplicate deliveries: the caches dedupe by id, so the counters and notifications must too.
           const seenBefore =

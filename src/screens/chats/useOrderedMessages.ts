@@ -4,6 +4,7 @@ import { aiConfigured, translate } from "@/lib/ai";
 import { convKey, errMsg } from "@/lib/utils";
 import { useHidden } from "@/store/hidden";
 import { useLiveMessages } from "@/store/liveMessages";
+import { applyWahaPins, wahaPinOf } from "@/store/pins";
 import { bareId } from "@/store/reactions";
 import { tombstonesFor, useRevoked } from "@/store/revoked";
 import { useTranslations } from "@/store/translations";
@@ -16,13 +17,17 @@ export function useOrderedMessages(session: string, chatId: string, messages: WA
   const hiddenIds = useHidden((s) => s.ids);
   const revokedItems = useRevoked((s) => s.items);
   const live = useLiveMessages((s) => s.byChat[convKey(session, chatId)]);
+  // Pin notices are not shown as bubbles: they pin (or unpin) the message they point at.
+  useEffect(() => {
+    applyWahaPins(convKey(session, chatId), [...(messages ?? []), ...(live ?? [])]);
+  }, [messages, live, session, chatId]);
   return useMemo(() => {
-    const list: ViewMessage[] = (messages ?? []).filter((m) => !hiddenIds[m.id]);
+    const list: ViewMessage[] = (messages ?? []).filter((m) => !hiddenIds[m.id] && !wahaPinOf(m));
     // Messages we received live but the server no longer returns (WAHA storage gaps): keep them in the loaded range.
     if (live?.length && messages) {
       const have = new Set(list.map((m) => m.id));
       const oldest = list.length ? Math.min(...list.map((m) => m.timestamp)) : 0;
-      for (const m of live) if (!have.has(m.id) && !hiddenIds[m.id] && m.timestamp >= oldest) list.push(m);
+      for (const m of live) if (!have.has(m.id) && !hiddenIds[m.id] && !wahaPinOf(m) && m.timestamp >= oldest) list.push(m);
     }
     const stones = tombstonesFor(revokedItems, convKey(session, chatId));
     if (stones.length) {

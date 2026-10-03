@@ -32,7 +32,7 @@ import { Button, Input, Avatar } from "@/components/ui";
 import { useReactions } from "@/store/reactions";
 import { useHidden } from "@/store/hidden";
 import { useRevoked } from "@/store/revoked";
-import { PIN_MS, isPinned, usePins } from "@/store/pins";
+import { PIN_DURATIONS, isPinned, usePins } from "@/store/pins";
 import { confirm } from "@/components/Confirm";
 
 const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
@@ -79,6 +79,7 @@ export function MessageMenu({
   const [err, setErr] = useState<string | null>(null);
   const [forward, setForward] = useState(false);
   const [langMenu, setLangMenu] = useState(false);
+  const [pinMenu, setPinMenu] = useState(false);
 
   const runTranslate = (target: string) => {
     onClose();
@@ -308,16 +309,37 @@ export function MessageMenu({
         />
       )}
       <Item icon={Forward} label="Forward…" onClick={() => setForward(true)} />
-      <Item
-        icon={Pin}
-        label={pinned ? "Unpin" : "Pin (7 days)"}
-        onClick={() =>
-          run("pin", async () => {
-            await (pinned ? requireClient().unpinMessage(session, chatId, m.id) : requireClient().pinMessage(session, chatId, m.id));
-            usePins.getState().set(convKey(session, chatId), m.id, pinned ? 0 : Date.now() + PIN_MS);
-          })
-        }
-      />
+      {pinned ? (
+        <Item
+          icon={Pin}
+          label="Unpin"
+          onClick={() =>
+            run("pin", async () => {
+              await requireClient().unpinMessage(session, chatId, m.id);
+              usePins.getState().set(convKey(session, chatId), m.id, 0);
+            })
+          }
+        />
+      ) : (
+        <>
+          <Item icon={Pin} label="Pin…" onClick={() => setPinMenu((v) => !v)} />
+          {pinMenu &&
+            PIN_DURATIONS.map((d) => (
+              <button
+                key={d.secs}
+                onClick={() =>
+                  run("pin", async () => {
+                    await requireClient().pinMessage(session, chatId, m.id, d.secs);
+                    usePins.getState().set(convKey(session, chatId), m.id, Date.now() + d.secs * 1000);
+                  })
+                }
+                className="w-full pl-10 pr-3 py-1.5 text-left text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+              >
+                {d.label}
+              </button>
+            ))}
+        </>
+      )}
       {m.fromMe && m.body && (
         <Item
           icon={Pencil}

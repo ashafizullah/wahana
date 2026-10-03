@@ -53,7 +53,7 @@ import { NativeLabelsDialog, labelColorHex } from "@/screens/whatsapp/NativeLabe
 import { MUTE_FOREVER, isMutedUntil, useChatPrefs } from "@/store/chatPrefs";
 import { MuteControl } from "@/components/MuteControl";
 import { bareId, summarize, useReactions } from "@/store/reactions";
-import { PIN_MS, isPinned, useChatPins, usePins } from "@/store/pins";
+import { isPinned, useChatPins, usePins } from "@/store/pins";
 import { PinBanner } from "@/components/PinBanner";
 import { useRevoked } from "@/store/revoked";
 import { useWhatsApp } from "@/store/whatsapp";
@@ -867,11 +867,12 @@ function Conversation({
 
   const senderChatIds = (m: NativeMessage) => (m.senderPhone ? [`${m.senderPhone.replace(/\D/g, "")}@s.whatsapp.net`] : null);
 
-  const pinMessage = async (m: NativeMessage) => {
-    const on = !isPinned(pins, prefsKey, m.id);
+  /** Pin for `secs`, or unpin when `secs` is omitted. */
+  const pinMessage = async (m: NativeMessage, secs?: number) => {
+    const on = secs !== undefined;
     try {
-      await nativeWa.pinMessage(account.id, chatId, m.id, on);
-      usePins.getState().set(prefsKey, m.id, on ? Date.now() + PIN_MS : 0);
+      await nativeWa.pinMessage(account.id, chatId, m.id, on, secs);
+      usePins.getState().set(prefsKey, m.id, on ? Date.now() + secs * 1000 : 0);
     } catch (e) {
       onError(errMsg(e));
     }
@@ -1133,7 +1134,7 @@ function Conversation({
                 ? () => onOpenChat(senderChatIds(menu.m)!, quoteForPrivateReply(menu.m))
                 : undefined
             }
-            onPin={channel || menu.m.revokedAt ? undefined : () => void pinMessage(menu.m)}
+            onPin={channel || menu.m.revokedAt ? undefined : (secs) => void pinMessage(menu.m, secs)}
             onForward={menu.m.revokedAt ? undefined : () => setForward(menu.m)}
             onInfo={menu.m.fromMe && !channel ? () => setInfoFor(menu.m) : undefined}
             onClose={() => setMenu(null)}

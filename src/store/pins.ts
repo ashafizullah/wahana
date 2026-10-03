@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { create } from "zustand";
 import { load, type Store } from "@tauri-apps/plugin-store";
+import type { WAMessage } from "@/api/types";
 import { bareId } from "@/store/reactions";
 
 /**
@@ -13,8 +14,12 @@ let storePromise: Promise<Store> | null = null;
 const store = () => (storePromise ??= load(STORE_FILE, { autoSave: true, defaults: {} }));
 let flush: ReturnType<typeof setTimeout> | undefined;
 
-/** How long a pin made from this app lasts (matches `PinDuration::Days7`). */
-export const PIN_MS = 7 * 24 * 3600 * 1000;
+/** How long a pin can last, as WhatsApp offers it (matches `PinDuration`). */
+export const PIN_DURATIONS: { label: string; secs: number }[] = [
+  { label: "24 hours", secs: 86_400 },
+  { label: "7 days", secs: 604_800 },
+  { label: "30 days", secs: 2_592_000 },
+];
 
 export const pinKey = (chat: string, messageId: string) => `${chat}:${bareId(messageId)}`;
 
@@ -62,3 +67,40 @@ export function useChatPins(chat: string) {
 /** Whether a message is pinned right now. */
 export const isPinned = (items: Record<string, number>, chat: string, messageId: string) =>
   (items[pinKey(chat, messageId)] ?? 0) > Date.now();
+
+/** A pin or unpin for everyone carried by a WAHA (GOWS) message, or null for any other message. */
+export function wahaPinOf(m: WAMessage): { messageId: string; on: boolean; expires: number } | null {
+  const msg = (m._data as { Message?: Record<string, unknown> } | undefined)?.Message;
+  const pin = msg?.pinInChatMessage as
+    { key?: { ID?: string; id?: string }; type?: number; senderTimestampMS?: number | string } | undefined;
+  const messageId = pin?.key?.ID ?? pin?.key?.id;
+  if (!pin || !messageId) return null;
+  // type 1 = pin for all, 2 = unpin for all.
+  const on = pin.type === 1;
+  const secs =
+    Number((msg?.messageContextInfo as { messageAddOnDurationInSecs?: number } | undefined)?.messageAddOnDurationInSecs) || 604_800;
+  const at = Number(pin.senderTimestampMS) || m.timestamp * 1000;
+  return { messageId, on, expires: on ? at + secs * 1000 : 0 };
+}
+
+/**
+ * Applies the pins found in a WAHA chat's messages (history pages and live ones), newest state
+ * per message. Pins that already lapsed are dropped.
+ */
+export function applyWahaPins(chat: string, messages: WAMessage[]) {
+  const latest = new Map<string, { at: number; on: boolean; expires: number }>();
+  for (const m of messages) {
+    const pin = wahaPinOf(m);
+    if (!pin) continue;
+    const key = bareId(pin.messageId);
+    const seen = latest.get(key);
+    if (!seen || seen.at <= m.timestamp) latest.set(key, { at: m.timestamp, on: pin.on, expires: pin.expires });
+  }
+  if (!latest.size) return;
+  const { items, set } = usePins.getState();
+  for (const [messageId, pin] of latest) {
+    const current = items[pinKey(chat, messageId)] ?? 0;
+    const next = pin.on ? pin.expires : 0;
+    if (next !== current && (next > Date.now() || current > 0)) set(chat, messageId, next);
+  }
+}

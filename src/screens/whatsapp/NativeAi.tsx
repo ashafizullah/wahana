@@ -39,6 +39,7 @@ import { WaMarkdown } from "@/lib/waMarkdown";
 import { useImageNotes, type ImageNoteKind } from "@/store/imageNotes";
 import { bareId, useReactions } from "@/store/reactions";
 import { nativeAccountKey } from "@/lib/account";
+import { PIN_DURATIONS } from "@/store/pins";
 import { useSettings } from "@/store/settings";
 import { useTranslations } from "@/store/translations";
 import { nativeMediaBlob } from "@/screens/whatsapp/NativeMediaView";
@@ -156,13 +157,15 @@ export function NativeMessageMenu({
   onChat?: () => void;
   /** Group: reply to the sender in a direct chat. */
   onReplyPrivately?: () => void;
-  onPin?: () => void;
+  /** Pin for `secs`, or unpin when called without it. */
+  onPin?: (secs?: number) => void;
   onForward?: () => void;
   onInfo?: () => void;
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [langs, setLangs] = useState(false);
+  const [pinOpen, setPinOpen] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const target = useSettings((s) => s.aiTranslateTo);
@@ -263,7 +266,33 @@ export function NativeMessageMenu({
       {onReply && item(<Reply size={14} />, "Reply", onReply)}
       {onReplyPrivately && item(<Reply size={14} />, "Reply privately", onReplyPrivately)}
       {onChat && item(<MessageCircle size={14} />, "Chat", onChat)}
-      {onPin && item(<Pin size={14} />, pinned ? "Unpin" : "Pin (7 days)", onPin)}
+      {onPin &&
+        (pinned ? (
+          item(<Pin size={14} />, "Unpin", () => onPin())
+        ) : (
+          <>
+            <button
+              onClick={() => setPinOpen((v) => !v)}
+              className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-neutral-100 dark:hover:bg-neutral-800"
+            >
+              <Pin size={14} /> Pin…
+              <span className="ml-auto text-xs text-neutral-500">{pinOpen ? "▾" : "›"}</span>
+            </button>
+            {pinOpen &&
+              PIN_DURATIONS.map((d) => (
+                <button
+                  key={d.secs}
+                  onClick={() => {
+                    onClose();
+                    onPin(d.secs);
+                  }}
+                  className="w-full pl-9 pr-3 py-1.5 text-left text-sm text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                >
+                  {d.label}
+                </button>
+              ))}
+          </>
+        ))}
       {onForward && item(<Forward size={14} />, "Forward…", onForward)}
       {m.body && item(<Copy size={14} />, "Copy text", () => void navigator.clipboard.writeText(m.body))}
       {m.body && (

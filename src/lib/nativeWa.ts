@@ -280,9 +280,9 @@ export const nativeWa = {
   deleteLocal: (id: string, chatId: string, messageId: string) => invoke<void>("wa_native_delete_local", { id, chatId, messageId }),
   /** Delete a message for everyone: your own, or (as a group admin) someone else's. */
   deleteMessage: (id: string, chatId: string, messageId: string) => invoke<void>("wa_native_delete", { id, chatId, messageId }),
-  /** Pin a message for everyone (7 days) or unpin it. */
-  pinMessage: (id: string, chatId: string, messageId: string, on: boolean) =>
-    invoke<void>("wa_native_pin_message", { id, chatId, messageId, on }),
+  /** Pin a message for everyone for `durationSecs` (one of PIN_DURATIONS) or unpin it. */
+  pinMessage: (id: string, chatId: string, messageId: string, on: boolean, durationSecs?: number) =>
+    invoke<void>("wa_native_pin_message", { id, chatId, messageId, on, durationSecs }),
   /** Forward a stored message to another chat. */
   forward: (id: string, fromChatId: string, messageId: string, toChatId: string) =>
     invoke<void>("wa_native_forward", { id, fromChatId, messageId, toChatId }),
