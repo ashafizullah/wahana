@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.1.0 — 2026-10-03
+
+### Added
+
+- Knowledge base for AI auto-replies: tables with custom columns and free-text documents, embedded through an OpenAI-compatible `/embeddings` endpoint (shared with chat or its own URL/key) and given to the AI as authoritative facts. Entries are per account or global.
+- Per-rule "Use knowledge base" toggle with top-k and minimum-similarity settings, test retrieval, stale/model-mismatch detection and re-index all.
+- Simplified Chinese README.
+
+### Changed
+
+- Backup v3 includes knowledge base entries (without vectors) and the embeddings key; restore re-indexes in the background.
+
 ## 1.0.0 — 2026-10-03
 
 ### Removed
