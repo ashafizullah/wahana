@@ -165,6 +165,19 @@ export function replaceMentions(text: string, resolve: MentionResolver) {
 }
 
 /** Plain-text version for previews: removes formatting markers. */
+/** Turns the standard Markdown an AI model may answer with into WhatsApp markup, so WaMarkdown renders it. */
+export function mdToWa(text: string) {
+  return text
+    .replace(/^\s{0,3}#{1,6}\s+(.+?)\s*#*\s*$/gm, "*$1*")
+    .replace(/^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/gm, "")
+    .replace(/\*\*(?=\S)([^\n]*?\S)\*\*/g, "*$1*")
+    .replace(/__(?=\S)([^\n]*?\S)__/g, "*$1*")
+    .replace(/~~(?=\S)([^\n]*?\S)~~/g, "~$1~")
+    .replace(/\[([^\]\n]+)\]\((https?:\/\/[^)\s]+)\)/g, "$1 ($2)")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 export function stripWaMarkdown(text: string) {
   return text
     .replace(/```([\s\S]*?)```/g, "$1")

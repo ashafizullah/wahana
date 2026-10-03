@@ -346,11 +346,15 @@ export function analyzeImage(
   caption?: string,
   account?: string,
 ) {
+  const lang = langName(language);
   const system =
     kind === "ocr"
       ? "Extract all text from the image exactly as written, preserving line breaks, numbers, and layout order (top to bottom, left to right). Output only the text — no commentary. If the image contains no readable text, reply with exactly: (no text found)"
-      : `Describe this image from a WhatsApp chat in ${langName(language)}: what it shows, any people/objects/scene, and any visible text (quote it). Be concise (2–5 sentences); if it is a screenshot, receipt, invoice or document, summarize its key content and figures instead.`;
-  const user = caption ? `The sender's caption: "${caption}"` : kind === "ocr" ? "Extract the text." : "Describe the image.";
+      : `Describe this image from a WhatsApp chat: what it shows, any people/objects/scene, and any visible text (quote it). Be concise (2–5 sentences); if it is a screenshot, receipt, invoice or document, summarize its key content and figures instead.
+Write the whole description in ${lang}, even when the image, its text or the caption are in another language; only quoted text stays as written.
+Format with WhatsApp markup only: *bold* for key names and figures, "- " bullets if needed. No Markdown headings (#), no **double asterisks**, no tables.`;
+  const ask = kind === "ocr" ? "Extract the text." : `Describe the image in ${lang}.`;
+  const user = caption ? `${ask}\nThe sender's caption: "${caption}"` : ask;
   return completeWithImage(system, user, image, { maxTokens: 2048, account });
 }
 

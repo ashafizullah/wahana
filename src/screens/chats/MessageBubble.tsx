@@ -13,7 +13,7 @@ import { useTranslations } from "@/store/translations";
 import { useImageNotes } from "@/store/imageNotes";
 import { langName } from "@/lib/ai";
 import type { MentionResolver } from "@/lib/waMarkdown";
-import { WaMarkdown } from "@/lib/waMarkdown";
+import { WaMarkdown, mdToWa } from "@/lib/waMarkdown";
 import type { ViewMessage, WAMessage } from "@/api/types";
 import { cn, convKey, displayId, formatTime, errMsg } from "@/lib/utils";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -227,12 +227,14 @@ export function ImageNoteView({ id }: { id: string }) {
   const n = useImageNotes((s) => s.byMsg[id]);
   const clear = useImageNotes((s) => s.clear);
   if (!n) return null;
+  // Descriptions come back as Markdown now and then; OCR text is shown exactly as read.
+  const text = n.text && n.kind !== "ocr" ? mdToWa(n.text) : n.text;
   return (
     <div className="mt-1 rounded-md border-l-2 border-violet-400 bg-violet-50/70 dark:bg-violet-900/20 px-2 py-1 text-xs">
       <div className="flex items-center gap-1 text-[10px] text-violet-700 dark:text-violet-300 mb-0.5">
         {n.kind === "ocr" ? <ScanText size={10} /> : <Sparkles size={10} />} {n.kind === "ocr" ? "Extracted text" : "Description"}
         {n.text && (
-          <button className="ml-auto opacity-60 hover:opacity-100" onClick={() => void navigator.clipboard.writeText(n.text!)} title="Copy">
+          <button className="ml-auto opacity-60 hover:opacity-100" onClick={() => void navigator.clipboard.writeText(text!)} title="Copy">
             <Copy size={10} />
           </button>
         )}
@@ -246,7 +248,7 @@ export function ImageNoteView({ id }: { id: string }) {
         </span>
       )}
       {n.error && <span className="text-red-600 selectable">{n.error}</span>}
-      {n.text && <div className="whitespace-pre-wrap break-words selectable">{n.text}</div>}
+      {text && <div className="whitespace-pre-wrap break-words selectable">{n.kind === "ocr" ? text : <WaMarkdown text={text} />}</div>}
     </div>
   );
 }
