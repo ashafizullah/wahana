@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ChevronLeft,
   ChevronRight,
+  Maximize,
   Loader2,
   Plus,
   Trash2,
@@ -25,6 +26,7 @@ import { useNameResolver } from "@/realtime/useNames";
 import { usePushNames } from "@/store/pushNames";
 import { loadMessageMedia } from "@/lib/mediaCache";
 import { WaMarkdown } from "@/lib/waMarkdown";
+import { Lightbox } from "@/components/Lightbox";
 import { Avatar, Button, Input } from "@/components/ui";
 import { GenerateButton } from "@/components/GenerateButton";
 import { cn, displayId, fileToBase64, formatTime, errMsg } from "@/lib/utils";
@@ -269,6 +271,7 @@ function StoryViewer({
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [paused, setPaused] = useState(false);
+  const [full, setFull] = useState<{ at: number } | null>(null);
   const [progress, setProgress] = useState(0); // 0..1 for the current item
   const videoRef = useRef<HTMLVideoElement>(null);
   const story = stories[Math.min(i, stories.length - 1)]!;
@@ -340,6 +343,7 @@ function StoryViewer({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (full) return;
       if (e.key === "ArrowLeft") {
         if (i > 0) setI(i - 1);
         else onPrevContact?.();
@@ -357,7 +361,7 @@ function StoryViewer({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [stories.length, i, onNextContact, onPrevContact]);
+  }, [stories.length, i, onNextContact, onPrevContact, full]);
 
   return (
     <div
@@ -401,6 +405,18 @@ function StoryViewer({
             title={reported[story.m.id] ? "Marked as viewed" : "Let the sender know you viewed this status"}
           >
             <CheckCheck size={14} /> {reported[story.m.id] ? "Viewed" : "Mark viewed"}
+          </button>
+        )}
+        {story.kind !== "text" && blob && (
+          <button
+            onClick={() => {
+              setPaused(true);
+              setFull({ at: videoRef.current?.currentTime ?? 0 });
+            }}
+            className="text-white/70 hover:text-white"
+            title="Full screen"
+          >
+            <Maximize size={16} />
           </button>
         )}
         <button onClick={() => setPaused((p) => !p)} className="text-white/70 hover:text-white" title={paused ? "Play" : "Pause"}>
@@ -483,6 +499,24 @@ function StoryViewer({
           )
         ) : null}
       </div>
+      {full && blob && story.kind !== "text" && (
+        // The viewer pauses on any click; keep the full-screen view's clicks to itself.
+        <div onClick={(e) => e.stopPropagation()}>
+          <Lightbox
+            item={{
+              blobUrl: blob,
+              kind: story.kind,
+              filename: `status-${story.m.id}.${story.kind === "video" ? "mp4" : "jpg"}`,
+              caption: story.text || undefined,
+              startAt: full.at,
+            }}
+            onClose={() => {
+              setFull(null);
+              setPaused(false);
+            }}
+          />
+        </div>
+      )}
       {story.kind !== "text" && story.text && (
         <div className="px-6 py-3 text-center text-sm bg-black/40 selectable">
           <WaMarkdown text={story.text} />

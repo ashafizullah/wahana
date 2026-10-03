@@ -1,6 +1,6 @@
 import { noteSticker } from "@/lib/stickers";
-import { useEffect, useState } from "react";
-import { Download, FileText, Loader2, Mic, Music, Play } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Download, FileText, Loader2, Maximize, Mic, Music, Play } from "lucide-react";
 import { save } from "@tauri-apps/plugin-dialog";
 import { writeFile } from "@tauri-apps/plugin-fs";
 import { Lightbox } from "@/components/Lightbox";
@@ -68,6 +68,8 @@ export function NativeMediaView({
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
+  const [startAt, setStartAt] = useState(0);
+  const videoRef = useRef<HTMLVideoElement>(null);
 
   // Serve from the cache whenever possible; download when wanted (auto-load or click).
   useEffect(() => {
@@ -178,10 +180,27 @@ export function NativeMediaView({
     <div>
       <div
         style={tile ? { aspectRatio: "1" } : { width, aspectRatio: String(ratio) }}
-        className={cn("relative overflow-hidden bg-neutral-200 dark:bg-neutral-700", tile ? "w-full rounded" : "rounded-lg max-h-[360px]")}
+        className={cn(
+          "group relative overflow-hidden bg-neutral-200 dark:bg-neutral-700",
+          tile ? "w-full rounded" : "rounded-lg max-h-[360px]",
+        )}
       >
         {url && isVideo ? (
-          <video src={url} controls className="w-full h-full object-contain bg-black" />
+          <>
+            <video ref={videoRef} src={url} controls className="w-full h-full object-contain bg-black" />
+            <button
+              onClick={() => {
+                const v = videoRef.current;
+                setStartAt(v?.currentTime ?? 0);
+                v?.pause();
+                setOpen(true);
+              }}
+              className="absolute top-1.5 right-1.5 rounded-full bg-black/60 text-white p-1.5 opacity-0 group-hover:opacity-100 focus:opacity-100 transition"
+              title="Full screen"
+            >
+              <Maximize size={14} />
+            </button>
+          </>
         ) : url ? (
           <button onClick={() => setOpen(true)} className="block w-full h-full" title="Open">
             <img src={url} alt="" className="w-full h-full object-cover" />
@@ -205,9 +224,10 @@ export function NativeMediaView({
         <Lightbox
           item={{
             blobUrl: url,
-            kind: "image",
-            filename: `whatsapp-${m.id}.${media.mimetype.includes("png") ? "png" : "jpg"}`,
+            kind: isVideo ? "video" : "image",
+            filename: `whatsapp-${m.id}.${isVideo ? "mp4" : media.mimetype.includes("png") ? "png" : "jpg"}`,
             caption: m.body || undefined,
+            startAt: isVideo ? startAt : undefined,
           }}
           onClose={() => setOpen(false)}
         />

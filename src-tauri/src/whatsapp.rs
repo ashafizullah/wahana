@@ -2625,6 +2625,10 @@ pub fn wa_native_message_info(
     let rows = db.receipts_for(&message_id).map_err(|e| e.to_string())?;
     let mut out: Vec<MessageReceipt> = Vec::new();
     for (who, ack, at) in rows {
+        // A status receipt can name the broadcast list instead of the viewer.
+        if who.ends_with("@broadcast") {
+            continue;
+        }
         let i = match out.iter().position(|r| r.id == who) {
             Some(i) => i,
             None => {

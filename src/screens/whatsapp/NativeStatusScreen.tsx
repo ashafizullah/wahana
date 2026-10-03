@@ -2,8 +2,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { confirm } from "@/components/Confirm";
 import {
   CheckCheck,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
+  Maximize,
+  Eye,
   Image as ImageIcon,
   Loader2,
   Pause,
@@ -20,7 +23,8 @@ import { GenerateButton } from "@/components/GenerateButton";
 import { nativeAccountKey } from "@/lib/account";
 import { cn, errMsg, formatTime } from "@/lib/utils";
 import { WaMarkdown } from "@/lib/waMarkdown";
-import { nativeWa, onNativeStatus, type NativeAccount, type NativeStatus } from "@/lib/nativeWa";
+import { Lightbox } from "@/components/Lightbox";
+import { nativeWa, onNativeStatus, type NativeAccount, type NativeReceipt, type NativeStatus } from "@/lib/nativeWa";
 import { useReadReceipts } from "@/store/settings";
 import { useStatusSeen } from "@/store/statusSeen";
 import { useStoryJump } from "@/store/storyJump";
@@ -297,6 +301,7 @@ function NativeStoryViewer({
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [paused, setPaused] = useState(false);
+  const [full, setFull] = useState<{ at: number } | null>(null);
   const [progress, setProgress] = useState(0);
   const videoRef = useRef<HTMLVideoElement>(null);
   const story = stories[Math.min(i, stories.length - 1)]!;
@@ -367,6 +372,7 @@ function NativeStoryViewer({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (full) return;
       if (e.key === "ArrowLeft") {
         if (i > 0) setI(i - 1);
         else onPrevContact?.();
@@ -384,7 +390,7 @@ function NativeStoryViewer({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [stories.length, i, onNextContact, onPrevContact]);
+  }, [stories.length, i, onNextContact, onPrevContact, full]);
 
   return (
     <div
@@ -428,6 +434,18 @@ function NativeStoryViewer({
             title={reported[story.m.id] ? "Marked as viewed" : "Let the sender know you viewed this status"}
           >
             <CheckCheck size={14} /> {reported[story.m.id] ? "Viewed" : "Mark viewed"}
+          </button>
+        )}
+        {story.kind !== "text" && blob && (
+          <button
+            onClick={() => {
+              setPaused(true);
+              setFull({ at: videoRef.current?.currentTime ?? 0 });
+            }}
+            className="text-white/70 hover:text-white"
+            title="Full screen"
+          >
+            <Maximize size={16} />
           </button>
         )}
         <button onClick={() => setPaused((p) => !p)} className="text-white/70 hover:text-white" title={paused ? "Play" : "Pause"}>
@@ -507,11 +525,112 @@ function NativeStoryViewer({
           )
         ) : null}
       </div>
+      {full && blob && story.kind !== "text" && (
+        // The viewer pauses on any click; keep the full-screen view's clicks to itself.
+        <div onClick={(e) => e.stopPropagation()}>
+          <Lightbox
+            item={{
+              blobUrl: blob,
+              kind: story.kind,
+              filename: `status-${story.m.id}.${story.kind === "video" ? "mp4" : "jpg"}`,
+              caption: story.text || undefined,
+              startAt: full.at,
+            }}
+            onClose={() => {
+              setFull(null);
+              setPaused(false);
+            }}
+          />
+        </div>
+      )}
       {story.kind !== "text" && story.text && (
         <div className="px-6 py-3 text-center text-sm bg-black/40 selectable">
           <WaMarkdown text={story.text} />
         </div>
       )}
+      {mine && <ViewedBy accountId={accountId} storyId={story.m.id} connected={connected} onOpen={setPaused} />}
+    </div>
+  );
+}
+
+const VIEWERS_REFRESH_MS = 15_000;
+
+/**
+ * "Viewed by" under one of my stories. WhatsApp has no viewer list to fetch: each view
+ * arrives as a read receipt, which the account records, so this lists the receipts seen
+ * for the story (refreshed while open). Viewers who turned read receipts off never show.
+ */
+function ViewedBy({
+  accountId,
+  storyId,
+  connected,
+  onOpen,
+}: {
+  accountId: string;
+  storyId: string;
+  connected: boolean;
+  onOpen: (open: boolean) => void;
+}) {
+  const [rows, setRows] = useState<NativeReceipt[]>([]);
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    const load = () =>
+      nativeWa
+        .messageInfo(accountId, storyId)
+        .then((r) => alive && setRows(r))
+        .catch(() => {});
+    void load();
+    const timer = setInterval(load, VIEWERS_REFRESH_MS);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, [accountId, storyId]);
+
+  const viewers = rows
+    .map((r) => ({ ...r, at: r.readAt ?? r.playedAt }))
+    .filter((r): r is NativeReceipt & { at: number } => r.at !== null)
+    .sort((a, b) => b.at - a.at);
+  const toggle = (v: boolean) => {
+    setOpen(v);
+    onOpen(v);
+  };
+
+  return (
+    // Clicks here must not reach the viewer, which pauses on any click.
+    <div className="shrink-0 border-t border-white/10 bg-black/40" onClick={(e) => e.stopPropagation()}>
+      <button
+        onClick={() => toggle(!open)}
+        className="w-full flex items-center justify-center gap-1.5 py-2 text-sm text-white/80 hover:text-white"
+        title={open ? "Hide viewers" : "Show who viewed this status"}
+      >
+        <Eye size={15} /> {viewers.length}
+        {open && <ChevronDown size={14} />}
+      </button>
+      {open && (
+        <div className="max-h-64 overflow-y-auto px-4 pb-3">
+          <div className="text-xs text-white/50 pb-1">Viewed by {viewers.length}</div>
+          {viewers.length === 0 ? (
+            <div className="py-3 text-sm text-white/50">
+              No views yet. Only views that reach this app are listed, and people with read receipts off never show.
+            </div>
+          ) : (
+            viewers.map((v) => <ViewerRow key={v.id} accountId={accountId} viewer={v} connected={connected} />)
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ViewerRow({ accountId, viewer, connected }: { accountId: string; viewer: NativeReceipt & { at: number }; connected: boolean }) {
+  const picture = usePicture(accountId, viewer.id, connected);
+  return (
+    <div className="flex items-center gap-3 py-1.5">
+      <Avatar src={picture ?? undefined} name={viewer.name} size={32} />
+      <div className="min-w-0 flex-1 truncate text-sm selectable">{viewer.name}</div>
+      <div className="text-xs text-white/50">{formatTime(viewer.at / 1000)}</div>
     </div>
   );
 }

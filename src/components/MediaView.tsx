@@ -1,6 +1,6 @@
 import { noteSticker } from "@/lib/stickers";
-import { useEffect, useState } from "react";
-import { FileText, Download, Loader2, Play, Image as ImageIcon, Music, Sticker } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { FileText, Download, Loader2, Maximize, Play, Image as ImageIcon, Music, Sticker } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useQueryClient } from "@tanstack/react-query";
 import { mediaKind, shouldAutoLoad, useSettings } from "@/store/settings";
@@ -51,6 +51,8 @@ export function MediaView({ message: m, session, chatId }: { message: WAMessage;
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
+  const [startAt, setStartAt] = useState(0);
+  const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
     if (auto) setWanted(true);
@@ -187,7 +189,10 @@ export function MediaView({ message: m, session, chatId }: { message: WAMessage;
   // ── Loaded ───────────────────────────────────────────────────────────
   const filename = m.media?.filename ?? raw.fileName ?? `${m.id.split("_").pop()}.${(mime.split("/")[1] ?? "bin").replace("jpeg", "jpg")}`;
   const viewer = open && (kind === "image" || kind === "video") && (
-    <Lightbox item={{ blobUrl, kind, filename, caption: m.body || undefined }} onClose={() => setOpen(false)} />
+    <Lightbox
+      item={{ blobUrl, kind, filename, caption: m.body || undefined, startAt: kind === "video" ? startAt : undefined }}
+      onClose={() => setOpen(false)}
+    />
   );
   if (kind === "image") {
     return (
@@ -209,12 +214,18 @@ export function MediaView({ message: m, session, chatId }: { message: WAMessage;
     return (
       <>
         <div className="relative group">
-          <video controls src={blobUrl} className="max-w-[320px] rounded-lg" />
+          <video ref={videoRef} controls src={blobUrl} className="max-w-[320px] rounded-lg" />
           <button
-            onClick={() => setOpen(true)}
-            className="absolute top-1.5 right-1.5 rounded bg-black/60 text-white px-1.5 py-0.5 text-[10px] opacity-0 group-hover:opacity-100 transition"
+            onClick={() => {
+              const v = videoRef.current;
+              setStartAt(v?.currentTime ?? 0);
+              v?.pause();
+              setOpen(true);
+            }}
+            className="absolute top-1.5 right-1.5 rounded-full bg-black/60 text-white p-1.5 opacity-0 group-hover:opacity-100 focus:opacity-100 transition"
+            title="Full screen"
           >
-            Fullscreen
+            <Maximize size={14} />
           </button>
         </div>
         {viewer}

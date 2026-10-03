@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
-import { X, Download, ZoomIn, ZoomOut, Loader2, Check } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { X, Download, ZoomIn, ZoomOut, Loader2, Check, Maximize, Minimize } from "lucide-react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { save } from "@tauri-apps/plugin-dialog";
 import { writeFile } from "@tauri-apps/plugin-fs";
 import { cn } from "@/lib/utils";
@@ -9,18 +10,53 @@ export interface LightboxItem {
   kind: "image" | "video";
   filename: string;
   caption?: string;
+  /** Seconds into a video to start from, e.g. where an inline player was. */
+  startAt?: number;
 }
 
-/** Fullscreen viewer for images/videos with zoom and save-to-disk. */
+/**
+ * Window-filling viewer for images/videos with zoom and save-to-disk. "Full screen" also
+ * takes the app window full screen (the video element's own button doesn't in the webview),
+ * and leaves it again on close unless the window was full screen already.
+ */
 export function Lightbox({ item, onClose }: { item: LightboxItem; onClose: () => void }) {
   const [zoom, setZoom] = useState(false);
   const [saving, setSaving] = useState<"idle" | "busy" | "done" | "error">("idle");
+  const [full, setFull] = useState(false);
+  const entered = useRef(false);
+
+  const setFullscreen = (on: boolean) => {
+    const win = getCurrentWindow();
+    void win
+      .isFullscreen()
+      .then((was) => {
+        if (was === on) return;
+        entered.current = on;
+        return win.setFullscreen(on);
+      })
+      .then(() => setFull(on))
+      .catch(() => {});
+  };
+
+  // Leave full screen with the viewer, but only if it was the viewer that entered it.
+  useEffect(
+    () => () => {
+      if (entered.current)
+        void getCurrentWindow()
+          .setFullscreen(false)
+          .catch(() => {});
+    },
+    [],
+  );
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+      else if (e.key === "f" && !e.metaKey && !e.ctrlKey) setFullscreen(!full);
+    };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, full]);
 
   const saveToDisk = async () => {
     setSaving("busy");
@@ -46,6 +82,13 @@ export function Lightbox({ item, onClose }: { item: LightboxItem; onClose: () =>
             {zoom ? <ZoomOut size={18} /> : <ZoomIn size={18} />}
           </button>
         )}
+        <button
+          className="p-2 rounded hover:bg-white/10"
+          onClick={() => setFullscreen(!full)}
+          title={full ? "Exit full screen (F)" : "Full screen (F)"}
+        >
+          {full ? <Minimize size={18} /> : <Maximize size={18} />}
+        </button>
         <button className="p-2 rounded hover:bg-white/10" onClick={saveToDisk} title="Save to disk" disabled={saving === "busy"}>
           {saving === "busy" ? (
             <Loader2 size={18} className="animate-spin" />
@@ -76,7 +119,15 @@ export function Lightbox({ item, onClose }: { item: LightboxItem; onClose: () =>
             )}
           />
         ) : (
-          <video src={item.blobUrl} controls autoPlay className="max-w-full max-h-full object-contain" />
+          <video
+            src={item.blobUrl}
+            controls
+            autoPlay
+            className="max-w-full max-h-full object-contain"
+            onLoadedMetadata={(e) => {
+              if (item.startAt) e.currentTarget.currentTime = item.startAt;
+            }}
+          />
         )}
       </div>
       {item.caption && <div className="p-3 text-center text-sm text-white/80 selectable">{item.caption}</div>}
