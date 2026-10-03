@@ -1908,6 +1908,7 @@ fn quote_context(
 /// differs from `chat_id` (a status reply quotes the story in `status@broadcast` while
 /// sending to the poster). `mentions` lists the jids the text tags (group @mention).
 #[tauri::command]
+#[allow(clippy::too_many_arguments)] // each argument is a field of the JS invoke payload
 pub async fn wa_native_send_text(
     app: AppHandle,
     state: State<'_, WaState>,
@@ -1937,7 +1938,12 @@ pub async fn wa_native_send_text(
         .map_err(|_| format!("invalid chat id: {chat_id}"))?;
     let outgoing = {
         let mut context = match &quote_id {
-            Some(qid) => quote_context(&account, quote_chat.as_deref().unwrap_or(&chat_id), &to, qid)?,
+            Some(qid) => quote_context(
+                &account,
+                quote_chat.as_deref().unwrap_or(&chat_id),
+                &to,
+                qid,
+            )?,
             None => wa::ContextInfo::default(),
         };
         if let Some(list) = mentions {
