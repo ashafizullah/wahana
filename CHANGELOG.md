@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Removed
+
+- WAHA server integration. The app now links WhatsApp accounts directly only (native, via whatsapp-rust): the API client, session/profile settings, WebSocket, webhooks/events screens and the WAHA-only stores are gone.
+
+### Changed
+
+- Scheduler, broadcast and auto-reply work from native accounts only.
+- About, Backup & restore, Welcome and Settings are native-only.
+
 ## 0.9.0 — 2026-10-03
 
 ### Added
