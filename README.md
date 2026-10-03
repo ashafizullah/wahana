@@ -5,7 +5,7 @@
 <h1 align="center">Wahana</h1>
 
 <p align="center">
-  A cross-platform WhatsApp desktop client: link your phone directly (native, no server) or connect to a <a href="https://waha.devlike.pro">WAHA</a> server.<br>
+  An unofficial, cross-platform WhatsApp desktop client: link your phone directly (native, no server) or connect to a <a href="https://waha.devlike.pro">WAHA</a> server.<br>
   Chat across several accounts — with scheduling, broadcasts, auto-reply, stories, and built-in AI.
 </p>
 
@@ -19,7 +19,9 @@
   <img alt="WAHA" src="https://img.shields.io/badge/WAHA-2026.8%2B-25D366?logo=whatsapp&logoColor=white">
 </p>
 
-> **Wahana** means "vehicle / platform" in Indonesian. Not affiliated with WAHA/devlike.pro or WhatsApp/Meta.
+> **Wahana** means "vehicle / platform" in Indonesian. This is an unofficial client, not affiliated with, endorsed by, or connected to WhatsApp, Meta, or WAHA/devlike.pro. "WhatsApp" is a trademark of Meta Platforms, Inc.
+>
+> Using unofficial clients may violate WhatsApp's Terms of Service and can get your number banned, especially with bulk messaging or auto-replies. Use at your own risk.
 
 ## Download
 
