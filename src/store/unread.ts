@@ -62,6 +62,9 @@ export const useUnread = create<UnreadState>((set, get) => ({
   },
 }));
 
+/** A last-message timestamp this far past the clock is engine corruption, not a real time. */
+const FUTURE_SLACK_S = 24 * 60 * 60;
+
 /** Unread indicator for a chat row: a count from live events, or 1 if the last message is newer than last open. */
 export function unreadFor(
   st: Pick<UnreadState, "counts" | "lastSeen">,
@@ -73,7 +76,15 @@ export function unreadFor(
   const live = st.counts[key] ?? 0;
   if (live) return live;
   const seen = st.lastSeen[key];
-  if (seen !== undefined && lastMessage && !lastMessage.fromMe && lastMessage.timestamp > seen) return 1;
+  if (
+    seen !== undefined &&
+    lastMessage &&
+    !lastMessage.fromMe &&
+    lastMessage.timestamp > seen &&
+    // A far-future timestamp would otherwise pin the chat as unread forever.
+    lastMessage.timestamp <= Date.now() / 1000 + FUTURE_SLACK_S
+  )
+    return 1;
   return 0;
 }
 

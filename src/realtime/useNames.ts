@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useChats, useContacts, useSessions } from "@/api/queries";
 import { requireClient, useSettings } from "@/store/settings";
@@ -48,6 +48,10 @@ export function useNameResolver(session: string, chatId = "") {
   const { data: sessions } = useSessions();
   const pushNames = usePushNames((s) => s.names);
   const { data: lids } = useLidTable(session);
+  // LIDs the bulk table doesn't know yet (it is a snapshot): asked for one by one.
+  const [looked, setLooked] = useState<Map<string, string>>(() => new Map());
+  const asked = useRef(new Set<string>());
+  const [wanted, setWanted] = useState<string[]>([]);
   const meRaw = sessions?.find((s) => s.name === session)?.me;
   // The session list is polled; key on the ids so a fresh-but-equal object doesn't rebuild the map (and every bubble).
   const me = useMemo(() => meRaw, [meRaw?.id, meRaw?.lid, meRaw?.jid]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -77,6 +81,25 @@ export function useNameResolver(session: string, chatId = "") {
     return m;
   }, [me, group, contacts, chats]);
 
+  useEffect(() => {
+    const client = useSettings.getState().client;
+    if (!client || !wanted.length) return;
+    let live = true;
+    for (const lid of wanted) {
+      requireClient()
+        .lidToPhone(session, `${lid}@lid`)
+        .then((r) => {
+          const pn = r.pn?.split("@")[0];
+          if (live && pn) setLooked((m) => new Map(m).set(lid, pn));
+        })
+        .catch(() => {});
+    }
+    setWanted([]);
+    return () => {
+      live = false;
+    };
+  }, [wanted, session]);
+
   // Second pass: if a LID maps to a phone number that itself has a contact name, prefer the name.
   const resolve = useCallback(
     (id: string | null | undefined): string | undefined => {
@@ -86,7 +109,11 @@ export function useNameResolver(session: string, chatId = "") {
       const v = map.get(digits);
       if (isReal(v)) return v;
       // Phone digits for this id: from the group/contacts map ("+62…") or the server LID table.
-      const phone = v?.startsWith("+") ? v.slice(1) : lids?.get(digits);
+      const phone = v?.startsWith("+") ? v.slice(1) : (lids?.get(digits) ?? looked.get(digits));
+      if (!phone && id.endsWith("@lid") && lids && !asked.current.has(digits)) {
+        asked.current.add(digits);
+        queueMicrotask(() => setWanted((w) => [...w, digits]));
+      }
       if (phone) {
         const byPhone = map.get(phone);
         if (isReal(byPhone)) return byPhone;
@@ -98,7 +125,7 @@ export function useNameResolver(session: string, chatId = "") {
       if (pn) return `~${pn}`;
       return v;
     },
-    [map, pushNames, lids],
+    [map, pushNames, lids, looked],
   );
   return resolve;
 }

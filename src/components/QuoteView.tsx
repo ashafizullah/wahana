@@ -1,6 +1,6 @@
 import type { WAMessage } from "@/api/types";
 import { WaMarkdown, type MentionResolver } from "@/lib/waMarkdown";
-import { cn } from "@/lib/utils";
+import { cn, displayId } from "@/lib/utils";
 
 /** Shape of `message.replyTo` from WAHA (quoted message summary). */
 export interface ReplyTo {
@@ -79,7 +79,7 @@ export function QuoteView({
 }) {
   const participant = (("participant" in quote ? quote.participant : null) || ("from" in quote ? quote.from : null) || "") as string;
   const mine = ("fromMe" in quote && quote.fromMe) || myIds.some((id) => id && participant.split("@")[0] === id.split("@")[0]);
-  const who = mine ? "You" : (resolveName(participant) ?? participant.split("@")[0]);
+  const who = mine ? "You" : (resolveName(participant) ?? displayId(participant));
   const { thumb, text, kind } = describeQuoted(quote);
   return (
     <div

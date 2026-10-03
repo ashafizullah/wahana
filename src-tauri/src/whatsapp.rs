@@ -1000,11 +1000,17 @@ fn store_history(db: &ChatDb, sync: &wa::HistorySync) -> rusqlite::Result<()> {
         } else if let Some(pn) = &conversation.pn_jid {
             db.set_lid_pn(chat_id, &bare_jid(pn))?;
         }
+        // The phone reports each conversation's last activity as Unix seconds. A corrupt
+        // value far in the future would pin the chat to the top and — because a preview
+        // only ever moves forward — freeze its last message for good, so drop times that
+        // are not plausibly in the past. The chat's own messages set the real time below.
+        let now = (now_millis() / 1000).max(0) as u64;
         let timestamp = conversation
             .conversation_timestamp
             .or(conversation.last_msg_timestamp)
-            .unwrap_or_default() as i64
-            * 1000;
+            .filter(|secs| *secs > 0 && *secs <= now + 86_400)
+            .map(|secs| secs as i64 * 1000)
+            .unwrap_or_default();
         db.ensure_chat(chat_id, timestamp, conversation.unread_count.unwrap_or(0))?;
         // `mute_end_time` is in seconds; the phone uses a far-future value for "always".
         if let Some(end) = conversation.mute_end_time.filter(|e| *e > 0) {
@@ -1173,6 +1179,20 @@ async fn handle_event(app: AppHandle, account: Arc<WaAccount>, generation: u64, 
                 .unwrap()
                 .set_mute(&bare_jid(&update.jid.to_string()), until);
             emit_chats(&app, &account);
+        }
+        Event::MarkChatAsReadUpdate(update) => {
+            // Read (or marked unread) on the phone or another linked device.
+            let read = update.action.read.unwrap_or(true);
+            let changed = account
+                .db
+                .lock()
+                .unwrap()
+                .set_read_from_device(&update.jid.to_string(), read)
+                .unwrap_or(false);
+            if changed {
+                emit_account(&app, &account);
+                emit_chats(&app, &account);
+            }
         }
         Event::LabelEditUpdate(update) => {
             let action = &update.action;

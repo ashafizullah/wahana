@@ -277,7 +277,74 @@ impl ChatDb {
         // Statuses are stored as messages under `status@broadcast`, not as a chat; drop any
         // row an earlier build created for it.
         conn.execute("DELETE FROM chats WHERE id = 'status@broadcast'", [])?;
+        Self::repair_implausible_chats(&conn)?;
         Ok(Self { conn })
+    }
+
+    /// Rebuilds chats whose position a bad history timestamp corrupted. The phone can
+    /// report a conversation time far in the future, which pins the chat to the top and —
+    /// since a preview only moves forward — freezes its last message for good. Recompute
+    /// the summary from the messages actually stored; a chat with none drops back to 0.
+    fn repair_implausible_chats(conn: &Connection) -> rusqlite::Result<()> {
+        let cap = now_millis() + FUTURE_SLACK_MS;
+        let mut stmt = conn.prepare("SELECT id FROM chats WHERE last_timestamp > ?1")?;
+        let ids: Vec<String> = stmt
+            .query_map(params![cap], |r| r.get(0))?
+            .collect::<rusqlite::Result<_>>()?;
+        drop(stmt);
+        for id in ids {
+            let newest = conn
+                .query_row(
+                    "SELECT kind, body, media_kind, timestamp, from_me, sender_id, sender_name,
+                            revoked_at IS NOT NULL
+                     FROM messages WHERE chat_id = ?1 AND timestamp <= ?2
+                     ORDER BY timestamp DESC LIMIT 1",
+                    params![id, cap],
+                    |r| {
+                        Ok((
+                            r.get::<_, String>(0)?,
+                            r.get::<_, String>(1)?,
+                            r.get::<_, Option<String>>(2)?,
+                            r.get::<_, i64>(3)?,
+                            r.get::<_, bool>(4)?,
+                            r.get::<_, String>(5)?,
+                            r.get::<_, String>(6)?,
+                            r.get::<_, bool>(7)?,
+                        ))
+                    },
+                )
+                .optional()?;
+            match newest {
+                Some((
+                    kind,
+                    body,
+                    media_kind,
+                    timestamp,
+                    from_me,
+                    sender_id,
+                    sender_name,
+                    revoked,
+                )) => {
+                    let text = if revoked {
+                        "🚫 This message was deleted".to_string()
+                    } else {
+                        preview(kind_from(&kind), &body, media_kind.as_deref())
+                    };
+                    conn.execute(
+                        "UPDATE chats SET last_text = ?2, last_timestamp = ?3, last_from_me = ?4,
+                             last_sender_id = ?5, last_sender = ?6 WHERE id = ?1",
+                        params![id, text, timestamp, from_me, sender_id, sender_name],
+                    )?;
+                }
+                None => {
+                    conn.execute(
+                        "UPDATE chats SET last_timestamp = 0 WHERE id = ?1",
+                        params![id],
+                    )?;
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Forgets everything, for a device that was logged out and will pair afresh.
@@ -471,6 +538,9 @@ impl ChatDb {
             (true, false) => "chats.unread + 1",
             (false, false) => "chats.unread",
         };
+        // A corrupt future message time must not pin the chat to the top (see
+        // `repair_implausible_chats`); the message itself is still stored as received.
+        let chat_ts = v.timestamp.min(now_millis() + FUTURE_SLACK_MS);
         self.conn.execute(
             &format!(
                 "INSERT INTO chats (id, fallback_name, last_text, last_timestamp, last_from_me, last_sender_id, last_sender, unread)
@@ -487,7 +557,7 @@ impl ChatDb {
                 v.chat_id,
                 fallback_name(&v.chat_id),
                 preview(v.kind, &v.body, m.map(|m| m.kind)),
-                v.timestamp,
+                chat_ts,
                 v.from_me,
                 msg.sender_id,
                 v.sender_name,
@@ -555,6 +625,23 @@ impl ChatDb {
             params![chat_id],
         )?;
         Ok(())
+    }
+
+    /// Applies a read state another device synced for a chat. The chat may be stored under
+    /// its phone-number or privacy id, so every alias is updated; "unread" only flags a chat
+    /// that has no count yet. Returns whether anything changed.
+    pub fn set_read_from_device(&self, id: &str, read: bool) -> rusqlite::Result<bool> {
+        let ids = [Some(id.to_string()), self.pn_for(id)?, self.lid_for(id)?];
+        let sql = if read {
+            "UPDATE chats SET unread = 0 WHERE id = ?1 AND unread > 0"
+        } else {
+            "UPDATE chats SET unread = 1 WHERE id = ?1 AND unread = 0"
+        };
+        let mut changed = false;
+        for id in ids.iter().flatten() {
+            changed |= self.conn.execute(sql, params![id])? > 0;
+        }
+        Ok(changed)
     }
 
     pub fn mark_all_read(&self) -> rusqlite::Result<()> {
@@ -904,7 +991,26 @@ impl ChatDb {
                 },
             ))
         })?;
-        rows.collect()
+        let mut statuses: Vec<(String, MessageView)> = rows.collect::<rusqlite::Result<_>>()?;
+        // Prefer the name saved for the poster over the push name the status carried.
+        let mut seen: HashMap<String, Resolved> = HashMap::new();
+        for (sender, view) in &mut statuses {
+            if view.from_me || sender.is_empty() {
+                continue;
+            }
+            if !seen.contains_key(sender.as_str()) {
+                seen.insert(sender.clone(), self.resolve(sender)?);
+            }
+            let who = &seen[sender.as_str()];
+            if let Some((name, _)) = &who.name {
+                view.sender_name = name.clone();
+            }
+            if view.sender_name.is_empty() {
+                view.sender_name = who.phone.clone().unwrap_or_default();
+            }
+            view.sender_phone = who.phone.clone();
+        }
+        Ok(statuses)
     }
 
     /// Phone-number ids of saved contacts, deduped and without `me`: who a status is posted to.
@@ -1088,10 +1194,12 @@ impl ChatDb {
         } else if sender_id.is_empty() {
             push_name
         } else {
-            match self.resolve(&sender_id)?.name {
+            let who = self.resolve(&sender_id)?;
+            match who.name {
                 Some((name, _)) => name,
                 None if !push_name.is_empty() => push_name,
-                None => fallback_name(&sender_id),
+                // Unnamed: show the phone number a privacy id maps to, not the id itself.
+                None => who.phone.unwrap_or_else(|| fallback_name(&sender_id)),
             }
         };
         Ok(ReplyView {
@@ -1355,6 +1463,18 @@ impl ChatDb {
     }
 }
 
+/// A conversation timestamp this far past the local clock is the phone's corruption, not a
+/// real time (see `ChatDb::repair_implausible_chats`).
+const FUTURE_SLACK_MS: i64 = 24 * 60 * 60 * 1000;
+
+/// Epoch milliseconds.
+fn now_millis() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or_default()
+}
+
 /// The chat-list line for a message.
 pub fn preview(kind: MessageKind, body: &str, media_kind: Option<&str>) -> String {
     let label = match media_kind {
@@ -1409,5 +1529,79 @@ fn kind_from(kind: &str) -> MessageKind {
         "text" => MessageKind::Text,
         "media" => MessageKind::Media,
         _ => MessageKind::Unsupported,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp_db(name: &str) -> (ChatDb, std::path::PathBuf) {
+        let path = std::env::temp_dir().join(format!("wahana-{name}-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        (ChatDb::open(&path).unwrap(), path)
+    }
+
+    fn add_message(db: &ChatDb, chat: &str, id: &str, body: &str, timestamp: i64) {
+        db.conn
+            .execute(
+                "INSERT INTO messages (chat_id, id, from_me, sender_id, sender_name, kind, body, timestamp)
+                 VALUES (?1, ?2, 0, 'a@c.us', 'A', 'text', ?3, ?4)",
+                params![chat, id, body, timestamp],
+            )
+            .unwrap();
+    }
+
+    fn last(db: &ChatDb, chat: &str) -> (String, i64) {
+        db.conn
+            .query_row(
+                "SELECT last_text, last_timestamp FROM chats WHERE id = ?1",
+                params![chat],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap()
+    }
+
+    #[test]
+    fn repair_rebuilds_future_chat_from_real_messages() {
+        let (db, path) = temp_db("repair");
+        let now = now_millis();
+        let future = now + 30 * 24 * 60 * 60 * 1000;
+        db.ensure_chat("x@c.us", future, 0).unwrap();
+        add_message(&db, "x@c.us", "1", "old", now - 5000);
+        add_message(&db, "x@c.us", "2", "newest real", now - 1000);
+        add_message(&db, "x@c.us", "3", "corrupt", future);
+        db.ensure_chat("empty@c.us", future, 0).unwrap();
+        drop(db);
+
+        let db = ChatDb::open(&path).unwrap();
+        assert_eq!(last(&db, "x@c.us"), ("newest real".to_string(), now - 1000));
+        assert_eq!(last(&db, "empty@c.us").1, 0);
+        drop(db);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn device_read_state_clears_and_flags_unread() {
+        let (db, path) = temp_db("read");
+        db.ensure_chat("g@g.us", 1, 4).unwrap();
+        assert!(db.set_read_from_device("g@g.us", true).unwrap());
+        assert!(!db.set_read_from_device("g@g.us", true).unwrap());
+        assert!(db.set_read_from_device("g@g.us", false).unwrap());
+        assert_eq!(db.unread_chats(), 1);
+        drop(db);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn repair_leaves_plausible_chats_alone() {
+        let (db, path) = temp_db("keep");
+        let now = now_millis();
+        db.ensure_chat("ok@c.us", now, 0).unwrap();
+        drop(db);
+        let db = ChatDb::open(&path).unwrap();
+        assert_eq!(last(&db, "ok@c.us").1, now);
+        drop(db);
+        let _ = std::fs::remove_file(&path);
     }
 }
