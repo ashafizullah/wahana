@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   CheckCheck,
   BellOff,
@@ -33,9 +34,11 @@ import { LANGUAGES, aiConfigured, langName, translate } from "@/lib/ai";
 import { formatBytes } from "@/lib/mediaCache";
 import { cn, convKey, displayId, errMsg, formatDateDivider, formatTime, isChannel, isGroup } from "@/lib/utils";
 import { WaMarkdown, stripWaMarkdown } from "@/lib/waMarkdown";
-import { nativeWa, type NativeAccount, type NativeChat, type NativeLabel, type NativeMessage } from "@/lib/nativeWa";
+import { applyMentions, memberLabel, mentionResolver, type PickedMention } from "@/lib/mentions";
+import { nativeWa, type NativeAccount, type NativeChat, type NativeGroupMember, type NativeLabel, type NativeMessage } from "@/lib/nativeWa";
 import { TranslateDraftButton, WriteAssistButton } from "@/components/DraftAssist";
 import { QuickReplyPicker } from "@/components/QuickReplyPicker";
+import { MentionPicker } from "@/components/MentionPicker";
 import { LinkPreviewCard } from "@/components/LinkPreview";
 import { AckIcon, ImageNoteView, TranslationView } from "@/components/MessageExtras";
 import { useStoryJump } from "@/store/storyJump";
@@ -1327,6 +1330,16 @@ const Bubble = memo(function Bubble({
   const reactionMap = useReactions((s) => s.byMsg[bareId(m.id)]);
   const tomb = useRevoked((s) => s.items[`${convKey(accountId, m.chatId)}:${bareId(m.id)}`]);
   const [showEdits, setShowEdits] = useState(false);
+  // Group mentions are digits; the members list (shared with the composer) names them.
+  const group = m.chatId.endsWith("@g.us");
+  const me = useWhatsApp((s) => s.accounts.find((a) => a.id === accountId)?.me ?? null);
+  const { data: groupInfo } = useQuery({
+    queryKey: ["native-chat-info", accountId, m.chatId],
+    queryFn: () => nativeWa.chatInfo(accountId, m.chatId),
+    enabled: group && connected,
+    staleTime: 5 * 60_000,
+  });
+  const mentionFor = useMemo(() => mentionResolver(groupInfo, me?.id), [groupInfo, me?.id]);
   // Deleted for everyone: the stored copy keeps what it said; older tombstones only know that it went.
   const revoked = m.revokedAt != null || (!!tomb && (tomb.kind ?? "revoked") === "revoked");
   // A channel reports totals only; mine comes from what I reacted locally.
@@ -1428,14 +1441,14 @@ const Bubble = memo(function Bubble({
             {album?.slice(1).map((a) =>
               a.body ? (
                 <div key={a.id} className="break-words">
-                  <WaMarkdown text={a.body} />
+                  <WaMarkdown text={a.body} mentions={group ? mentionFor : undefined} />
                 </div>
               ) : null,
             )}
             {m.body && !m.media && !revoked && <LinkPreviewCard message={m} />}
             {m.body && (
               <div className={cn("break-words", revoked && "line-through decoration-neutral-400")}>
-                <WaMarkdown text={m.body} />
+                <WaMarkdown text={m.body} mentions={group ? mentionFor : undefined} />
               </div>
             )}
           </div>
@@ -1627,9 +1640,23 @@ function Composer({
   const [attachment, setAttachment] = useState<Attachment | null>(null);
   const [dragging, setDragging] = useState(false);
   const [slash, setSlash] = useState<string | null>(null); // "/query" at the start of the composer
+  const [mention, setMention] = useState<{ query: string; start: number } | null>(null); // "@query" before the caret
+  const pickedMentions = useRef<PickedMention[]>([]);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const connected = account.status === "working";
+  const group = chatId.endsWith("@g.us");
+  // Shared key with the message bubbles, so group members are fetched once per chat.
+  const { data: chatDetails } = useQuery({
+    queryKey: ["native-chat-info", account.id, chatId],
+    queryFn: () => nativeWa.chatInfo(account.id, chatId),
+    enabled: group && connected,
+    staleTime: 5 * 60_000,
+  });
+  const members = useMemo(
+    () => (chatDetails?.type === "group" ? chatDetails.members.filter((m) => !m.isMe) : []),
+    [chatDetails],
+  );
 
   // Typing presence: composing at most every 4s while typing, paused after 5s idle.
   const typingRef = useRef<{ last: number; timer?: ReturnType<typeof setTimeout> }>({ last: 0 });
@@ -1651,6 +1678,32 @@ function Composer({
     typingRef.current.timer = setTimeout(stopTyping, 5000);
   };
   useEffect(() => stopTyping, [chatId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // A picked mention only means something in the chat it was inserted in.
+  useEffect(() => {
+    setMention(null);
+    pickedMentions.current = [];
+  }, [chatId]);
+
+  const syncMention = useCallback((value: string, caret: number) => {
+    const m = value.slice(0, caret).match(/(?:^|\s)@([^\s@]*)$/);
+    setMention(m ? { query: m[1]!, start: caret - m[1]!.length - 1 } : null);
+  }, []);
+
+  const pickMention = (member: NativeGroupMember) => {
+    const ta = taRef.current;
+    if (!ta || !mention) return;
+    const caret = ta.selectionStart ?? text.length;
+    const label = memberLabel(member);
+    const insert = `@${label} `;
+    setText(text.slice(0, mention.start) + insert + text.slice(caret));
+    if (!pickedMentions.current.some((p) => p.jid === member.id)) pickedMentions.current.push({ label, jid: member.id });
+    setMention(null);
+    requestAnimationFrame(() => {
+      ta.focus();
+      ta.selectionStart = ta.selectionEnd = mention.start + insert.length;
+    });
+  };
 
   useEffect(() => {
     taRef.current?.focus();
@@ -1736,19 +1789,21 @@ function Composer({
     if (readReceiptsFor(nativeAccountKey(account.id)) === "on-reply") void nativeWa.sendReceipt(account.id, chatId).catch(() => {});
     setSending(true);
     try {
-      const body = draft && autoOut && !editing ? await translate(draft, autoOut) : draft;
+      const converted = applyMentions(draft, pickedMentions.current);
+      const body = converted.text && autoOut && !editing ? await translate(converted.text, autoOut) : converted.text;
       if (editing) {
         await nativeWa.edit(account.id, chatId, editing.id, body);
         onCancelEdit();
       } else if (attachment) {
-        const sent = await nativeWa.sendMedia(account.id, chatId, attachment.file, attachment.file.name, body, replyTo?.id ?? null);
+        const sent = await nativeWa.sendMedia(account.id, chatId, attachment.file, attachment.file.name, body, replyTo?.id ?? null, false, converted.mentions);
         void cacheSentMedia(account.id, sent, attachment.file);
         setAttachment(null);
         onCancelReply();
       } else {
-        await nativeWa.sendText(account.id, chatId, body, replyTo?.id ?? null);
+        await nativeWa.sendText(account.id, chatId, body, replyTo?.id ?? null, converted.mentions);
         onCancelReply();
       }
+      pickedMentions.current = [];
       setText("");
     } catch (e) {
       onError(errMsg(e));
@@ -1788,6 +1843,9 @@ function Composer({
             requestAnimationFrame(() => taRef.current?.focus());
           }}
         />
+      )}
+      {slash === null && mention && members.length > 0 && (
+        <MentionPicker query={mention.query} members={members} onPick={pickMention} onClose={() => setMention(null)} />
       )}
       {!editing && <NativeSmartReplies accountId={account.id} chatId={chatId} chatName={chatName} messages={messages} onPick={onPick} />}
       {editing ? (
@@ -1879,7 +1937,13 @@ function Composer({
             noteTyping();
             const sl = v.match(/^\/(\S*)$/);
             setSlash(sl ? sl[1]! : null);
+            syncMention(v, e.target.selectionStart ?? v.length);
           }}
+          onKeyUp={(e) => {
+            if (e.key === "Enter" || e.key === "Tab" || e.key === "Escape") return;
+            syncMention(e.currentTarget.value, e.currentTarget.selectionStart ?? 0);
+          }}
+          onClick={(e) => syncMention(e.currentTarget.value, e.currentTarget.selectionStart ?? 0)}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();

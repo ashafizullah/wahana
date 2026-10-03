@@ -271,8 +271,8 @@ export const nativeWa = {
   rename: (id: string, name: string) => invoke<void>("wa_native_rename", { id, name }),
   picture: (id: string, chatId: string) => invoke<string | null>("wa_native_picture", { id, chatId }),
   remove: (id: string) => invoke<void>("wa_native_remove", { id }),
-  sendText: (id: string, chatId: string, text: string, quoteId?: string | null) =>
-    invoke<void>("wa_native_send_text", { id, chatId, text, quoteId: quoteId ?? null }),
+  sendText: (id: string, chatId: string, text: string, quoteId?: string | null, mentions?: string[]) =>
+    invoke<void>("wa_native_send_text", { id, chatId, text, quoteId: quoteId ?? null, mentions: mentions?.length ? mentions : null }),
   /** React to a message; an empty `emoji` removes your reaction. */
   react: (id: string, chatId: string, messageId: string, emoji: string) =>
     invoke<void>("wa_native_react", { id, chatId, messageId, emoji }),
@@ -360,8 +360,8 @@ export const nativeWa = {
   chatMedia: (id: string, chatId: string) => invoke<NativeMessage[]>("wa_native_chat_media", { id, chatId }),
   /** Download and decrypt a message's attachment. */
   media: (id: string, chatId: string, messageId: string) => invoke<ArrayBuffer>("wa_native_media", { id, chatId, messageId }),
-  /** Send a file (with an optional caption) as photo, video, audio or document by its type, optionally quoting a message. */
-  sendMedia: (id: string, chatId: string, file: Blob, name: string, caption: string, quoteId?: string | null, asSticker = false) =>
+  /** Send a file (with an optional caption) as photo, video, audio or document by its type, optionally quoting a message and tagging group members. */
+  sendMedia: (id: string, chatId: string, file: Blob, name: string, caption: string, quoteId?: string | null, asSticker = false, mentions?: string[]) =>
     file.arrayBuffer().then((buf) =>
       invoke<NativeMessage>("wa_native_send_media", new Uint8Array(buf), {
         headers: {
@@ -372,6 +372,7 @@ export const nativeWa = {
           "x-caption": encodeURIComponent(caption),
           "x-quote": encodeURIComponent(quoteId ?? ""),
           "x-kind": asSticker ? "sticker" : "",
+          ...(mentions?.length ? { "x-mentions": encodeURIComponent(mentions.join(",")) } : {}),
         },
       }),
     ),

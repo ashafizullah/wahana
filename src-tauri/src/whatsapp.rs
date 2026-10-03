@@ -1895,7 +1895,7 @@ fn quote_context(
 
 /// Sends a text message and records it in the chat, since the server does not echo a
 /// device's own sends back to it. When `quote_id` is set, the text quotes that stored
-/// message (Reply).
+/// message (Reply); `mentions` lists the jids the text tags (group @mention).
 #[tauri::command]
 pub async fn wa_native_send_text(
     app: AppHandle,
@@ -1904,6 +1904,7 @@ pub async fn wa_native_send_text(
     chat_id: String,
     text: String,
     quote_id: Option<String>,
+    mentions: Option<Vec<String>>,
 ) -> Result<(), String> {
     let account = state.get(&id)?;
     let (client, generation, sender_name) = {
@@ -1922,12 +1923,19 @@ pub async fn wa_native_send_text(
     let to: Jid = chat_id
         .parse()
         .map_err(|_| format!("invalid chat id: {chat_id}"))?;
-    let outgoing = match &quote_id {
-        Some(qid) => wa::Message::text_with_context(
-            text.clone(),
-            quote_context(&account, &chat_id, &to, qid)?,
-        ),
-        None => wa::Message::text(text.clone()),
+    let outgoing = {
+        let mut context = match &quote_id {
+            Some(qid) => quote_context(&account, &chat_id, &to, qid)?,
+            None => wa::ContextInfo::default(),
+        };
+        if let Some(list) = mentions {
+            context.mentioned_jid = list;
+        }
+        if quote_id.is_some() || !context.mentioned_jid.is_empty() {
+            wa::Message::text_with_context(text.clone(), context)
+        } else {
+            wa::Message::text(text.clone())
+        }
     };
     let sent = client
         .send_message(to, outgoing)
@@ -2973,7 +2981,8 @@ fn percent_decode(value: &str) -> String {
 
 /// Sends a file. The body is the raw file; headers name the account (`x-account`), chat
 /// (`x-chat`), mimetype (`x-mime`), and percent-encoded file name and caption (`x-name`,
-/// `x-caption`). Returns the sent message so the frontend can cache the bytes under it.
+/// `x-caption`). `x-mentions` lists comma-separated jids the caption tags. Returns the
+/// sent message so the frontend can cache the bytes under it.
 #[tauri::command]
 pub async fn wa_native_send_media(
     app: AppHandle,
@@ -2994,6 +3003,16 @@ pub async fn wa_native_send_media(
     let caption = header("x-caption").filter(|c| !c.trim().is_empty());
     let quote_id = header("x-quote").filter(|q| !q.is_empty());
     let as_sticker = header("x-kind").as_deref() == Some("sticker");
+    let mentions: Vec<String> = header("x-mentions")
+        .map(|value| {
+            value
+                .split(',')
+                .map(str::trim)
+                .filter(|jid| !jid.is_empty())
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default();
     let data = match request.body() {
         InvokeBody::Raw(bytes) => bytes.clone(),
         InvokeBody::Json(_) => return Err("expected raw body".into()),
@@ -3028,9 +3047,19 @@ pub async fn wa_native_send_media(
     } else {
         MediaType::Document
     };
-    let context_info = match &quote_id {
-        Some(qid) => Some(Box::new(quote_context(&account, &chat_id, &to, qid)?)),
-        None => None,
+    let context_info = {
+        let mut context = match &quote_id {
+            Some(qid) => quote_context(&account, &chat_id, &to, qid)?,
+            None => wa::ContextInfo::default(),
+        };
+        if !mentions.is_empty() {
+            context.mentioned_jid = mentions;
+        }
+        if quote_id.is_some() || !context.mentioned_jid.is_empty() {
+            Some(Box::new(context))
+        } else {
+            None
+        }
     };
     let upload = client
         .upload(data, media_type, whatsapp_rust::UploadOptions::new())
