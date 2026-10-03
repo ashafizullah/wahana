@@ -2,8 +2,17 @@ import { useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { sendNotification } from "@tauri-apps/plugin-notification";
 import { clientForProfile, sendTypingFor, useSettings } from "@/store/settings";
-import { useChatPrefs } from "@/store/chatPrefs";
-import { activeRules, lastReplyAt, logReply, repliesSince, repliesToday, ruleMatches, type AutoReplyRule } from "@/store/autoReply";
+import { takeoverKey, useChatPrefs } from "@/store/chatPrefs";
+import {
+  activeRules,
+  lastReplyAt,
+  logReply,
+  repliesSince,
+  replyTextsSince,
+  repliesToday,
+  ruleMatches,
+  type AutoReplyRule,
+} from "@/store/autoReply";
 import { expandTemplate } from "@/store/quickReplies";
 import { aiAutoReply } from "@/lib/autoReplyAi";
 import { accountParts } from "@/lib/account";
@@ -26,8 +35,6 @@ const TYPING_REFRESH_MS = 10_000;
 /** Hard ceiling regardless of the rule's cooldown, so two auto-responders can't ping-pong forever. */
 const MAX_REPLIES = 8;
 const MAX_REPLIES_WINDOW_S = 10 * 60;
-/** Stay quiet in chats the user answered themselves recently — they're handling it. */
-const MANUAL_QUIET_S = 15 * 60;
 
 /**
  * Answers incoming messages according to the rules of the account the message arrived on
@@ -71,10 +78,15 @@ export function useAutoReply() {
       return c.messages(p.session, chatId, { limit, downloadMedia: false }).catch(() => []);
     };
 
-    /** The user's own last message in this chat is newer than MANUAL_QUIET_S. */
-    const userRepliedRecently = (recent: WAMessage[], m: WAMessage) => {
-      const mine = recent.filter((x) => x.fromMe && x.id !== m.id).reduce((t, x) => Math.max(t, x.timestamp), 0);
-      return mine > 0 && m.timestamp - mine < MANUAL_QUIET_S;
+    /** The user wrote in this chat within the last `quietMin` minutes — they're handling it (our auto-replies don't count). */
+    const userRepliedRecently = async (account: string, chatId: string, recent: WAMessage[], m: WAMessage, quietMin: number) => {
+      if (quietMin <= 0) return false;
+      const since = m.timestamp - quietMin * 60;
+      const ours = await replyTextsSince(account, chatId, since - 60);
+      const mine = recent
+        .filter((x) => x.fromMe && x.id !== m.id && x.timestamp > since && !ours.has((x.body ?? "").trim()))
+        .reduce((t, x) => Math.max(t, x.timestamp), 0);
+      return mine > 0;
     };
 
     const chatNameFor = (m: WAMessage, chatId: string) => {
@@ -114,8 +126,11 @@ export function useAutoReply() {
       let stopTyping: (() => void) | undefined;
       const body = (m.body ?? "").trim();
       const chatName = chatNameFor(m, chatId);
+      // Taken over by the user: stay out until they release it (re-checked before sending).
+      const takenOver = () => !!useChatPrefs.getState().takeover[takeoverKey(account, chatId)];
       try {
         const now = Date.now() / 1000;
+        if (takenOver()) return;
         const rules = await activeRules(account);
         rule = rules.find((r) => ruleMatches(r, chatId, body));
         if (!rule) return;
@@ -138,11 +153,11 @@ export function useAutoReply() {
         // Recent context: the cache when the chat is open, else a light fetch (the manual-quiet
         // guard and the AI context both need it; chats never opened here have no cache).
         const recent = await recentMessages(account, chatId, Math.max(20, rule.ai_context));
-        if (userRepliedRecently(recent, m)) return;
+        if (await userRepliedRecently(account, chatId, recent, m, st.autoReplyManualQuietMin)) return;
 
         // Read (if asked), then "typing…" while the reply is written, like a person would.
         await new Promise((r) => setTimeout(r, DELAY_MS[0] + Math.random() * (DELAY_MS[1] - DELAY_MS[0])));
-        if (useSettings.getState().autoReplyPaused) return;
+        if (useSettings.getState().autoReplyPaused || takenOver()) return;
         if (rule.mark_seen) await markSeenOn(account, chatId, m.id).catch(() => {});
         if (sendTypingFor(account)) {
           stopTyping = () => {
@@ -161,7 +176,7 @@ export function useAutoReply() {
           const typingFor = Math.min(TYPING_MS[1], Math.max(TYPING_MS[0], reply.length * TYPING_MS_PER_CHAR));
           await new Promise((r) => setTimeout(r, Math.max(0, typingFor - (Date.now() - startedAt))));
         }
-        if (useSettings.getState().autoReplyPaused) return;
+        if (useSettings.getState().autoReplyPaused || takenOver()) return;
         await sendTextOn(account, chatId, reply, rule.quote ? m.id : undefined);
         await logReply({
           rule_id: rule.id,

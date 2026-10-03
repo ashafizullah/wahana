@@ -3,7 +3,7 @@ import { load, type Store } from "@tauri-apps/plugin-store";
 
 /**
  * Per-chat local preferences: pinned, muted (no notifications), archived (mirrors the server)
- * and AI auto-translate targets. Keys are session:chatId.
+ * AI auto-translate targets and auto-reply takeovers. Keys are session:chatId.
  */
 const STORE_FILE = "chat-prefs.json";
 let storePromise: Promise<Store> | null = null;
@@ -20,16 +20,28 @@ export interface AutoTranslate {
   in?: string;
   out?: string;
 }
+/** A chat the user took over from auto-reply: no automatic answers there until released. */
+export interface Takeover {
+  account: string;
+  chatId: string;
+  name: string;
+  at: number;
+}
+/** Takeovers are keyed by account key (`native:<id>` / `waha:<profile>:<session>`) + chat. */
+export const takeoverKey = (account: string, chatId: string) => `${account}|${chatId}`;
 interface State {
   pinned: Record<string, number>; // value = order (timestamp of pinning)
   muted: Record<string, number>;
   archived: Record<string, 1>;
   autoTranslate: Record<string, AutoTranslate>;
+  takeover: Record<string, Takeover>;
   hydrate: () => Promise<void>;
   toggle: (flag: Flag, key: string, value?: boolean) => void;
   /** `until`: epoch ms, MUTE_FOREVER, or null to unmute. */
   setMuted: (key: string, until: number | null) => void;
   setAutoTranslate: (key: string, patch: AutoTranslate) => void;
+  /** `name` takes the chat over; null releases it back to auto-reply. */
+  setTakeover: (account: string, chatId: string, name: string | null) => void;
 }
 
 export const useChatPrefs = create<State>((set) => ({
@@ -37,6 +49,7 @@ export const useChatPrefs = create<State>((set) => ({
   muted: {},
   archived: {},
   autoTranslate: {},
+  takeover: {},
   async hydrate() {
     const s = await store();
     set({
@@ -44,6 +57,7 @@ export const useChatPrefs = create<State>((set) => ({
       muted: (await s.get<Record<string, number>>("muted")) ?? {},
       archived: (await s.get<Record<string, 1>>("archived")) ?? {},
       autoTranslate: (await s.get<Record<string, AutoTranslate>>("autoTranslate")) ?? {},
+      takeover: (await s.get<Record<string, Takeover>>("takeover")) ?? {},
     });
   },
   toggle(flag, key, value) {
@@ -77,6 +91,16 @@ export const useChatPrefs = create<State>((set) => ({
     });
     schedule();
   },
+  setTakeover(account, chatId, name) {
+    set((st) => {
+      const next = { ...st.takeover };
+      const key = takeoverKey(account, chatId);
+      if (name === null) delete next[key];
+      else next[key] = { account, chatId, name, at: Date.now() };
+      return { takeover: next };
+    });
+    schedule();
+  },
 }));
 
 function schedule() {
@@ -89,6 +113,7 @@ function schedule() {
         await s.set("muted", st.muted);
         await s.set("archived", st.archived);
         await s.set("autoTranslate", st.autoTranslate);
+        await s.set("takeover", st.takeover);
       }),
     500,
   );

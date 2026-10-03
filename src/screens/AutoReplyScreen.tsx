@@ -1,26 +1,28 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Bot,
-  Plus,
-  Trash2,
-  Pencil,
-  Loader2,
-  X,
-  Play,
-  Pause,
   AlertTriangle,
+  Bot,
   CheckCircle2,
-  Sparkles,
-  MessageSquareText,
   Clock,
-  Users,
-  User,
   Globe,
+  Hand,
   ListChecks,
+  Loader2,
+  MessageSquareText,
+  Pause,
+  Pencil,
+  Play,
+  Plus,
+  Sparkles,
+  Trash2,
+  User,
+  Users,
+  X,
 } from "lucide-react";
 import { confirm } from "@/components/Confirm";
 import { useSettings } from "@/store/settings";
+import { takeoverKey, useChatPrefs } from "@/store/chatPrefs";
 import { accountParts, useAccountLabel, useAccounts, useActiveAccount } from "@/lib/account";
 import { useAccountChats } from "@/lib/useAccountChats";
 import { nativeWa } from "@/lib/nativeWa";
@@ -73,7 +75,7 @@ export function AutoReplyScreen() {
   const accounts = useAccounts();
   const active = useActiveAccount();
   const label = useAccountLabel();
-  const { autoReplyPaused, autoReplyDailyLimit, save } = useSettings();
+  const { autoReplyPaused, autoReplyDailyLimit, autoReplyManualQuietMin, save } = useSettings();
   const qc = useQueryClient();
   const [editing, setEditing] = useState<AutoReplyRule | "new" | null>(null);
   const rules = useQuery({
@@ -117,12 +119,29 @@ export function AutoReplyScreen() {
           <h1 className="font-semibold leading-tight">Auto-reply</h1>
           <p
             className="text-[11px] text-neutral-500 truncate"
-            title="First matching rule wins; one reply per chat per cooldown; stays quiet for 15 min in chats you answered yourself."
+            title="First matching rule wins; one reply per chat per cooldown; stays quiet for a while in chats you answered yourself (Quiet after me)."
           >
             Replies while this app is running. First matching rule wins.
           </p>
         </div>
         <div className="ml-auto shrink-0 flex items-center gap-2 whitespace-nowrap">
+          <label
+            className="flex items-center gap-1.5 text-[11px] text-neutral-500"
+            title="After you write in a chat yourself, auto-reply stays quiet there for this long (Off = always answer)"
+          >
+            Quiet after me
+            <select
+              value={autoReplyManualQuietMin}
+              onChange={(e) => save({ autoReplyManualQuietMin: Number(e.target.value) })}
+              className="rounded-md border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-1 py-0.5 text-xs text-neutral-800 dark:text-neutral-100 outline-none focus:border-wa-dark"
+            >
+              {[0, 5, 15, 30, 60].map((m) => (
+                <option key={m} value={m}>
+                  {m === 0 ? "Off" : `${m} min`}
+                </option>
+              ))}
+            </select>
+          </label>
           <label
             className="flex items-center gap-1.5 text-[11px] text-neutral-500"
             title="Spend guard: replies sent per day per account, across its rules (0 = unlimited)"
@@ -185,6 +204,7 @@ export function AutoReplyScreen() {
             </ul>
           </section>
         ))}
+        <TakenOverChats label={label} />
         <section className="space-y-2">
           <div className="flex items-center gap-2">
             <h2 className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Recent replies</h2>
@@ -321,6 +341,46 @@ function RuleRow({ r, onEdit, onChanged }: { r: AutoReplyRule; onEdit: () => voi
 }
 
 /** The phone number of a direct chat (native knows it even for @lid chats); groups have none. */
+/** Chats the user took over from the chat header: auto-reply stays silent there until released. */
+function TakenOverChats({ label }: { label: (account: string) => string }) {
+  const takeover = useChatPrefs((s) => s.takeover);
+  const setTakeover = useChatPrefs((s) => s.setTakeover);
+  const items = Object.values(takeover).sort((a, b) => b.at - a.at);
+  if (items.length === 0) return null;
+  return (
+    <section className="space-y-2">
+      <h2 className="text-xs font-semibold uppercase tracking-wide text-neutral-500 flex items-center gap-2">
+        <Hand size={12} /> Taken over — auto-reply is off in these chats
+      </h2>
+      <ul className="divide-y divide-neutral-200 dark:divide-neutral-800 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900">
+        {items.map((t) => (
+          <li key={takeoverKey(t.account, t.chatId)} className="px-4 py-2 text-xs flex items-center gap-3">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <span className="font-medium truncate">{t.name || displayId(t.chatId)}</span>
+                {phoneOf({ id: t.chatId, phone: null }) && (
+                  <span className="shrink-0 text-neutral-500">{phoneOf({ id: t.chatId, phone: null })}</span>
+                )}
+              </div>
+              <div className="text-neutral-500 truncate">
+                {label(t.account)} · since {fmt(Math.floor(t.at / 1000))}
+              </div>
+            </div>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => setTakeover(t.account, t.chatId, null)}
+              title="Hand this chat back to auto-reply"
+            >
+              <Bot size={14} /> Release to AI
+            </Button>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 function phoneOf(c: { id: string; phone: string | null }) {
   if (isGroup(c.id)) return null;
   return c.phone || (c.id.endsWith("@c.us") || c.id.endsWith("@s.whatsapp.net") ? "+" + c.id.split("@")[0] : null);

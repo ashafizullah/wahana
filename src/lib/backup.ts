@@ -6,7 +6,7 @@ import { nativeWa } from "@/lib/nativeWa";
 import { useSettings, type Prefs, type Profile } from "@/store/settings";
 import { getSecret, setSecret } from "@/lib/secrets";
 import { db } from "@/store/scheduler";
-import { useChatPrefs } from "@/store/chatPrefs";
+import { useChatPrefs, type Takeover } from "@/store/chatPrefs";
 import { upsertRule, type AutoReplyRule } from "@/store/autoReply";
 import { addSticker, listStickers } from "@/lib/stickers";
 import { getThemeMode, setThemeMode, type ThemeMode } from "@/lib/theme";
@@ -28,6 +28,7 @@ export interface Backup {
     muted: Record<string, number>;
     archived: Record<string, 1>;
     autoTranslate?: Record<string, { in?: string; out?: string }>;
+    takeover?: Record<string, Takeover>;
   };
   quickReplies: QuickReply[];
   schedules: Omit<Schedule, "media_b64">[];
@@ -92,6 +93,7 @@ const PREF_KEYS: (keyof Prefs)[] = [
   "aiAutoLabel",
   "autoReplyPaused",
   "autoReplyDailyLimit",
+  "autoReplyManualQuietMin",
   "sendTypingByAccount",
   "readReceiptsByAccount",
   "aiPersonaByAccount",
@@ -121,6 +123,7 @@ export async function exportBackup(includeSecrets: boolean): Promise<string | nu
       muted: (await chatPrefsStore.get("muted")) ?? {},
       archived: (await chatPrefsStore.get("archived")) ?? {},
       autoTranslate: (await chatPrefsStore.get("autoTranslate")) ?? {},
+      takeover: (await chatPrefsStore.get("takeover")) ?? {},
     },
     quickReplies: await d.select<QuickReply[]>("SELECT * FROM quick_replies"),
     schedules: await d.select<Omit<Schedule, "media_b64">[]>(
@@ -211,7 +214,7 @@ export async function restoreBackup(b: Backup, opts: RestoreOptions): Promise<Na
     // Merge into the live store (it owns the file and flushes its in-memory state over it).
     const cp = await load("chat-prefs.json", { autoSave: true, defaults: {} });
     const live = useChatPrefs.getState();
-    for (const k of ["pinned", "muted", "archived", "autoTranslate"] as const) {
+    for (const k of ["pinned", "muted", "archived", "autoTranslate", "takeover"] as const) {
       await cp.set(k, { ...live[k], ...(b.chatPrefs[k] ?? {}) });
     }
     await live.hydrate();

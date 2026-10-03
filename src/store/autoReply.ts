@@ -142,6 +142,17 @@ export async function repliesSince(account: string, chatId: string, since: numbe
   return rows[0]?.n ?? 0;
 }
 
+/** Texts auto-replied to this chat since `since` (unix) — to tell our own replies from the user's. */
+export async function replyTextsSince(account: string, chatId: string, since: number): Promise<Set<string>> {
+  const rows = await (
+    await db()
+  ).select<{ reply: string }[]>(
+    "SELECT reply FROM auto_reply_log WHERE account = $1 AND chat_id = $2 AND status = 'sent' AND reply IS NOT NULL AND at >= $3",
+    [account, chatId, since],
+  );
+  return new Set(rows.map((r) => r.reply.trim()));
+}
+
 /** Replies sent today (local midnight →) by any rule of `account` — the daily spend guard. */
 export async function repliesToday(account: string): Promise<number> {
   const midnight = new Date();

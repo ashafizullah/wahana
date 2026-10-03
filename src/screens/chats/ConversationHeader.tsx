@@ -10,6 +10,7 @@ import type { MentionResolver } from "@/lib/waMarkdown";
 import { useChatPrefs, type AutoTranslate } from "@/store/chatPrefs";
 import { requireClient, useReadReceipts, useSettings } from "@/store/settings";
 import { wahaAccountKey } from "@/lib/account";
+import { TakeoverButton } from "@/components/TakeoverButton";
 
 const EMPTY_AUTO: AutoTranslate = {};
 
@@ -99,6 +100,7 @@ export function ConversationHeader({
         />
         <div className="text-[11px] text-neutral-500">Shows messages up to the end of that day.</div>
       </Popover>
+      <TakeoverButton account={wahaAccountKey(profile, session)} chatId={chatId} name={name} />
       {aiConfigured() && (
         <Button variant="ghost" size="sm" onClick={onSummary} title="Summarize with AI">
           <Sparkles size={16} />

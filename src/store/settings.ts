@@ -58,6 +58,8 @@ export interface Prefs {
   autoReplyPaused: boolean;
   /** Max auto-replies sent per calendar day across all rules of this server (0 = unlimited). Spend guard for AI replies. */
   autoReplyDailyLimit: number;
+  /** Minutes auto-reply stays quiet in a chat after the user wrote there themselves (0 = never). */
+  autoReplyManualQuietMin: number;
   // ── Per-account overrides ──
   // Keyed by account (`waha:<profileId>:<session>` / `native:<accountId>`); a missing entry
   // falls back to the global value above, so one setting can still cover every number.
@@ -87,6 +89,7 @@ const DEFAULT_PREFS: Prefs = {
   aiAutoLabel: false,
   autoReplyPaused: false,
   autoReplyDailyLimit: 300,
+  autoReplyManualQuietMin: 15,
   sendTypingByAccount: {},
   readReceiptsByAccount: {},
   aiPersonaByAccount: {},

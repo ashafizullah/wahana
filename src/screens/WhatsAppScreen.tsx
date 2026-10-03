@@ -22,6 +22,7 @@ import {
   Check,
 } from "lucide-react";
 import { Avatar, Button, Input, Popover } from "@/components/ui";
+import { TakeoverButton } from "@/components/TakeoverButton";
 import { confirm } from "@/components/Confirm";
 import { EmojiButton } from "@/components/EmojiPicker";
 import { StickerButton } from "@/components/StickerPicker";
@@ -943,6 +944,7 @@ function Conversation({
             </div>
           </button>
           {readMode === "manual" && !channel && <NativeReadReceiptButton accountId={account.id} chatId={chatId} messages={messages} />}
+          {!channel && <TakeoverButton account={nativeAccountKey(account.id)} chatId={chatId} name={title} />}
           <AutoTranslateButton prefsKey={prefsKey} />
           {aiConfigured() && (
             <Button variant="ghost" size="sm" onClick={() => setSummary(true)} title="Summarize with AI">
