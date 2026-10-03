@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { confirm } from "@/components/Confirm";
 import {
+  Check,
   CheckCheck,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  Download,
   Maximize,
   Eye,
   Image as ImageIcon,
@@ -14,6 +16,7 @@ import {
   Plus,
   RefreshCw,
   Search,
+  Send,
   Trash2,
   Type,
   X,
@@ -28,7 +31,7 @@ import { nativeWa, onNativeStatus, type NativeAccount, type NativeReceipt, type 
 import { useReadReceipts } from "@/store/settings";
 import { useStatusSeen } from "@/store/statusSeen";
 import { useStoryJump } from "@/store/storyJump";
-import { nativeMediaBlob } from "@/screens/whatsapp/NativeMediaView";
+import { nativeMediaBlob, saveNativeMedia } from "@/screens/whatsapp/NativeMediaView";
 import { usePicture } from "@/screens/whatsapp/usePicture";
 
 /**
@@ -299,6 +302,10 @@ function NativeStoryViewer({
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [saving, setSaving] = useState<"idle" | "busy" | "done">("idle");
+  const [reply, setReply] = useState("");
+  const [sending, setSending] = useState<"idle" | "busy" | "done">("idle");
+  const [replyErr, setReplyErr] = useState<string | null>(null);
   const [paused, setPaused] = useState(false);
   const [full, setFull] = useState<{ at: number } | null>(null);
   const [progress, setProgress] = useState(0);
@@ -315,6 +322,10 @@ function NativeStoryViewer({
 
   // Mark seen locally; tell WhatsApp (the poster sees you in "viewed by") unless the tweak says manual/never.
   useEffect(() => {
+    setSaving("idle");
+    setReply("");
+    setSending("idle");
+    setReplyErr(null);
     if (mine || seen[story.m.id]) return;
     mark(story.m.id);
     if (readMode === "always" || readMode === "on-reply") void reportView(story);
@@ -369,8 +380,41 @@ function NativeStoryViewer({
     };
   }, [accountId, story, connected]);
 
+  const download = async () => {
+    if (story.kind === "text" || !blob || saving === "busy") return;
+    setPaused(true);
+    setSaving("busy");
+    try {
+      await saveNativeMedia(accountId, story.m);
+      setSaving("done");
+      setTimeout(() => setSaving("idle"), 1500);
+    } catch (e) {
+      setErr(errMsg(e));
+      setSaving("idle");
+    }
+  };
+
+  const sendReply = async () => {
+    const text = reply.trim();
+    if (!text || sending === "busy" || !connected) return;
+    setSending("busy");
+    setReplyErr(null);
+    try {
+      await nativeWa.sendText(accountId, story.m.sender, text, story.m.id, undefined, "status@broadcast");
+      setReply("");
+      setSending("done");
+      setTimeout(() => setSending("idle"), 1500);
+      if (readMode === "on-reply" && !reported[story.m.id]) void reportView(story);
+    } catch (e) {
+      setReplyErr(errMsg(e));
+      setSending("idle");
+    }
+  };
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || t?.isContentEditable) return;
       if (full) return;
       if (e.key === "ArrowLeft") {
         if (i > 0) setI(i - 1);
@@ -386,10 +430,14 @@ function NativeStoryViewer({
         e.preventDefault();
         setPaused((p) => !p);
       }
+      if (e.key === "d" && !e.metaKey && !e.ctrlKey) {
+        void download();
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [stories.length, i, onNextContact, onPrevContact, full]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stories.length, i, onNextContact, onPrevContact, full, story.kind, blob, saving]);
 
   return (
     <div
@@ -433,6 +481,17 @@ function NativeStoryViewer({
             title={reported[story.m.id] ? "Marked as viewed" : "Let the sender know you viewed this status"}
           >
             <CheckCheck size={14} /> {reported[story.m.id] ? "Viewed" : "Mark viewed"}
+          </button>
+        )}
+        {story.kind !== "text" && blob && (
+          <button onClick={() => void download()} disabled={saving === "busy"} className="text-white/70 hover:text-white" title="Download">
+            {saving === "busy" ? (
+              <Loader2 size={16} className="animate-spin" />
+            ) : saving === "done" ? (
+              <Check size={16} />
+            ) : (
+              <Download size={16} />
+            )}
           </button>
         )}
         {story.kind !== "text" && blob && (
@@ -545,6 +604,43 @@ function NativeStoryViewer({
       {story.kind !== "text" && story.text && (
         <div className="px-6 py-3 text-center text-sm bg-black/40 selectable">
           <WaMarkdown text={story.text} />
+        </div>
+      )}
+      {!mine && (
+        // The viewer pauses on any click; keep the reply bar's clicks to itself.
+        <div className="shrink-0 px-4 py-3 border-t border-white/10 bg-black/40" onClick={(e) => e.stopPropagation()}>
+          <div className="flex items-center gap-2">
+            <input
+              value={reply}
+              onChange={(e) => setReply(e.target.value)}
+              onFocus={() => setPaused(true)}
+              onBlur={() => !reply.trim() && setPaused(false)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") e.currentTarget.blur();
+                else if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  void sendReply();
+                }
+              }}
+              placeholder="Reply…"
+              className="flex-1 min-w-0 rounded-full bg-white/10 px-4 py-2 text-sm text-white placeholder-white/50 outline-none"
+            />
+            <button
+              onClick={() => void sendReply()}
+              disabled={!connected || sending === "busy" || !reply.trim()}
+              className="shrink-0 p-2 rounded-full bg-wa text-wa-teal hover:bg-wa/90 disabled:opacity-40"
+              title="Send reply"
+            >
+              {sending === "busy" ? (
+                <Loader2 size={16} className="animate-spin" />
+              ) : sending === "done" ? (
+                <Check size={16} />
+              ) : (
+                <Send size={16} />
+              )}
+            </button>
+          </div>
+          {replyErr && <div className="pt-1.5 px-1 text-xs text-red-300 selectable">{replyErr}</div>}
         </div>
       )}
       {mine && <ViewedBy accountId={accountId} storyId={story.m.id} connected={connected} onOpen={setPaused} />}

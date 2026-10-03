@@ -35,7 +35,14 @@ import { formatBytes } from "@/lib/mediaCache";
 import { cn, convKey, displayId, errMsg, formatDateDivider, formatTime, isChannel, isGroup } from "@/lib/utils";
 import { WaMarkdown, stripWaMarkdown } from "@/lib/waMarkdown";
 import { applyMentions, memberLabel, mentionResolver, type PickedMention } from "@/lib/mentions";
-import { nativeWa, type NativeAccount, type NativeChat, type NativeGroupMember, type NativeLabel, type NativeMessage } from "@/lib/nativeWa";
+import {
+  nativeWa,
+  type NativeAccount,
+  type NativeChat,
+  type NativeGroupMember,
+  type NativeLabel,
+  type NativeMessage,
+} from "@/lib/nativeWa";
 import { TranslateDraftButton, WriteAssistButton } from "@/components/DraftAssist";
 import { QuickReplyPicker } from "@/components/QuickReplyPicker";
 import { MentionPicker } from "@/components/MentionPicker";
@@ -1653,10 +1660,7 @@ function Composer({
     enabled: group && connected,
     staleTime: 5 * 60_000,
   });
-  const members = useMemo(
-    () => (chatDetails?.type === "group" ? chatDetails.members.filter((m) => !m.isMe) : []),
-    [chatDetails],
-  );
+  const members = useMemo(() => (chatDetails?.type === "group" ? chatDetails.members.filter((m) => !m.isMe) : []), [chatDetails]);
 
   // Typing presence: composing at most every 4s while typing, paused after 5s idle.
   const typingRef = useRef<{ last: number; timer?: ReturnType<typeof setTimeout> }>({ last: 0 });
@@ -1795,7 +1799,16 @@ function Composer({
         await nativeWa.edit(account.id, chatId, editing.id, body);
         onCancelEdit();
       } else if (attachment) {
-        const sent = await nativeWa.sendMedia(account.id, chatId, attachment.file, attachment.file.name, body, replyTo?.id ?? null, false, converted.mentions);
+        const sent = await nativeWa.sendMedia(
+          account.id,
+          chatId,
+          attachment.file,
+          attachment.file.name,
+          body,
+          replyTo?.id ?? null,
+          false,
+          converted.mentions,
+        );
         void cacheSentMedia(account.id, sent, attachment.file);
         setAttachment(null);
         onCancelReply();

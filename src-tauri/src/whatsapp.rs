@@ -1868,10 +1868,12 @@ pub async fn wa_native_remove(
     Ok(())
 }
 
-/// The reply context quoting stored message `quote_id` of `chat_id`.
+/// The reply context quoting stored message `quote_id` of `quote_chat` — the chat that
+/// stores it, which is `chat_id` except for a status reply (the story lives in
+/// `status@broadcast` while the reply goes to the poster). `to` is the target chat.
 fn quote_context(
     account: &WaAccount,
-    chat_id: &str,
+    quote_chat: &str,
     to: &Jid,
     quote_id: &str,
 ) -> Result<wa::ContextInfo, String> {
@@ -1879,23 +1881,32 @@ fn quote_context(
         .db
         .lock()
         .unwrap()
-        .message_target(chat_id, quote_id)
+        .message_target(quote_chat, quote_id)
         .map_err(|e| e.to_string())?
         .ok_or("quoted message not found")?;
-    let sender = message_author(account, chat_id, &target)
+    let sender = message_author(account, quote_chat, &target)
         .parse::<Jid>()
         .map_err(|_| "invalid quoted sender".to_string())?;
     let quoted = stored_message(&target)?;
+    let quoted_chat_jid = quote_chat
+        .parse::<Jid>()
+        .map_err(|_| format!("invalid quoted chat id: {quote_chat}"))?;
     Ok(
         whatsapp_rust::wacore::proto_helpers::build_quote_context_with_info(
-            quote_id, &sender, to, to, &quoted,
+            quote_id,
+            &sender,
+            &quoted_chat_jid,
+            to,
+            &quoted,
         ),
     )
 }
 
 /// Sends a text message and records it in the chat, since the server does not echo a
 /// device's own sends back to it. When `quote_id` is set, the text quotes that stored
-/// message (Reply); `mentions` lists the jids the text tags (group @mention).
+/// message (Reply); `quote_chat` names the chat that stores the quoted message when it
+/// differs from `chat_id` (a status reply quotes the story in `status@broadcast` while
+/// sending to the poster). `mentions` lists the jids the text tags (group @mention).
 #[tauri::command]
 pub async fn wa_native_send_text(
     app: AppHandle,
@@ -1905,6 +1916,7 @@ pub async fn wa_native_send_text(
     text: String,
     quote_id: Option<String>,
     mentions: Option<Vec<String>>,
+    quote_chat: Option<String>,
 ) -> Result<(), String> {
     let account = state.get(&id)?;
     let (client, generation, sender_name) = {
@@ -1925,7 +1937,7 @@ pub async fn wa_native_send_text(
         .map_err(|_| format!("invalid chat id: {chat_id}"))?;
     let outgoing = {
         let mut context = match &quote_id {
-            Some(qid) => quote_context(&account, &chat_id, &to, qid)?,
+            Some(qid) => quote_context(&account, quote_chat.as_deref().unwrap_or(&chat_id), &to, qid)?,
             None => wa::ContextInfo::default(),
         };
         if let Some(list) = mentions {
@@ -1963,7 +1975,15 @@ pub async fn wa_native_send_text(
         },
         sender_id: String::new(),
         media: None,
-        quote: quote_id.as_deref().map(QuoteRef::by_id),
+        quote: quote_id.map(|qid| match quote_chat {
+            Some(chat) => QuoteRef {
+                id: qid,
+                sender: String::new(),
+                text: String::new(),
+                chat: Some(chat),
+            },
+            None => QuoteRef::by_id(&qid),
+        }),
         album: None,
     };
     record_message(&app, &account, generation, message);
