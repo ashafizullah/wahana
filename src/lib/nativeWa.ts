@@ -95,6 +95,8 @@ export interface NativeReply {
   fromMe: boolean;
   senderName: string;
   text: string;
+  /** A story (status); open it in the status viewer instead of jumping in the chat. */
+  status: boolean;
 }
 
 /** When one recipient got, read and played a message of mine (unix ms; null = not seen). */

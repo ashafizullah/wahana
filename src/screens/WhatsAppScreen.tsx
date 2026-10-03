@@ -37,6 +37,7 @@ import { TranslateDraftButton, WriteAssistButton } from "@/screens/chats/Compose
 import { QuickReplyPicker } from "@/components/QuickReplyPicker";
 import { LinkPreviewCard } from "@/components/LinkPreview";
 import { AckIcon, ImageNoteView, TranslationView } from "@/screens/chats/MessageBubble";
+import { useStoryJump } from "@/store/storyJump";
 import { NativeMessageMenu, NativeSmartReplies, NativeSummaryModal, useNativeAutoTranslate } from "@/screens/whatsapp/NativeAi";
 import { NativeMessageInfo } from "@/screens/whatsapp/NativeMessageInfo";
 import { NativeFollowChannel } from "@/screens/whatsapp/NativeChannel";
@@ -812,7 +813,7 @@ function Conversation({
       setLimit((l) => l + PAGE);
     } else {
       setJumpTo(null);
-      onError("That pinned message isn't stored yet. Load older messages from your phone first.");
+      onError("That message isn't stored yet. Load older messages from your phone first.");
     }
   }, [jumpTo, messages, moreStored, onError]);
 
@@ -1394,7 +1395,7 @@ const Bubble = memo(function Bubble({
           )}
           {m.replyTo && (
             <button
-              onClick={() => onJumpTo(bareId(m.replyTo!.id))}
+              onClick={() => (m.replyTo!.status ? useStoryJump.getState().open(m.replyTo!.id) : onJumpTo(bareId(m.replyTo!.id)))}
               className={cn(
                 "mb-1 block w-full min-w-[140px] rounded-md border-l-4 border-wa-dark px-2 py-1 text-left text-xs",
                 mine ? "bg-black/5 dark:bg-black/20" : "bg-neutral-100 dark:bg-neutral-700/60",

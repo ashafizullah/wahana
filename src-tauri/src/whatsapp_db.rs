@@ -17,7 +17,8 @@ use crate::whatsapp::{
 };
 
 /// Bumped with every schema change; `open` migrates older files up to it.
-const SCHEMA_VERSION: i64 = 12;
+const SCHEMA_VERSION: i64 = 13;
+const STATUS_CHAT: &str = "status@broadcast";
 
 /// How much a name source is trusted. A name only replaces one from an equal or lower
 /// source, so a push name never overwrites a contact's saved name.
@@ -78,6 +79,8 @@ pub struct QuoteRef {
     pub id: String,
     pub sender: String,
     pub text: String,
+    /// The chat the quoted message lives in, when the reply says (`status@broadcast` for a story).
+    pub chat: Option<String>,
 }
 
 impl QuoteRef {
@@ -87,6 +90,7 @@ impl QuoteRef {
             id: id.to_string(),
             sender: String::new(),
             text: String::new(),
+            chat: None,
         }
     }
 }
@@ -273,6 +277,11 @@ impl ChatDb {
                 "CREATE TABLE IF NOT EXISTS mutes (id TEXT PRIMARY KEY, until INTEGER NOT NULL);",
             )?;
         }
+        if version < 13 {
+            // The chat a quote came from when it isn't this one: `status@broadcast` for a
+            // reply or reaction to a story.
+            conn.execute_batch("ALTER TABLE messages ADD COLUMN quote_chat TEXT;")?;
+        }
         conn.execute_batch(&format!("PRAGMA user_version = {SCHEMA_VERSION}"))?;
         // Statuses are stored as messages under `status@broadcast`, not as a chat; drop any
         // row an earlier build created for it.
@@ -447,8 +456,8 @@ impl ChatDb {
             "INSERT OR IGNORE INTO messages (chat_id, id, from_me, sender_id, sender_name, kind, body, timestamp,
                  media_kind, mimetype, file_name, file_size, seconds, width, height, thumbnail, media_proto, ack,
                  quote_id, quote_sender, quote_text, album_id,
-                 preview_url, preview_title, preview_description, preview_image)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26)",
+                 preview_url, preview_title, preview_description, preview_image, quote_chat)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27)",
             params![
                 v.chat_id,
                 v.id,
@@ -476,6 +485,7 @@ impl ChatDb {
                 v.preview.as_ref().and_then(|p| p.title.as_deref()),
                 v.preview.as_ref().and_then(|p| p.description.as_deref()),
                 v.preview.as_ref().and_then(|p| p.image.as_deref()),
+                msg.quote.as_ref().and_then(|q| q.chat.as_deref()),
             ],
         )? > 0;
         if !inserted {
@@ -1058,7 +1068,7 @@ impl ChatDb {
                  SELECT id, chat_id, from_me, sender_id, sender_name, kind, body, timestamp,
                         media_kind, mimetype, file_name, file_size, seconds, width, height, thumbnail, ack,
                         revoked_at, edited_at, quote_id, quote_sender, quote_text, album_id,
-                        preview_url, preview_title, preview_description, preview_image
+                        preview_url, preview_title, preview_description, preview_image, quote_chat
                  FROM messages
                  WHERE chat_id = ?1 {filter}
                  ORDER BY timestamp DESC
@@ -1089,6 +1099,7 @@ impl ChatDb {
                         id,
                         sender: r.get::<_, Option<String>>(20)?.unwrap_or_default(),
                         text: r.get::<_, Option<String>>(21)?.unwrap_or_default(),
+                        chat: r.get(27)?,
                     })
                 })
                 .transpose()?;
@@ -1162,24 +1173,33 @@ impl ChatDb {
     /// What to show for a quoted message: the stored copy when there is one, else what
     /// the reply itself carried.
     fn reply_view(&self, chat_id: &str, quote: QuoteRef) -> rusqlite::Result<ReplyView> {
-        let stored = self
-            .conn
-            .query_row(
-                "SELECT from_me, sender_id, sender_name, kind, body, media_kind
-                 FROM messages WHERE chat_id = ?1 AND id = ?2",
-                params![chat_id, quote.id],
-                |r| {
-                    Ok((
-                        r.get::<_, bool>(0)?,
-                        r.get::<_, String>(1)?,
-                        r.get::<_, String>(2)?,
-                        r.get::<_, String>(3)?,
-                        r.get::<_, String>(4)?,
-                        r.get::<_, Option<String>>(5)?,
-                    ))
-                },
-            )
-            .optional()?;
+        let find = |chat: &str| {
+            self.conn
+                .query_row(
+                    "SELECT from_me, sender_id, sender_name, kind, body, media_kind
+                     FROM messages WHERE chat_id = ?1 AND id = ?2",
+                    params![chat, quote.id],
+                    |r| {
+                        Ok((
+                            r.get::<_, bool>(0)?,
+                            r.get::<_, String>(1)?,
+                            r.get::<_, String>(2)?,
+                            r.get::<_, String>(3)?,
+                            r.get::<_, String>(4)?,
+                            r.get::<_, Option<String>>(5)?,
+                        ))
+                    },
+                )
+                .optional()
+        };
+        // A story reply quotes a status, which is stored under `status@broadcast`. Rows
+        // from before `quote_chat` was kept are matched by looking there too.
+        let mut status = quote.chat.as_deref() == Some(STATUS_CHAT);
+        let mut stored = if status { None } else { find(chat_id)? };
+        if stored.is_none() && chat_id != STATUS_CHAT {
+            stored = find(STATUS_CHAT)?;
+            status |= stored.is_some();
+        }
         let (from_me, sender_id, push_name, text) = match stored {
             Some((from_me, sender_id, push_name, kind, body, media_kind)) => (
                 from_me,
@@ -1207,6 +1227,7 @@ impl ChatDb {
             from_me,
             sender_name,
             text,
+            status,
         })
     }
 

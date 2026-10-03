@@ -23,6 +23,7 @@ import { WaMarkdown } from "@/lib/waMarkdown";
 import { nativeWa, onNativeStatus, type NativeAccount, type NativeStatus } from "@/lib/nativeWa";
 import { useReadReceipts } from "@/store/settings";
 import { useStatusSeen } from "@/store/statusSeen";
+import { useStoryJump } from "@/store/storyJump";
 import { nativeMediaBlob } from "@/screens/whatsapp/NativeMediaView";
 import { usePicture } from "@/screens/whatsapp/usePicture";
 
@@ -54,6 +55,9 @@ export function NativeStatusScreen({ account }: { account: NativeAccount }) {
   const [search, setSearch] = useState("");
   const [compose, setCompose] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState(false);
+  const [startAt] = useState<string | null>(() => useStoryJump.getState().take());
+  const [jump, setJump] = useState(startAt);
 
   useEffect(() => {
     void hydrateSeen();
@@ -64,7 +68,11 @@ export function NativeStatusScreen({ account }: { account: NativeAccount }) {
     const load = () =>
       nativeWa
         .statuses(account.id)
-        .then((s) => !cancelled && setList(s))
+        .then((s) => {
+          if (cancelled) return;
+          setList(s);
+          setLoaded(true);
+        })
         .catch((e) => !cancelled && setError(errMsg(e)));
     void load();
     const timer = setInterval(load, 60_000);
@@ -101,6 +109,15 @@ export function NativeStatusScreen({ account }: { account: NativeAccount }) {
         return b.latest - a.latest;
       });
   }, [list, seen, search]);
+
+  // A story opened from a reply in a chat: select its poster and start on it once loaded.
+  useEffect(() => {
+    if (!jump || !loaded) return;
+    setJump(null);
+    const group = groups.find((g) => g.stories.some((st) => st.m.id === jump));
+    if (group) setSelected(group.id);
+    else setError("That story is no longer available.");
+  }, [jump, loaded, groups]);
 
   const current = groups.find((g) => g.id === selected) ?? null;
 
@@ -185,6 +202,7 @@ export function NativeStatusScreen({ account }: { account: NativeAccount }) {
           accountId={account.id}
           name={current.name}
           stories={current.stories}
+          startAt={startAt}
           mine={current.id === "me"}
           connected={connected}
           onDeleted={() => setTick((t) => t + 1)}
@@ -247,6 +265,7 @@ function NativeStoryViewer({
   accountId,
   name,
   stories,
+  startAt,
   mine,
   connected,
   onDeleted,
@@ -256,6 +275,7 @@ function NativeStoryViewer({
   accountId: string;
   name: string;
   stories: Story[];
+  startAt?: string | null;
   mine: boolean;
   connected: boolean;
   onDeleted: () => void;
@@ -267,6 +287,8 @@ function NativeStoryViewer({
   const readMode = useReadReceipts(nativeAccountKey(accountId));
   const [reported, setReported] = useState<Record<string, boolean>>({});
   const [i, setI] = useState(() => {
+    const opened = startAt ? stories.findIndex((st) => st.m.id === startAt) : -1;
+    if (opened !== -1) return opened;
     const idx = stories.findIndex((st) => !seen[st.m.id]);
     return idx === -1 ? 0 : idx;
   });

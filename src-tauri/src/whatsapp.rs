@@ -149,6 +149,8 @@ pub struct ReplyView {
     pub sender_name: String,
     /// Its text, or a label for its attachment.
     pub text: String,
+    /// It is a story (status), so opening it means the status viewer, not this chat.
+    pub status: bool,
 }
 
 /// How many times one emoji was used on a channel message.
@@ -780,6 +782,11 @@ fn quote_of(message: &wa::Message) -> Option<QuoteRef> {
             .map(bare_jid)
             .unwrap_or_default(),
         text,
+        chat: context
+            .remote_jid
+            .as_deref()
+            .filter(|jid| *jid == "status@broadcast")
+            .map(str::to_string),
     })
 }
 

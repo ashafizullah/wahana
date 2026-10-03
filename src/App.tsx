@@ -139,13 +139,16 @@ export default function App() {
       }
     };
     const onOpenSettings = () => setTab("settings");
+    const onOpenStatus = () => setTab("status");
     const onOpenWelcome = () => setWelcome(true);
     window.addEventListener("keydown", onKey);
     window.addEventListener("wahana:open-settings", onOpenSettings);
+    window.addEventListener("wahana:open-status", onOpenStatus);
     window.addEventListener("wahana:open-welcome", onOpenWelcome);
     return () => {
       window.removeEventListener("keydown", onKey);
       window.removeEventListener("wahana:open-settings", onOpenSettings);
+      window.removeEventListener("wahana:open-status", onOpenStatus);
       window.removeEventListener("wahana:open-welcome", onOpenWelcome);
     };
   }, []);
