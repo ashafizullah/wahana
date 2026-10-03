@@ -389,6 +389,7 @@ function ParticipantsModal({
 }) {
   const [q, setQ] = useState("");
   const [menu, setMenu] = useState<string | null>(null);
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
@@ -449,13 +450,17 @@ function ParticipantsModal({
                 amAdmin && !m.isMe && !m.superAdmin
                   ? {
                       open: menu === m.id,
-                      toggle: () => setMenu(menu === m.id ? null : m.id),
+                      toggle: (el) => {
+                        setAnchor(el);
+                        setMenu(menu === m.id ? null : m.id);
+                      },
                       menu: (
                         <MemberMenu
                           accountId={accountId}
                           groupId={group.id}
                           member={m}
                           label={memberLabel(m)}
+                          anchor={anchor}
                           refresh={refresh}
                           onError={setErr}
                           onClose={() => setMenu(null)}
@@ -484,7 +489,7 @@ function ParticipantRow({
   member: NativeGroupMember;
   onOpen: () => void;
   /** Admin actions, when you may manage this member. */
-  manage: { open: boolean; toggle: () => void; menu: React.ReactNode } | null;
+  manage: { open: boolean; toggle: (anchor: HTMLElement) => void; menu: React.ReactNode } | null;
 }) {
   const picture = usePicture(accountId, m.id, connected);
   const label = memberLabel(m);
@@ -508,7 +513,7 @@ function ParticipantRow({
       {manage && (
         <button
           onMouseDown={(e) => e.stopPropagation()}
-          onClick={manage.toggle}
+          onClick={(e) => manage.toggle(e.currentTarget)}
           className="absolute right-3 p-1 opacity-0 group-hover:opacity-100 data-[open=true]:opacity-100 text-neutral-400 hover:text-neutral-700"
           data-open={manage.open}
           title="Manage"

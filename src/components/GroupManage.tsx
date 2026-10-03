@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { confirm } from "@/components/Confirm";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -24,6 +24,7 @@ import { save } from "@tauri-apps/plugin-dialog";
 import { writeTextFile } from "@tauri-apps/plugin-fs";
 import { requireClient } from "@/store/settings";
 import { Avatar, Button, Input, MenuItem } from "@/components/ui";
+import { FloatingMenu } from "@/components/FloatingMenu";
 import { cn, displayId, errMsg, fileToBase64 } from "@/lib/utils";
 import type { GowsGroup, JoinRequest } from "@/api/types";
 import type { MentionResolver } from "@/lib/waMarkdown";
@@ -92,6 +93,7 @@ function ParticipantsModal({
   const qc = useQueryClient();
   const { amAdmin, meP } = useAmAdmin(group, myIds);
   const [menu, setMenu] = useState<string | null>(null);
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [q, setQ] = useState("");
@@ -180,7 +182,10 @@ function ParticipantsModal({
                 ) : null}
                 {amAdmin && !isMe && !p.IsSuperAdmin && (
                   <button
-                    onClick={() => setMenu(menu === p.JID ? null : p.JID)}
+                    onClick={(e) => {
+                      setAnchor(e.currentTarget);
+                      setMenu(menu === p.JID ? null : p.JID);
+                    }}
                     className="opacity-0 group-hover:opacity-100 data-[open=true]:opacity-100 text-neutral-400 hover:text-neutral-700"
                     data-open={menu === p.JID}
                     title="Manage"
@@ -189,10 +194,7 @@ function ParticipantsModal({
                   </button>
                 )}
                 {menu === p.JID && (
-                  <div
-                    className="absolute right-4 top-full z-30 w-44 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-xl py-1 text-xs"
-                    onMouseDown={(e) => e.stopPropagation()}
-                  >
+                  <FloatingMenu anchor={anchor} onClose={() => setMenu(null)}>
                     {p.IsAdmin ? (
                       <MenuItem onClick={() => act("Dismiss admin", p, () => requireClient().demoteAdmins(session, chatId, [pid(p)]))}>
                         Dismiss as admin
@@ -211,7 +213,7 @@ function ParticipantsModal({
                     >
                       Remove from group
                     </MenuItem>
-                  </div>
+                  </FloatingMenu>
                 )}
               </li>
             );
@@ -574,6 +576,17 @@ function JoinRequests({ session, chatId, resolveName }: { session: string; chatI
   );
 }
 
+/** Whether a search term matches any of the texts; a phone number matches by its digits. */
+function matchesTerm(term: string, ...texts: (string | null | undefined)[]) {
+  const t = term.trim().toLowerCase().replace(/^\+/, "");
+  if (!t) return true;
+  const digits = t.replace(/\D/g, "");
+  return texts.some((x) => {
+    const s = (x ?? "").toLowerCase();
+    return s.includes(t) || (digits.length > 0 && s.replace(/\D/g, "").includes(digits));
+  });
+}
+
 function JoinRequestsModal({
   session,
   chatId,
@@ -590,6 +603,11 @@ function JoinRequestsModal({
   const qc = useQueryClient();
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [q, setQ] = useState("");
+  // Name and phone are resolved per row (they need lookups); rows report them here to search on.
+  const [known, setKnown] = useState<Record<string, string>>({});
+  const onKnown = useCallback((id: string, text: string) => setKnown((k) => (k[id] === text ? k : { ...k, [id]: text })), []);
+  const shown = requests.filter((r) => matchesTerm(q, known[r.requesterId], r.requesterId.split("@")[0]));
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -624,20 +642,28 @@ function JoinRequestsModal({
             <XIcon size={16} />
           </button>
         </div>
+        <div className="p-2 border-b border-neutral-100 dark:border-neutral-800">
+          <Input placeholder="Search by name or phone number" value={q} onChange={(e) => setQ(e.target.value)} autoFocus />
+        </div>
         {err && <div className="px-4 py-1 text-xs text-red-600 selectable">{err}</div>}
         <ul className="flex-1 overflow-y-auto divide-y divide-neutral-100 dark:divide-neutral-800">
-          {requests.map((r) => (
+          {shown.map((r) => (
             <JoinRequestRow
               key={idOf(r)}
               session={session}
               id={idOf(r)}
               request={r}
               resolveName={resolveName}
+              onKnown={onKnown}
               busy={busy === idOf(r)}
               onDecide={(ok) => decide(r, ok)}
             />
           ))}
-          {requests.length === 0 && <li className="p-6 text-sm text-neutral-500 text-center">No pending requests.</li>}
+          {shown.length === 0 && (
+            <li className="p-6 text-sm text-neutral-500 text-center">
+              {requests.length === 0 ? "No pending requests." : "No requests match."}
+            </li>
+          )}
         </ul>
       </div>
     </div>
@@ -649,6 +675,7 @@ function JoinRequestRow({
   id,
   request,
   resolveName,
+  onKnown,
   busy,
   onDecide,
 }: {
@@ -656,6 +683,7 @@ function JoinRequestRow({
   id: string;
   request: JoinRequest;
   resolveName: MentionResolver;
+  onKnown: (id: string, text: string) => void;
   busy: boolean;
   onDecide: (approve: boolean) => void;
 }) {
@@ -692,6 +720,7 @@ function JoinRequestRow({
     contact.data?.name ??
     (contact.data?.pushname ? `~${contact.data.pushname}` : null) ??
     (phoneDigits ? `+${phoneDigits}` : displayId(id));
+  useEffect(() => onKnown(id, `${name} ${phoneDigits}`), [id, name, phoneDigits, onKnown]);
   const when = request.timestamp;
   const whenText = when
     ? new Date(when * 1000).toLocaleString([], { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })

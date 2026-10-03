@@ -47,6 +47,7 @@ import { TypingBubble } from "@/screens/chats/TypingBubble";
 import { NativeMediaView, cacheSentMedia, saveNativeMedia } from "@/screens/whatsapp/NativeMediaView";
 import { readReceiptsFor, sendTypingFor, useReadReceipts } from "@/store/settings";
 import { nativeAccountKey, nativeChatKey } from "@/lib/account";
+import { useDrafts } from "@/store/drafts";
 import { Pairing } from "@/screens/whatsapp/Pairing";
 import { NativeLabelsDialog, labelColorHex } from "@/screens/whatsapp/NativeLabelsDialog";
 import { MUTE_FOREVER, isMutedUntil, useChatPrefs } from "@/store/chatPrefs";
@@ -589,6 +590,8 @@ const ChatRow = memo(function ChatRow({
   const body = stripWaMarkdown(chat.lastText);
   const sender = group ? (chat.lastFromMe ? "You" : chat.lastSender.split(/\s+/)[0]) : "";
   const preview = sender ? `${sender}: ${body}` : body;
+  // An unsent draft replaces the preview, like WhatsApp, except in the chat being typed in.
+  const draft = useDrafts((s) => (active ? "" : (s.drafts[nativeChatKey(accountId, chat.id)] ?? "")));
   return (
     <button
       onClick={onClick}
@@ -631,8 +634,17 @@ const ChatRow = memo(function ChatRow({
               chat.unread ? "text-neutral-800 dark:text-neutral-100 font-medium" : "text-neutral-500",
             )}
           >
-            {chat.lastFromMe && <AckIcon ack={chat.lastAck} className="inline mr-1 -mt-0.5" />}
-            {preview}
+            {draft ? (
+              <>
+                <span className="text-red-500 font-medium">Draft:</span>
+                {draft}
+              </>
+            ) : (
+              <>
+                {chat.lastFromMe && <AckIcon ack={chat.lastAck} className="inline mr-1 -mt-0.5" />}
+                {preview}
+              </>
+            )}
           </div>
           {chat.unread > 0 && (
             <span className="shrink-0 min-w-[18px] h-[18px] px-1 rounded-full bg-wa text-[10px] font-bold text-white grid place-items-center">
@@ -1594,7 +1606,19 @@ function Composer({
   onCancelReply: () => void;
   onCancelEdit: () => void;
 }) {
-  const [text, setText] = useState("");
+  // Unsent text is kept per chat, so switching away and back finds it again. Text loaded
+  // for an edit is not a draft and is never saved.
+  const draftKey = nativeChatKey(account.id, chatId);
+  const [text, setTextRaw] = useState(() => useDrafts.getState().drafts[draftKey] ?? "");
+  const editingRef = useRef(editing);
+  editingRef.current = editing;
+  const setText = useCallback(
+    (v: string) => {
+      setTextRaw(v);
+      if (!editingRef.current) useDrafts.getState().set(draftKey, v);
+    },
+    [draftKey],
+  );
   const [sending, setSending] = useState(false);
   const [attachment, setAttachment] = useState<Attachment | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -1640,7 +1664,7 @@ function Composer({
     setText(picked);
     onPicked();
     taRef.current?.focus();
-  }, [picked, onPicked]);
+  }, [picked, onPicked, setText]);
 
   // Editing loads the message's text into the composer; finishing or cancelling the edit
   // brings back whatever draft was there before.

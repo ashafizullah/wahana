@@ -13,9 +13,10 @@ import { LabelsDialog, useLabelMap, useLabels } from "@/components/LabelsDialog"
 import type { MentionResolver } from "@/lib/waMarkdown";
 import { stripWaMarkdown, replaceMentions } from "@/lib/waMarkdown";
 import type { ChatOverview, WAMessage } from "@/api/types";
-import { cn, displayId, formatTime, isChannel, isGroup, errMsg } from "@/lib/utils";
+import { cn, convKey, displayId, formatTime, isChannel, isGroup, errMsg } from "@/lib/utils";
 import { useQueryClient } from "@tanstack/react-query";
 import { chatKey, unreadFor, useUnread } from "@/store/unread";
+import { useDrafts } from "@/store/drafts";
 import { useWhatsApp } from "@/store/whatsapp";
 import { AckIcon } from "@/screens/chats/MessageBubble";
 
@@ -477,6 +478,8 @@ function ChatRow({
   const count = useUnread((s) => s.counts[rowKey] ?? 0);
   const seen = useUnread((s) => s.lastSeen[rowKey]);
   const unread = unreadFor({ counts: { [rowKey]: count }, lastSeen: seen === undefined ? {} : { [rowKey]: seen } }, session, chat.id, lm);
+  // An unsent draft replaces the preview, like WhatsApp, except in the chat being typed in.
+  const draft = useDrafts((s) => (active ? "" : (s.drafts[convKey(session, chat.id)] ?? "")));
   const isPinned = useChatPrefs((s) => !!s.pinned[`${session}:${chat.id}`]);
   const isMuted = useChatPrefs((s) => isMutedUntil(s.muted[`${session}:${chat.id}`]));
   const { data: allLabels } = useLabels(session);
@@ -521,8 +524,17 @@ function ChatRow({
           <div
             className={cn("text-xs truncate flex-1", unread ? "text-neutral-800 dark:text-neutral-100 font-medium" : "text-neutral-500")}
           >
-            {lm?.fromMe && <AckIcon ack={lm.ack} className="inline mr-1 -mt-0.5" />}
-            {preview}
+            {draft ? (
+              <>
+                <span className="text-red-500 font-medium">Draft:</span>
+                {draft}
+              </>
+            ) : (
+              <>
+                {lm?.fromMe && <AckIcon ack={lm.ack} className="inline mr-1 -mt-0.5" />}
+                {preview}
+              </>
+            )}
           </div>
           {unread > 0 && (
             <span className="shrink-0 min-w-[18px] h-[18px] px-1 rounded-full bg-wa text-[10px] font-bold text-white grid place-items-center">

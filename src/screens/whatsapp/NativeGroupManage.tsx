@@ -1,3 +1,4 @@
+import { FloatingMenu } from "@/components/FloatingMenu";
 import { useEffect, useRef, useState } from "react";
 import {
   Camera,
@@ -282,6 +283,7 @@ export function MemberMenu({
   groupId,
   member: m,
   label,
+  anchor,
   refresh,
   onError,
   onClose,
@@ -290,6 +292,7 @@ export function MemberMenu({
   groupId: string;
   member: NativeGroupMember;
   label: string;
+  anchor: HTMLElement | null;
   refresh: () => void;
   onError: (e: string) => void;
   onClose: () => void;
@@ -306,10 +309,7 @@ export function MemberMenu({
   };
   const item = "w-full px-3 py-1.5 text-left hover:bg-neutral-100 dark:hover:bg-neutral-800";
   return (
-    <div
-      className="absolute right-4 top-full z-30 w-44 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-xl py-1 text-xs"
-      onMouseDown={(e) => e.stopPropagation()}
-    >
+    <FloatingMenu anchor={anchor} onClose={onClose}>
       {m.admin ? (
         <button className={item} onClick={() => act("Dismiss admin", { type: "demote", members: [m.id] })}>
           Dismiss as admin
@@ -329,7 +329,7 @@ export function MemberMenu({
       >
         Remove from group
       </button>
-    </div>
+    </FloatingMenu>
   );
 }
 
@@ -457,6 +457,17 @@ function JoinRequests({
   );
 }
 
+/** Whether a search term matches any of the texts; a phone number matches by its digits. */
+function matchesTerm(term: string, ...texts: (string | null | undefined)[]) {
+  const t = term.trim().toLowerCase().replace(/^\+/, "");
+  if (!t) return true;
+  const digits = t.replace(/\D/g, "");
+  return texts.some((x) => {
+    const s = (x ?? "").toLowerCase();
+    return s.includes(t) || (digits.length > 0 && s.replace(/\D/g, "").includes(digits));
+  });
+}
+
 function JoinRequestsModal({
   accountId,
   connected,
@@ -474,6 +485,8 @@ function JoinRequestsModal({
 }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [q, setQ] = useState("");
+  const shown = requests.filter((r) => matchesTerm(q, r.name, r.phone, r.id.split("@")[0]));
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -505,9 +518,12 @@ function JoinRequestsModal({
             <X size={16} />
           </button>
         </div>
+        <div className="p-2 border-b border-neutral-100 dark:border-neutral-800">
+          <Input placeholder="Search by name or phone number" value={q} onChange={(e) => setQ(e.target.value)} autoFocus />
+        </div>
         {err && <div className="px-4 py-1 text-xs text-red-600 selectable">{err}</div>}
         <ul className="flex-1 overflow-y-auto divide-y divide-neutral-100 dark:divide-neutral-800">
-          {requests.map((r) => (
+          {shown.map((r) => (
             <JoinRequestRow
               key={r.id}
               accountId={accountId}
@@ -517,7 +533,11 @@ function JoinRequestsModal({
               onDecide={(ok) => decide(r, ok)}
             />
           ))}
-          {requests.length === 0 && <li className="p-6 text-sm text-neutral-500 text-center">No pending requests.</li>}
+          {shown.length === 0 && (
+            <li className="p-6 text-sm text-neutral-500 text-center">
+              {requests.length === 0 ? "No pending requests." : "No requests match."}
+            </li>
+          )}
         </ul>
       </div>
     </div>
