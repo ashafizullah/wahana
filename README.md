@@ -57,7 +57,7 @@ Features below are for WAHA sessions unless noted; see [Native WhatsApp](#native
 - Realtime via WAHA WebSocket: messages, acks, presence (online / typing), reactions, edits, deletions
 - WhatsApp formatting, @mentions with autocomplete, link previews, quoted replies with media thumbnails
 - Send text, photos, videos, documents, voice notes, location, contacts, polls; drag-and-drop, and paste of screenshots or copied images anywhere in the chat; stickers from a tray of saved and recent ones
-- Message menu: reactions, reply, forward, pin, edit, delete (for everyone / for me), info (delivery & read times), translate
+- Message menu: reactions, reply, forward, pin (24 hours / 7 days / 30 days, pins from the phone show up too), edit, delete (for everyone / for me), info (delivery & read times), translate
 - Media auto-load per kind with blurred click-to-load previews, on-disk cache, lightbox with zoom and save
 - Unread badges (list, tab, dock/tray), pin / mute / archive, labels, drafts, quick replies (`/shortcut` with variables, optionally per session)
 - In-chat search, jump to date, infinite history, export to `.txt` / `.html` / `.json`
@@ -103,7 +103,7 @@ Features below are for WAHA sessions unless noted; see [Native WhatsApp](#native
 - Status: view contacts' updates (marked as viewed), post text / photo / video, delete your own
 - AI: translate (including per-chat auto-translate), summarize, reply suggestions, writing assistant, describe image / OCR
 - Scheduler, broadcast and auto-reply can send from native accounts
-- Message actions: reactions, quoted replies, forward, edit, delete for everyone, pin / unpin
+- Message actions: reactions, quoted replies, forward, edit, delete for everyone, pin for 24 hours / 7 days / 30 days / unpin (pins made on the phone, including those in history, show up too)
 - Not yet: locations, contacts and polls (shown as "unsupported message"), calls
 
 **App**
@@ -111,7 +111,7 @@ Features below are for WAHA sessions unless noted; see [Native WhatsApp](#native
 - First-run welcome screen: link WhatsApp natively or connect a WAHA server, no manual required
 - System tray, desktop notifications, incoming-call banner, keyboard shortcuts, light / dark theme
 - Privacy tweaks: typing indicator on/off, read receipts always / on reply / manual / never
-- Settings backup & restore, auto-updater
+- Settings backup & restore (incl. auto-reply rules, theme, stickers, native account names), auto-updater
 
 ## Development
 

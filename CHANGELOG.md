@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.8.0 — 2026-10-03
+
+### Added
+
+- Pin a message for 24 hours, 7 days or 30 days (native and WAHA), like WhatsApp.
+- Pins made on the phone or by other members show up in the pin banner: live, and from history (native history sync; WAHA loaded pages). Pin notices no longer show as empty bubbles; the chat list shows "📌 Pinned a message".
+- Drafts are kept per chat in native chats, and chat lists show "Draft:" for unsent text.
+- Search in group join requests (native and WAHA); requests are sorted newest first.
+- Backup now includes auto-reply rules, theme, saved stickers and native account names (restored accounts ask for a fresh QR scan).
+
+### Fixed
+
+- A corrupt future timestamp no longer pins a chat to the top or freezes its preview.
+- Reading a chat on the phone clears it here too (native).
+- Replies and statuses show contact names instead of privacy ids (LID).
+- Group participant menus float above the list instead of being clipped.
+- Restoring chat preferences from a backup no longer gets overwritten by the next change; schedules keep their anchor.
+
 ## 0.7.0 — 2026-10-03
 
 ### Added

@@ -1,6 +1,6 @@
 [package]
 name = "wahana"
-version = "0.7.0"
+version = "0.8.0"
 description = "Wahana — cross-platform WhatsApp desktop client: native accounts or a WAHA server"
 authors = ["Adam Suchi Hafizullah"]
 edition = "2021"
